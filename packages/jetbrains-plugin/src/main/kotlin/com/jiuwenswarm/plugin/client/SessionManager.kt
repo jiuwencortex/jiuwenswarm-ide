@@ -2,16 +2,18 @@ package com.jiuwenswarm.plugin.client
 
 import com.google.gson.Gson
 import com.google.gson.JsonObject
-import com.google.gson.JsonParser
 import com.intellij.openapi.diagnostic.logger
 import java.util.UUID
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 
 private val LOG = logger<SessionManager>()
 private val gson = Gson()
 private const val REQUEST_TIMEOUT_SEC = 15L
+
+typealias SessionChangeListener = (String?) -> Unit
 
 data class SessionInfo(
     val session_id: String,
@@ -31,28 +33,20 @@ class SessionManager(
         private set
 
     private val pending = ConcurrentHashMap<String, CompletableFuture<JsonObject>>()
+    private val sessionListeners = CopyOnWriteArrayList<SessionChangeListener>()
     private val listener: MessageListener = { msg -> handleMessage(msg) }
 
     init {
         ws.addMessageListener(listener)
     }
 
+    fun addSessionListener(l: SessionChangeListener) = sessionListeners.add(l)
+    fun removeSessionListener(l: SessionChangeListener) = sessionListeners.remove(l)
+
     fun dispose() {
         ws.removeMessageListener(listener)
         pending.values.forEach { it.cancel(true) }
         pending.clear()
-    }
-
-    /** Create a new session, blocking up to [REQUEST_TIMEOUT_SEC] seconds */
-    fun createSession(): String {
-        val payload = request("session.create", emptyMap())
-        // Server uses camelCase "sessionId" in the response payload
-        val sid = payload.get("sessionId")?.asString
-            ?: payload.get("session_id")?.asString
-            ?: error("No sessionId in response")
-        sessionId = sid
-        sessionTitle = payload.get("title")?.asString ?: "New Session"
-        return sid
     }
 
     fun listSessions(limit: Int = 20): List<SessionInfo> {
@@ -72,7 +66,7 @@ class SessionManager(
 
     fun switchSession(sid: String) {
         val payload = request("session.switch", mapOf("session_id" to sid), sid)
-        sessionId = sid
+        setSessionId(sid)
         sessionTitle = payload.get("title")?.asString ?: sid
     }
 
@@ -84,7 +78,7 @@ class SessionManager(
             addProperty("type", "req")
             addProperty("channel_id", channelId)
             addProperty("session_id", sid)
-            addProperty("req_method", "chat.send")
+            addProperty("method", "chat.send")
             add("params", buildJsonObject {
                 addProperty("content", content)
                 addProperty("mode", mode)
@@ -95,6 +89,12 @@ class SessionManager(
     }
 
     // ──────────────────────────────────────────
+    private fun setSessionId(sid: String?) {
+        if (sessionId == sid) return
+        sessionId = sid
+        sessionListeners.forEach { it(sid) }
+    }
+
     private fun request(
         method: String,
         params: Map<String, Any>,
@@ -102,11 +102,11 @@ class SessionManager(
     ): JsonObject {
         val id = UUID.randomUUID().toString()
         val msg = buildJsonObject {
-            addProperty("request_id", id)
+            addProperty("id", id)
             addProperty("type", "req")
             addProperty("channel_id", channelId)
             if (sid != null) addProperty("session_id", sid)
-            addProperty("req_method", method)
+            addProperty("method", method)
             add("params", gson.toJsonTree(params).asJsonObject)
             addProperty("timestamp", System.currentTimeMillis() / 1000.0)
         }
@@ -120,46 +120,55 @@ class SessionManager(
             future.get(REQUEST_TIMEOUT_SEC, TimeUnit.SECONDS)
         } catch (e: Exception) {
             pending.remove(id)
-            throw RuntimeException("Request '$method' failed: ${e.message}", e)
+            throw RuntimeException("Request '$method' failed: ${e.javaClass.simpleName} - ${e.message}", e)
         }
     }
 
     private fun handleMessage(msg: JsonObject) {
-        // ── E2A format responses (server always sends these) ──
-        val requestId = msg.get("request_id")?.asString
-        val status = msg.get("status")?.asString
-        if (requestId != null && status != null) {
-            val future = pending.remove(requestId) ?: return
-            if (status == "succeeded") {
-                val body = msg.getAsJsonObject("body")
-                // The actual result is nested under body.result
-                val result = body?.getAsJsonObject("result") ?: JsonObject()
-                future.complete(result)
-            } else {
-                val body = msg.getAsJsonObject("body")
-                val error = body?.get("message")?.asString ?: "Request failed"
-                future.completeExceptionally(RuntimeException(error))
-            }
-            return
-        }
+        val msgType = msg.get("type")?.asString
 
-        // ── Legacy format responses (fallback, unlikely with current server) ──
-        if (msg.get("type")?.asString == "res") {
-            val rid = msg.get("request_id")?.asString ?: return
-            val future = pending.remove(rid) ?: return
+        // ── Gateway legacy format responses ──
+        if (msgType == "res") {
+            val rid = msg.get("id")?.asString
+            if (rid == null) {
+                LOG.warn("Response missing 'id' field: ${msg}")
+                return
+            }
+            val future = pending.remove(rid)
+            if (future == null) {
+                LOG.warn("Received response for unknown id=$rid; pending=${pending.keys}")
+                return
+            }
             if (msg.get("ok")?.asBoolean == true) {
                 val payload = msg.getAsJsonObject("payload") ?: JsonObject()
                 future.complete(payload)
             } else {
-                val err = msg.getAsJsonObject("payload")?.get("error")?.asString ?: "Request failed"
+                val err = msg.get("error")?.asString
+                    ?: msg.getAsJsonObject("payload")?.get("error")?.asString
+                    ?: "Request failed"
                 future.completeExceptionally(RuntimeException(err))
             }
+            return
+        }
+
+        // ── Events (connection.ack gives us the session) ──
+        if (msgType == "event") {
+            val eventName = msg.get("event")?.asString ?: return
+            val payload = msg.getAsJsonObject("payload") ?: JsonObject()
+            when (eventName) {
+                "connection.ack" -> {
+                    val sid = payload.get("session_id")?.asString
+                    if (sid != null) {
+                        LOG.info("Auto-session from connection.ack: $sid")
+                        setSessionId(sid)
+                    }
+                }
+            }
+            return
         }
     }
 }
 
-// ──────────────────────────────────────────────────────────────────
-// Tiny DSL to build JsonObject without Kotlin serialization overhead
 // ──────────────────────────────────────────────────────────────────
 private fun buildJsonObject(block: JsonObject.() -> Unit): JsonObject =
     JsonObject().also(block)

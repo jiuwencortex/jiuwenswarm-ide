@@ -13,18 +13,9 @@ class NewSessionAction : AnAction() {
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
-        val service = JiuwenSwarmService.instance()
 
-        ApplicationManager.getApplication().executeOnPooledThread {
-            try {
-                service.session.createSession()
-                // Focus the tool window
-                ApplicationManager.getApplication().invokeLater {
-                    ToolWindowManager.getInstance(project).getToolWindow("JiuwenSwarm")?.show()
-                }
-            } catch (ex: Exception) {
-                // Handled by the chat panel's status update
-            }
+        ApplicationManager.getApplication().invokeLater {
+            ToolWindowManager.getInstance(project).getToolWindow("JiuwenSwarm")?.show()
         }
     }
 

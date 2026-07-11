@@ -91,8 +91,9 @@ class ChatPanel(
             }
         }, browser.cefBrowser)
 
-        // Listen for WS status and message events
+        // Listen for WS status, session, and message events
         service.ws.addStatusListener(::onStatusChange)
+        service.session.addSessionListener(::onSessionChange)
         service.ws.addMessageListener(::onJiuwenMessage)
 
         // Load the chat HTML
@@ -163,11 +164,18 @@ class ChatPanel(
                     val content = msg.get("content")?.asString ?: return
                     val mode = msg.get("mode")?.asString ?: "code.normal"
                     val rid = msg.get("requestId")?.asString ?: return
-                    service.session.sendChat(content, mode, rid)
+                    if (!service.session.sendChat(content, mode, rid)) {
+                        dispatchToWebview(mapOf(
+                            "type" to "error",
+                            "message" to "Not connected or no active session",
+                            "requestId" to rid
+                        ))
+                    }
                 }
                 "new_session" -> ApplicationManager.getApplication().executeOnPooledThread {
                     try {
-                        service.session.createSession()
+                        // Server auto-creates session on connect via connection.ack.
+                        // If none exists yet, just refresh status; session may arrive shortly.
                         sendCurrentStatus()
                     } catch (e: Exception) {
                         dispatchToWebview(mapOf("type" to "error", "message" to e.message))
@@ -202,6 +210,10 @@ class ChatPanel(
     // JiuwenSwarm events → webview
     // ──────────────────────────────────────────
     private fun onStatusChange(s: WsStatus) {
+        sendCurrentStatus()
+    }
+
+    private fun onSessionChange(sid: String?) {
         sendCurrentStatus()
     }
 
@@ -290,6 +302,15 @@ class ChatPanel(
                     "sessionId" to sid,
                     "sessionTitle" to service.session.sessionTitle,
                 ))
+            s == WsStatus.CONNECTED ->
+                // WS is up but no session yet — ask webview to show "connecting" state
+                // so user knows they should click New Session or wait
+                dispatchToWebview(mapOf(
+                    "type" to "connected",
+                    "sessionId" to null,
+                    "sessionTitle" to "JiuwenSwarm",
+                    "needsSession" to true,
+                ))
             s == WsStatus.RECONNECTING ->
                 dispatchToWebview(mapOf("type" to "reconnecting"))
             else ->
@@ -300,6 +321,7 @@ class ChatPanel(
     // ──────────────────────────────────────────
     override fun dispose() {
         service.ws.removeStatusListener(::onStatusChange)
+        service.session.removeSessionListener(::onSessionChange)
         service.ws.removeMessageListener(::onJiuwenMessage)
         jsQuery.dispose()
         browser.dispose()

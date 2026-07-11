@@ -22,19 +22,6 @@ class JiuwenSwarmService : Disposable {
 
     init {
         if (settings.autoConnect) {
-            // Create session once connection is established
-            ws.addStatusListener { s ->
-                if (s == WsStatus.CONNECTED && session.sessionId == null) {
-                    ApplicationManager.getApplication().executeOnPooledThread {
-                        try {
-                            session.createSession()
-                            LOG.info("Session created: ${session.sessionId}")
-                        } catch (e: Exception) {
-                            LOG.warn("Could not create initial session", e)
-                        }
-                    }
-                }
-            }
             ws.connect()
         }
     }
