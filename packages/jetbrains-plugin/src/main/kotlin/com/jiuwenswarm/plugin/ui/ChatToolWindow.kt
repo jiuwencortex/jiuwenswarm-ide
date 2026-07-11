@@ -225,8 +225,41 @@ class ChatPanel(
                         dispatchToWebview(mapOf("type" to "sessions", "sessions" to sessions.map { it.toMap() }))
                     } catch (e: Exception) {
                         LOG.warn("list_sessions failed", e)
-                        // Use sessions_error (not generic error) so it shows inside the sessions overlay
                         dispatchToWebview(mapOf("type" to "sessions_error", "message" to (e.message ?: "Failed to load sessions")))
+                    }
+                }
+                "list_skills" -> ApplicationManager.getApplication().executeOnPooledThread {
+                    try {
+                        debug("ACTION→ list_skills")
+                        val skills = service.session.listSkills()
+                        debug("ACTION→ list_skills returned ${skills.size} skills")
+                        val skillMaps = skills.map { obj ->
+                            mapOf(
+                                "skill_id"    to (obj.get("skill_id")?.asString    ?: ""),
+                                "name"        to (obj.get("name")?.asString         ?: obj.get("skill_id")?.asString ?: ""),
+                                "description" to (obj.get("description")?.asString  ?: ""),
+                                "enabled"     to (obj.get("enabled")?.asBoolean     ?: true),
+                                "trigger"     to (obj.get("trigger")?.asString      ?: ""),
+                            )
+                        }
+                        dispatchToWebview(mapOf("type" to "skills", "skills" to skillMaps))
+                    } catch (e: Exception) {
+                        LOG.warn("list_skills failed", e)
+                        dispatchToWebview(mapOf("type" to "skills_error", "message" to (e.message ?: "Failed to load skills")))
+                    }
+                }
+                "toggle_skill" -> {
+                    val skillId = msg.get("skillId")?.asString ?: return
+                    val enabled = msg.get("enabled")?.asBoolean ?: return
+                    ApplicationManager.getApplication().executeOnPooledThread {
+                        try {
+                            debug("ACTION→ toggle_skill $skillId enabled=$enabled")
+                            service.session.toggleSkill(skillId, enabled)
+                            dispatchToWebview(mapOf("type" to "skill_toggled", "skillId" to skillId, "enabled" to enabled))
+                        } catch (e: Exception) {
+                            LOG.warn("toggle_skill failed", e)
+                            dispatchToWebview(mapOf("type" to "skills_error", "message" to (e.message ?: "Failed to toggle skill")))
+                        }
                     }
                 }
             }
@@ -273,9 +306,20 @@ class ChatPanel(
         if (converted != null) {
             debug("CONV  → event_type=${converted.get("event_type")?.asString} request_id=${converted.get("request_id")?.asString}")
             dispatchToWebview(mapOf("type" to "jiuwen_event", "event" to converted))
+            trackTokenUsage(converted)
         } else {
             debug("CONV  → dropped (not a recognised chat event)")
         }
+    }
+
+    /** Extract token counts from chat.usage_metadata and update the service for the status bar. */
+    private fun trackTokenUsage(event: JsonObject) {
+        val et = event.get("event_type")?.asString ?: return
+        if (et != "chat.usage_metadata" && et != "chat.usage_summary") return
+        val payload = event.getAsJsonObject("payload") ?: return
+        val input   = payload.get("input_tokens")?.asInt  ?: payload.get("cache_read_input_tokens")?.asInt ?: 0
+        val output  = payload.get("output_tokens")?.asInt ?: 0
+        service.lastTokenCount += input + output
     }
 
     /** Convert server messages (E2A or old format) to the legacy event format the webview expects.

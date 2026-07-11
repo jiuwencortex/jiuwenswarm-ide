@@ -20,6 +20,9 @@ class JiuwenSwarmService : Disposable {
     val ws = WsClient(settings.wsUrl)
     val session = SessionManager(ws, settings.channelId)
 
+    /** Cumulative token count for the current session, updated by ChatToolWindow. */
+    @Volatile var lastTokenCount: Int = 0
+
     init {
         if (settings.autoConnect) {
             ws.connect()

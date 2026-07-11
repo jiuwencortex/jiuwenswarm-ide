@@ -72,6 +72,24 @@ class SessionManager(
         return models to activeModel
     }
 
+    /**
+     * Returns the list of available skills registered with the jiuwenswarm instance.
+     * Each [JsonObject] contains at minimum "skill_id" and "name".
+     * Throws if the server does not support the skills.list method.
+     */
+    fun listSkills(): List<JsonObject> {
+        val payload = request("skills.list", emptyMap())
+        return payload.getAsJsonArray("skills")?.map { it.asJsonObject } ?: emptyList()
+    }
+
+    /**
+     * Enables or disables a skill by its ID.
+     * Throws if the server does not support skills.toggle.
+     */
+    fun toggleSkill(skillId: String, enabled: Boolean) {
+        request("skills.toggle", mapOf("skill_id" to skillId, "enabled" to enabled))
+    }
+
     fun switchSession(sid: String) {
         val payload = request("session.switch", mapOf("session_id" to sid), sid)
         setSessionId(sid)

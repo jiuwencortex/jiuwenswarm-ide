@@ -55,11 +55,21 @@ class JiuwenStatusBarWidget : StatusBarWidget, StatusBarWidget.IconPresentation 
 
     // ── IconPresentation ──────────────────────────────────────────────────────
 
-    override fun getTooltipText(): String = when (service.ws.getStatus()) {
-        WsStatus.CONNECTED    -> "JiuwenSwarm: Connected — session ${service.session.sessionId?.take(8) ?: "none"}"
-        WsStatus.CONNECTING   -> "JiuwenSwarm: Connecting…"
-        WsStatus.RECONNECTING -> "JiuwenSwarm: Reconnecting…"
-        WsStatus.DISCONNECTED -> "JiuwenSwarm: Disconnected — click to reconnect"
+    override fun getTooltipText(): String {
+        val tokens = service.lastTokenCount
+        val tokenSuffix = if (tokens > 0) " | ${formatTokenCount(tokens)} tokens used" else ""
+        return when (service.ws.getStatus()) {
+            WsStatus.CONNECTED    -> "JiuwenSwarm: Connected — session ${service.session.sessionId?.take(8) ?: "none"}$tokenSuffix"
+            WsStatus.CONNECTING   -> "JiuwenSwarm: Connecting…"
+            WsStatus.RECONNECTING -> "JiuwenSwarm: Reconnecting…"
+            WsStatus.DISCONNECTED -> "JiuwenSwarm: Disconnected — click to reconnect"
+        }
+    }
+
+    private fun formatTokenCount(n: Int): String = when {
+        n >= 1_000_000 -> "%.1fM".format(n / 1_000_000.0)
+        n >= 1_000     -> "%.1fk".format(n / 1_000.0)
+        else           -> n.toString()
     }
 
     override fun getClickConsumer(): Consumer<MouseEvent> = Consumer { e ->

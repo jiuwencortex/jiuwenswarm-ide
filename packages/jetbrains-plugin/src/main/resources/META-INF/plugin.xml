@@ -125,6 +125,12 @@
             displayType="BALLOON"
             isLogByDefault="true"/>
 
+        <!-- Alt+Enter quick-fix: "Fix with JiuwenSwarm" on errors/warnings -->
+        <intentionAction>
+            <className>com.jiuwenswarm.plugin.ui.FixWithAiIntention</className>
+            <category>JiuwenSwarm</category>
+        </intentionAction>
+
     </extensions>
 
     <actions>
