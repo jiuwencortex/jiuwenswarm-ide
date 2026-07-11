@@ -252,6 +252,10 @@ class ChatPanel(
     }
 
     private fun onJiuwenMessage(msg: JsonObject) {
+        // Skip request-response protocol messages (type:"res") — SessionManager handles
+        // those synchronously via its CompletableFuture.  They are never chat events.
+        if (msg.get("type")?.asString == "res") return
+
         debug("RAW ← ${gson.toJson(msg)}")
         // Route file-edit tool calls to DiffApplier (show diff or auto-apply).
         // Only applies to old-format events where tool_name sits at the message root.
@@ -267,7 +271,7 @@ class ChatPanel(
             debug("CONV  → event_type=${converted.get("event_type")?.asString} request_id=${converted.get("request_id")?.asString}")
             dispatchToWebview(mapOf("type" to "jiuwen_event", "event" to converted))
         } else {
-            debug("CONV  → dropped (unrecognized format)")
+            debug("CONV  → dropped (not a recognised chat event)")
         }
     }
 

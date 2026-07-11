@@ -223,20 +223,19 @@
   .mode-option:hover { background: var(--bg); color: var(--text); }
   .mode-option.selected { color: var(--text); font-weight: 600; }
 
-  /* ── Session picker overlay ── */
+  /* ── Session picker (in-flow, replaces the messages area) ── */
   #session-overlay {
     display: none;
-    position: absolute;
-    top: 36px; /* below header */
-    left: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 200;
+    flex: 1;           /* fills the same space as #messages */
+    min-height: 0;
     background: var(--bg2);
     border-top: 1px solid var(--border);
     flex-direction: column;
+    overflow: hidden;
   }
+  /* When overlay is visible, show it and hide #messages */
   #session-overlay.visible { display: flex; }
+  #messages.sessions-open { display: none !important; }
   #session-overlay-header {
     display: flex;
     align-items: center;
@@ -840,12 +839,15 @@ function renderSessionList() {
 
 function toggleSessions() {
   state.showSessions = !state.showSessions;
-  const overlay = document.getElementById('session-overlay');
+  const overlay  = document.getElementById('session-overlay');
+  const messages = document.getElementById('messages');
   if (state.showSessions) {
     overlay.classList.add('visible');
-    retrySessions();   // shows "Loading…" and fires list_sessions
+    messages.classList.add('sessions-open');   // hide messages; overlay takes flex:1 slot
+    retrySessions();
   } else {
     overlay.classList.remove('visible');
+    messages.classList.remove('sessions-open');
   }
 }
 
