@@ -55,7 +55,7 @@ The chat panel renders inside the IDE via JCEF. It supports:
 
 - Markdown rendering with syntax-highlighted code blocks
 - Collapsible tool call cards showing every agent action with live status, inputs, and outputs
-- A mode selector dropdown (`agent.plan`, `agent.fast`, `team`)
+- A mode selector dropdown (Planning Mode, Performance Mode, Cluster Mode)
 - A session dropdown to create or switch conversations
 - An attach button to include the current file as context
 - A dark/light theme toggle

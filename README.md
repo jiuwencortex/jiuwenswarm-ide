@@ -34,6 +34,7 @@ cd jiuwenswarm && jiuwenswarm-start
 
 - [VS Code Extension](docs/vscode/README.md) — install from VSIX or marketplace, configure, and use
 - [JetBrains Plugin](docs/jetbrains/README.md) — install from ZIP or marketplace, configure, and use
+  - [JetBrains Usage Guide](docs/jetbrains/USER_GUIDE.md) — complete reference for every panel, action, and workflow
 
 ## Publishing
 
