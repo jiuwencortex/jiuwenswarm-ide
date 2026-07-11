@@ -1,9 +1,24 @@
 {
   "name": "jiuwenswarm",
   "displayName": "JiuwenSwarm",
-  "description": "AI coding assistant powered by JiuwenSwarm",
+  "description": "Autonomous multi-agent AI coding assistant with streaming chat, tool-call transparency, session management, and code selection sharing.",
   "version": "0.1.0",
   "publisher": "openjiuwen",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/openjiuwen/jiuwenswarm-ide"
+  },
+  "keywords": [
+    "ai",
+    "assistant",
+    "chat",
+    "agent",
+    "llm",
+    "autonomous",
+    "multi-agent",
+    "code",
+    "productivity"
+  ],
   "engines": { "vscode": "^1.85.0" },
   "categories": ["AI", "Chat", "Other"],
   "activationEvents": ["onStartupFinished"],
