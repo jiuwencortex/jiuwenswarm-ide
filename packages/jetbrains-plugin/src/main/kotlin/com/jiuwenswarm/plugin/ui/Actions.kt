@@ -8,22 +8,43 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.wm.ToolWindowManager
 import com.jiuwenswarm.plugin.JiuwenSwarmService
 
+/**
+ * Cmd+Shift+J / Ctrl+Shift+J — show the JiuwenSwarm panel and start a fresh session
+ * by reconnecting the WebSocket (same as clicking the "New" button in the panel).
+ */
 class NewSessionAction : AnAction() {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
-
         ApplicationManager.getApplication().invokeLater {
-            ToolWindowManager.getInstance(project).getToolWindow("JiuwenSwarm")?.show()
+            val tw = ToolWindowManager.getInstance(project).getToolWindow("JiuwenSwarm")
+                ?: return@invokeLater
+            // show(Runnable) is called after the tool window is fully visible and
+            // createToolWindowContent has completed, so the reconnect fires at the right time.
+            tw.show {
+                ApplicationManager.getApplication().executeOnPooledThread {
+                    try {
+                        JiuwenSwarmService.instance().ws.reconnect()
+                    } catch (_: Exception) {}
+                }
+            }
         }
     }
 
     override fun update(e: AnActionEvent) {
-        e.presentation.isEnabled = JiuwenSwarmService.instance().ws.isConnected()
+        // Always enabled — show the panel even when not connected yet
+        e.presentation.isEnabled = e.project != null
     }
 }
 
+/**
+ * Cmd+Shift+E / Ctrl+Shift+E — send the current editor selection to the JiuwenSwarm chat.
+ *
+ * The selection is formatted as a fenced code block and pre-filled into the input field.
+ * Uses [ToolWindow.show(Runnable)] to ensure [createToolWindowContent] has finished
+ * (it is called lazily on first open) before attempting to dispatch to the panel.
+ */
 class SendSelectionAction : AnAction() {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
@@ -37,10 +58,15 @@ class SendSelectionAction : AnAction() {
 
         ApplicationManager.getApplication().invokeLater {
             val tw = ToolWindowManager.getInstance(project).getToolWindow("JiuwenSwarm")
-            tw?.show()
-            val comp = tw?.contentManager?.selectedContent?.component
-            val chatPanel = comp?.getClientProperty("jiuwenswarm.panel") as? ChatPanel
-            chatPanel?.dispatchToWebview(mapOf("type" to "prefill", "content" to prefillContent))
+                ?: return@invokeLater
+
+            // show(Runnable): the runnable fires once the window is visible and
+            // its content is initialised, so getContent(0) is guaranteed non-null.
+            tw.show {
+                val comp = tw.contentManager.getContent(0)?.component
+                (comp?.getClientProperty("jiuwenswarm.panel") as? ChatPanel)
+                    ?.dispatchToWebview(mapOf("type" to "prefill", "content" to prefillContent))
+            }
         }
     }
 

@@ -7,13 +7,14 @@ import com.intellij.openapi.wm.StatusBarWidget
 import com.intellij.openapi.wm.StatusBarWidgetFactory
 import com.jiuwenswarm.plugin.JiuwenSwarmService
 import com.jiuwenswarm.plugin.client.WsStatus
+import com.intellij.util.Consumer
 import java.awt.Color
-import java.awt.Cursor
-import java.awt.event.MouseAdapter
+import java.awt.Component
+import java.awt.Graphics
+import java.awt.Graphics2D
+import java.awt.RenderingHints
 import java.awt.event.MouseEvent
-import javax.swing.BorderFactory
-import javax.swing.JComponent
-import javax.swing.JLabel
+import javax.swing.Icon
 import javax.swing.SwingUtilities
 
 class StatusBarWidgetFactory : StatusBarWidgetFactory {
@@ -26,38 +27,20 @@ class StatusBarWidgetFactory : StatusBarWidgetFactory {
 }
 
 /**
- * Custom status bar widget that renders with per-state colours.
- * Implements [StatusBarWidget.CustomStatusBarWidget] so we can embed
- * a [JLabel] directly and set its foreground colour — unlike
- * [StatusBarWidget.TextPresentation] which always uses the IDE's
- * default muted text colour.
+ * Status bar widget using [StatusBarWidget.IconPresentation].
+ *
+ * We render a coloured text string as an [Icon] via Java2D rather than relying on
+ * [StatusBarWidget.TextPresentation], which forces the IDE's default muted text colour.
+ * This gives us per-state colours (teal = connected, yellow = reconnecting, grey = off).
  */
-class JiuwenStatusBarWidget : StatusBarWidget, StatusBarWidget.CustomStatusBarWidget {
+class JiuwenStatusBarWidget : StatusBarWidget, StatusBarWidget.IconPresentation {
 
     private val service = JiuwenSwarmService.instance()
     private var bar: StatusBar? = null
     private val statusListener: (WsStatus) -> Unit = { update() }
 
-    private val label = JLabel().also { lbl ->
-        lbl.border = BorderFactory.createEmptyBorder(0, 6, 0, 4)
-        lbl.cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-        lbl.addMouseListener(object : MouseAdapter() {
-            override fun mouseClicked(e: MouseEvent) {
-                if (SwingUtilities.isLeftMouseButton(e) &&
-                    service.ws.getStatus() == WsStatus.DISCONNECTED
-                ) {
-                    service.ws.connect()
-                }
-            }
-        })
-    }
-
     override fun ID() = "JiuwenSwarmStatusWidget"
-
-    // CustomStatusBarWidget — return null; our JLabel is the entire presentation
-    override fun getPresentation(): StatusBarWidget.WidgetPresentation? = null
-
-    override fun getComponent(): JComponent = label
+    override fun getPresentation(): StatusBarWidget.WidgetPresentation = this
 
     override fun install(statusBar: StatusBar) {
         bar = statusBar
@@ -70,35 +53,58 @@ class JiuwenStatusBarWidget : StatusBarWidget, StatusBarWidget.CustomStatusBarWi
         bar = null
     }
 
+    // ── IconPresentation ──────────────────────────────────────────────────────
+
+    override fun getTooltipText(): String = when (service.ws.getStatus()) {
+        WsStatus.CONNECTED    -> "JiuwenSwarm: Connected — session ${service.session.sessionId?.take(8) ?: "none"}"
+        WsStatus.CONNECTING   -> "JiuwenSwarm: Connecting…"
+        WsStatus.RECONNECTING -> "JiuwenSwarm: Reconnecting…"
+        WsStatus.DISCONNECTED -> "JiuwenSwarm: Disconnected — click to reconnect"
+    }
+
+    override fun getClickConsumer(): Consumer<MouseEvent> = Consumer { e ->
+        if (SwingUtilities.isLeftMouseButton(e) && service.ws.getStatus() == WsStatus.DISCONNECTED) {
+            service.ws.connect()
+        }
+    }
+
+    override fun getIcon(): Icon {
+        val (label, color) = when (service.ws.getStatus()) {
+            WsStatus.CONNECTED    -> "⬤ JiuwenSwarm" to Color(0x4e, 0xc9, 0xb0)   // teal
+            WsStatus.CONNECTING   -> "◌ JiuwenSwarm" to Color(0x4e, 0xc9, 0xb0)   // teal (pending)
+            WsStatus.RECONNECTING -> "↻ JiuwenSwarm" to Color(0xdc, 0xdc, 0xaa)   // yellow
+            WsStatus.DISCONNECTED -> "○ JiuwenSwarm" to Color(0x6b, 0x6b, 0x6b)   // grey
+        }
+        return StatusTextIcon(label, color)
+    }
+
+    // ── Internal ──────────────────────────────────────────────────────────────
+
     private fun update() {
-        SwingUtilities.invokeLater {
-            val sid = service.session.sessionId?.take(8) ?: "none"
-            val (symbol, color, tip) = when (service.ws.getStatus()) {
-                WsStatus.CONNECTED    -> Triple(
-                    "⬤ JiuwenSwarm",
-                    Color(0x4e, 0xc9, 0xb0),  // teal — matches the in-panel connected dot
-                    "JiuwenSwarm: Connected — session $sid",
-                )
-                WsStatus.CONNECTING   -> Triple(
-                    "◌ JiuwenSwarm",
-                    Color(0x4e, 0xc9, 0xb0),
-                    "JiuwenSwarm: Connecting…",
-                )
-                WsStatus.RECONNECTING -> Triple(
-                    "↻ JiuwenSwarm",
-                    Color(0xdc, 0xdc, 0xaa),  // yellow — "caution"
-                    "JiuwenSwarm: Reconnecting…",
-                )
-                WsStatus.DISCONNECTED -> Triple(
-                    "○ JiuwenSwarm",
-                    Color(0x6b, 0x6b, 0x6b),  // gray — inactive
-                    "JiuwenSwarm: Disconnected — click to reconnect",
-                )
-            }
-            label.text = symbol
-            label.foreground = color
-            label.toolTipText = tip
-            bar?.updateWidget(ID())
+        SwingUtilities.invokeLater { bar?.updateWidget(ID()) }
+    }
+}
+
+/**
+ * An [Icon] that paints a coloured text string using the host component's font.
+ * Width is fixed to the widest possible label so the status bar layout stays stable.
+ */
+private class StatusTextIcon(private val text: String, private val color: Color) : Icon {
+
+    override fun getIconWidth(): Int = 110   // enough for "⬤ JiuwenSwarm" at any DPI
+    override fun getIconHeight(): Int = 16
+
+    override fun paintIcon(c: Component?, g: Graphics, x: Int, y: Int) {
+        val g2 = g.create() as Graphics2D
+        try {
+            g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
+            g2.font = c?.font ?: g.font
+            g2.color = color
+            val fm = g2.fontMetrics
+            // Vertically center within the icon height
+            g2.drawString(text, x, y + fm.ascent + (getIconHeight() - fm.height) / 2)
+        } finally {
+            g2.dispose()
         }
     }
 }
