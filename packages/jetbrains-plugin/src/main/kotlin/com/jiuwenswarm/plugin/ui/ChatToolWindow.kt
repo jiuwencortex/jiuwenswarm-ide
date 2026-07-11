@@ -176,7 +176,7 @@ class ChatPanel(
                 "ready" -> sendCurrentStatus()
                 "send" -> {
                     val content = msg.get("content")?.asString ?: return
-                    val mode = msg.get("mode")?.asString ?: "code.normal"
+                    val mode = msg.get("mode")?.asString ?: "agent.plan"
                     val rid = msg.get("requestId")?.asString ?: return
                     lastRequestId = rid
                     debug("SEND  → requestId=$rid mode=$mode content=${content.take(60)}")

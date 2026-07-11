@@ -102,7 +102,7 @@
     flex-shrink: 0;
     transition: background 0.3s;
   }
-  #status-dot.connected { background: #4ec9b0; }
+  #status-dot.connected { background: #4ade80; }
   #status-dot.reconnecting { background: #dcdcaa; animation: pulse 1s infinite; }
   #status-dot.error { background: #f14c4c; }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
@@ -654,14 +654,13 @@
     <!-- Mode selector — left side, custom dropdown so it stays inside JCEF's render layer -->
     <div id="mode-wrap">
       <button id="mode-btn" onclick="toggleModeDropdown()" title="Agent mode">
-        <span id="mode-label">code · normal</span>
+        <span id="mode-label">Planning Mode</span>
         <span class="chevron">▾</span>
       </button>
       <div id="mode-dropdown">
-        <div class="mode-option selected" data-mode="code.normal"  onclick="selectMode('code.normal')">code · normal</div>
-        <div class="mode-option"          data-mode="code.plan"    onclick="selectMode('code.plan')">code · plan</div>
-        <div class="mode-option"          data-mode="agent.plan"   onclick="selectMode('agent.plan')">agent · plan</div>
-        <div class="mode-option"          data-mode="agent.fast"   onclick="selectMode('agent.fast')">agent · fast</div>
+        <div class="mode-option selected" data-mode="agent.plan" onclick="selectMode('agent.plan')">Planning Mode</div>
+        <div class="mode-option"          data-mode="agent.fast" onclick="selectMode('agent.fast')">Performance Mode</div>
+        <div class="mode-option"          data-mode="team"      onclick="selectMode('team')">Cluster Mode</div>
       </div>
     </div>
     <!-- Token counter — right side -->

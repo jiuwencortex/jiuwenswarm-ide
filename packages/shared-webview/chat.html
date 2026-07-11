@@ -30,6 +30,7 @@
     --code-bg: #0d1117;
     --thinking-bg: #2a2a1a;
     --thinking-border: #5a5a2a;
+    --debug-text: #4ec9b0;
     --radius: 6px;
     --font-mono: 'SF Mono', 'Cascadia Code', Consolas, 'Courier New', monospace;
     --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
@@ -57,6 +58,7 @@
     --code-bg: #f5f5f5;
     --thinking-bg: #fffde7;
     --thinking-border: #fbc02d;
+    --debug-text: #007a6e;
   }
 
   body {
@@ -68,6 +70,7 @@
     flex-direction: column;
     height: 100vh;
     overflow: hidden;
+    position: relative;
   }
 
   /* ── Header ── */
@@ -99,7 +102,7 @@
     flex-shrink: 0;
     transition: background 0.3s;
   }
-  #status-dot.connected { background: #4ec9b0; }
+  #status-dot.connected { background: #4ade80; }
   #status-dot.reconnecting { background: #dcdcaa; animation: pulse 1s infinite; }
   #status-dot.error { background: #f14c4c; }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
@@ -140,8 +143,8 @@
     background: var(--bg3);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    min-width: 140px;
-    z-index: 100;
+    min-width: 160px;
+    z-index: 9999;
     padding: 4px 0;
     box-shadow: 0 4px 12px rgba(0,0,0,0.3);
   }
@@ -153,57 +156,202 @@
     cursor: pointer;
     white-space: nowrap;
     transition: background 0.1s, color 0.1s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
   }
   .dropdown-item:hover { background: var(--bg); color: var(--text); }
+  .dropdown-item.active { color: var(--text); font-weight: 600; }
   .dropdown-divider {
     height: 1px;
     background: var(--border);
     margin: 4px 8px;
   }
+  .dropdown-section-label {
+    padding: 4px 12px 2px;
+    font-size: 10px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    pointer-events: none;
+  }
 
-  #mode-select {
+  /* ── Mode selector (bottom-left, custom dropdown) ── */
+  #mode-wrap {
+    position: relative;
+  }
+  #mode-btn {
     background: var(--bg3);
     border: 1px solid var(--border);
     color: var(--text-muted);
     border-radius: var(--radius);
-    padding: 1px 4px;
-    font-size: 10px;
+    padding: 2px 7px;
+    font-size: 11px;
     cursor: pointer;
     outline: none;
-    flex-shrink: 0;
-  }
-  #mode-select:hover { color: var(--text); border-color: var(--text-muted); }
-  #mode-select option { background: var(--bg3); color: var(--text); }
-
-  /* ── Session picker ── */
-  #session-bar {
-    display: none;
-    background: var(--bg3);
-    border-bottom: 1px solid var(--border);
-    padding: 4px 8px;
-    flex-shrink: 0;
-  }
-  #session-bar.visible { display: block; }
-  #session-list {
     display: flex;
-    flex-direction: column;
-    gap: 2px;
-    max-height: 160px;
-    overflow-y: auto;
+    align-items: center;
+    gap: 4px;
+    transition: border-color 0.15s, color 0.15s;
+    white-space: nowrap;
   }
-  .session-item {
-    padding: 4px 8px;
+  #mode-btn:hover { color: var(--text); border-color: var(--text-muted); }
+  #mode-btn .chevron { font-size: 9px; opacity: 0.7; }
+
+  #mode-dropdown {
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 4px);
+    left: 0;
+    background: var(--bg3);
+    border: 1px solid var(--border);
     border-radius: var(--radius);
-    cursor: pointer;
+    min-width: 140px;
+    z-index: 9999;
+    padding: 4px 0;
+    box-shadow: 0 -4px 12px rgba(0,0,0,0.3);
+  }
+  #mode-dropdown.visible { display: block; }
+  .mode-option {
+    padding: 6px 12px;
     font-size: 12px;
     color: var(--text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.1s, color 0.1s;
+  }
+  .mode-option:hover { background: var(--bg); color: var(--text); }
+  .mode-option.selected { color: var(--text); font-weight: 600; }
+
+  /* ── Session picker (in-flow, replaces the messages area) ── */
+  #session-overlay {
+    display: none;
+    flex: 1;           /* fills the same space as #messages */
+    min-height: 0;
+    background: var(--bg2);
+    border-top: 1px solid var(--border);
+    flex-direction: column;
+    overflow: hidden;
+  }
+  /* When overlay is visible, show it and hide #messages */
+  #session-overlay.visible { display: flex; }
+  #messages.sessions-open { display: none !important; }
+  #session-overlay-header {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg3);
+    flex-shrink: 0;
+    gap: 8px;
+  }
+  #session-overlay-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    flex: 1;
+  }
+  #session-overlay-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 2px 6px;
+    border-radius: var(--radius);
+    line-height: 1;
+  }
+  #session-overlay-close:hover { color: var(--text); background: var(--bg); }
+  #session-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  #session-list::-webkit-scrollbar { width: 6px; }
+  #session-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  .session-item {
+    padding: 8px 10px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--bg3);
+    transition: border-color 0.15s, background 0.15s;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .session-item:hover { border-color: var(--accent); background: var(--bg); }
+  .session-item.active { border-color: var(--accent); background: rgba(14,99,156,0.12); }
+  .session-item-title {
+    font-size: 12px;
+    color: var(--text);
+    font-weight: 500;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    transition: background 0.1s;
   }
-  .session-item:hover { background: var(--bg); color: var(--text); }
-  .session-item.active { color: var(--text); background: var(--accent); }
+  .session-item.active .session-item-title::after {
+    content: ' ✓';
+    color: var(--accent);
+    font-size: 11px;
+  }
+  .session-item-meta {
+    font-size: 10px;
+    color: var(--text-dim);
+    display: flex;
+    gap: 8px;
+  }
+
+  /* ── Debug console (shown above input when debug is on) ── */
+  #debug-panel {
+    display: none;
+    height: 140px;
+    border-top: 1px solid var(--border);
+    background: var(--code-bg);
+    flex-shrink: 0;
+    flex-direction: column;
+  }
+  #debug-panel.visible { display: flex; }
+  #debug-panel-header {
+    display: flex;
+    align-items: center;
+    padding: 2px 8px;
+    background: var(--bg3);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    gap: 6px;
+  }
+  #debug-panel-header span:first-child {
+    font-size: 10px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    flex: 1;
+  }
+  #debug-clear-btn {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 10px;
+    padding: 1px 4px;
+    border-radius: 3px;
+  }
+  #debug-clear-btn:hover { color: var(--text); background: var(--bg); }
+  #debug-log {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 8px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    line-height: 1.5;
+  }
+  #debug-log::-webkit-scrollbar { width: 4px; }
+  #debug-log::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .debug-line { color: var(--debug-text); white-space: pre-wrap; word-break: break-all; }
 
   /* ── Messages ── */
   #messages {
@@ -432,9 +580,10 @@
   #send-btn:hover:not(:disabled) { background: var(--accent-hover); }
   #send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
+  /* Mode on left, token counter on right */
   #input-meta {
     display: flex;
-    justify-content: flex-end;
+    justify-content: space-between;
     align-items: center;
     font-size: 10px;
     color: var(--text-dim);
@@ -452,17 +601,15 @@
   <div id="status-dot" title="Disconnected"></div>
   <div id="header-title">JiuwenSwarm</div>
   <button id="btn-new-session" class="header-btn" onclick="send({type:'new_session'})" title="New session">New</button>
-  <button id="btn-theme" class="header-btn" onclick="toggleTheme()" title="Toggle dark / light theme">🌙</button>
   <div class="header-dropdown">
     <button id="btn-settings" class="header-btn" onclick="toggleSettingsMenu()" title="Settings">⚙</button>
     <div id="settings-menu" class="dropdown-menu">
       <div class="dropdown-item" onclick="showSessionsFromMenu()">📁 Sessions</div>
       <div class="dropdown-divider"></div>
-      <div class="dropdown-item" style="padding:4px 12px;font-size:11px;color:var(--text-dim);">Mode</div>
-      <div class="dropdown-item" onclick="setModeFromMenu('code.normal')" id="mode-item-code.normal"> code · normal</div>
-      <div class="dropdown-item" onclick="setModeFromMenu('code.plan')" id="mode-item-code.plan"> code · plan</div>
-      <div class="dropdown-item" onclick="setModeFromMenu('agent.plan')" id="mode-item-agent.plan"> agent · plan</div>
-      <div class="dropdown-item" onclick="setModeFromMenu('agent.fast')" id="mode-item-agent.fast"> agent · fast</div>
+      <div class="dropdown-section-label">Theme</div>
+      <div class="dropdown-item" id="theme-item-auto"  onclick="setThemeMode('auto')">◐ Auto</div>
+      <div class="dropdown-item" id="theme-item-dark"  onclick="setThemeMode('dark')">🌙 Dark</div>
+      <div class="dropdown-item" id="theme-item-light" onclick="setThemeMode('light')">☀ Light</div>
       <div class="dropdown-divider"></div>
       <div class="dropdown-item" onclick="toggleDebugFromMenu()">
         <span id="debug-check">☐</span> Debug log
@@ -471,7 +618,13 @@
   </div>
 </div>
 
-<div id="session-bar">
+<!-- Sessions overlay — covers the panel when open -->
+<div id="session-overlay">
+  <div id="session-overlay-header">
+    <span id="session-overlay-title">Sessions</span>
+    <button id="session-retry-btn" class="header-btn" onclick="retrySessions()" title="Refresh">↺</button>
+    <button id="session-overlay-close" onclick="toggleSessions()" title="Close">✕</button>
+  </div>
   <div id="session-list"></div>
 </div>
 
@@ -483,18 +636,34 @@
   </div>
 </div>
 
+<!-- Debug console — shown above input when debug mode is on -->
+<div id="debug-panel">
+  <div id="debug-panel-header">
+    <span>Debug Log</span>
+    <button id="debug-clear-btn" onclick="clearDebugLog()" title="Clear">Clear</button>
+  </div>
+  <div id="debug-log"></div>
+</div>
+
 <div id="input-area">
   <div id="input-row">
     <textarea id="input" placeholder="Ask anything… (Enter to send, Shift+Enter for newline)" rows="1" disabled></textarea>
     <button id="send-btn" disabled title="Send (Enter)">↑</button>
   </div>
   <div id="input-meta">
-    <select id="mode-select" title="Agent mode">
-      <option value="code.normal">code · normal</option>
-      <option value="code.plan">code · plan</option>
-      <option value="agent.plan">agent · plan</option>
-      <option value="agent.fast">agent · fast</option>
-    </select>
+    <!-- Mode selector — left side, custom dropdown so it stays inside JCEF's render layer -->
+    <div id="mode-wrap">
+      <button id="mode-btn" onclick="toggleModeDropdown()" title="Agent mode">
+        <span id="mode-label">Planning Mode</span>
+        <span class="chevron">▾</span>
+      </button>
+      <div id="mode-dropdown">
+        <div class="mode-option selected" data-mode="agent.plan" onclick="selectMode('agent.plan')">Planning Mode</div>
+        <div class="mode-option"          data-mode="agent.fast" onclick="selectMode('agent.fast')">Performance Mode</div>
+        <div class="mode-option"          data-mode="team"      onclick="selectMode('team')">Cluster Mode</div>
+      </div>
+    </div>
+    <!-- Token counter — right side -->
     <span id="token-counter"></span>
   </div>
 </div>
@@ -539,6 +708,8 @@ let state = {
   streaming: false,
   turns: [],
   pendingTurns: {},
+  mode: 'code.normal',
+  themeMode: 'auto',   // 'auto' | 'dark' | 'light'
 };
 
 // ─────────────────────────────────────────────
@@ -558,6 +729,9 @@ function handleHostMessage(msg) {
     case 'sessions':
       updateSessions(msg.sessions);
       break;
+    case 'sessions_error':
+      showSessionsError(msg.message);
+      break;
     case 'jiuwen_event':
       handleJiuwenEvent(msg.event);
       break;
@@ -566,6 +740,14 @@ function handleHostMessage(msg) {
       break;
     case 'debug_log':
       appendDebugLog(msg.line);
+      break;
+    case 'prefill':
+      var inp = document.getElementById('input');
+      if (inp && msg.content) {
+        inp.value = msg.content;
+        inp.dispatchEvent(new Event('input'));
+        inp.focus();
+      }
       break;
   }
 }
@@ -580,10 +762,16 @@ function setConnected(yes, sessionId, title) {
   if (yes) {
     dot.className = 'connected';
     dot.title = 'Connected';
+    // Clear messages when a brand-new session starts (different ID means the
+    // previous session's history is no longer active)
+    const isNewSession = sessionId && sessionId !== state.sessionId;
     state.connected = true;
     state.sessionId = sessionId;
     state.sessionTitle = title || 'JiuwenSwarm';
     document.getElementById('header-title').textContent = state.sessionTitle;
+    if (isNewSession) {
+      clearMessages();
+    }
     if (!state.streaming) {
       input.disabled = false;
       sendBtn.disabled = false;
@@ -616,16 +804,32 @@ function renderSessionList() {
   const el = document.getElementById('session-list');
   el.innerHTML = '';
   if (!state.sessions.length) {
-    el.innerHTML = '<div style="padding:8px 12px;color:var(--text-dim);font-size:12px;">No sessions available</div>';
+    el.innerHTML = '<div style="padding:16px;color:var(--text-dim);font-size:12px;text-align:center;">No sessions found</div>';
     return;
   }
   state.sessions.forEach(function(s) {
+    const isActive = s.session_id === state.sessionId;
     const item = document.createElement('div');
-    item.className = 'session-item' + (s.session_id === state.sessionId ? ' active' : '');
-    item.textContent = s.title || s.session_id;
+    item.className = 'session-item' + (isActive ? ' active' : '');
+
+    const titleEl = document.createElement('div');
+    titleEl.className = 'session-item-title';
+    titleEl.textContent = s.title || s.session_id;
+
+    const metaEl = document.createElement('div');
+    metaEl.className = 'session-item-meta';
+    var metaParts = [];
+    if (s.message_count != null) metaParts.push(s.message_count + ' msg' + (s.message_count !== 1 ? 's' : ''));
+    if (s.last_message_at) metaParts.push(relativeTime(s.last_message_at));
+    metaEl.textContent = metaParts.join(' · ');
+
+    item.appendChild(titleEl);
+    item.appendChild(metaEl);
     item.title = s.session_id;
     item.onclick = function() {
-      send({ type: 'switch_session', sessionId: s.session_id });
+      if (!isActive) {
+        send({ type: 'switch_session', sessionId: s.session_id });
+      }
       toggleSessions();
     };
     el.appendChild(item);
@@ -634,86 +838,169 @@ function renderSessionList() {
 
 function toggleSessions() {
   state.showSessions = !state.showSessions;
-  const bar = document.getElementById('session-bar');
-  bar.className = state.showSessions ? 'visible' : '';
+  const overlay  = document.getElementById('session-overlay');
+  const messages = document.getElementById('messages');
   if (state.showSessions) {
-    send({ type: 'list_sessions' });
+    overlay.classList.add('visible');
+    messages.classList.add('sessions-open');   // hide messages; overlay takes flex:1 slot
+    retrySessions();
+  } else {
+    overlay.classList.remove('visible');
+    messages.classList.remove('sessions-open');
   }
 }
 
-// ─────────────────────────────────────────────
-// Theme toggle
-// ─────────────────────────────────────────────
-function toggleTheme() {
-  const html = document.documentElement;
-  const btn = document.getElementById('btn-theme');
-  const isLight = html.getAttribute('data-theme') === 'light';
-  if (isLight) {
-    html.removeAttribute('data-theme');
-    if (btn) btn.textContent = '🌙';
-    try { localStorage.setItem('jiuwen-theme', 'dark'); } catch(e){}
-  } else {
-    html.setAttribute('data-theme', 'light');
-    if (btn) btn.textContent = '☀️';
-    try { localStorage.setItem('jiuwen-theme', 'light'); } catch(e){}
-  }
+function showSessionsError(message) {
+  var msg = escapeHtml(message || 'Failed to load sessions');
+  document.getElementById('session-list').innerHTML =
+    '<div style="padding:16px;display:flex;flex-direction:column;gap:10px;">' +
+      '<div style="color:var(--error-text);font-size:12px;">⚠ ' + msg + '</div>' +
+      '<button onclick="retrySessions()" style="' +
+        'background:var(--bg3);border:1px solid var(--border);color:var(--text-muted);' +
+        'border-radius:var(--radius);padding:4px 10px;font-size:11px;cursor:pointer;' +
+        'align-self:flex-start;"' +
+      '>↺ Retry</button>' +
+    '</div>';
 }
+
+function retrySessions() {
+  document.getElementById('session-list').innerHTML =
+    '<div style="padding:16px;color:var(--text-dim);font-size:12px;text-align:center;">Loading…</div>';
+  send({ type: 'list_sessions' });
+}
+
+function relativeTime(ts) {
+  var now = Date.now();
+  var t = typeof ts === 'number' ? (ts < 1e12 ? ts * 1000 : ts) : now;
+  var diff = Math.floor((now - t) / 1000);
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+  if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+  return Math.floor(diff / 86400) + 'd ago';
+}
+
+// ─────────────────────────────────────────────
+// Theme  (auto / dark / light)
+// ─────────────────────────────────────────────
+function applyTheme() {
+  var isDark;
+  if (state.themeMode === 'auto') {
+    isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  } else {
+    isDark = (state.themeMode === 'dark');
+  }
+  if (isDark) {
+    document.documentElement.removeAttribute('data-theme');
+  } else {
+    document.documentElement.setAttribute('data-theme', 'light');
+  }
+  updateThemeMenuChecks();
+}
+
+function setThemeMode(mode) {
+  state.themeMode = mode;
+  try { localStorage.setItem('jiuwen-theme', mode); } catch(e) {}
+  applyTheme();
+  document.getElementById('settings-menu').classList.remove('visible');
+}
+
+function updateThemeMenuChecks() {
+  ['auto', 'dark', 'light'].forEach(function(m) {
+    var el = document.getElementById('theme-item-' + m);
+    if (el) el.classList.toggle('active', state.themeMode === m);
+  });
+}
+
+// React to OS/IDE colour-scheme changes while in auto mode
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function() {
+  if (state.themeMode === 'auto') applyTheme();
+});
 
 function restoreTheme() {
-  const saved = (function(){ try { return localStorage.getItem('jiuwen-theme'); } catch(e){ return null; } })();
-  if (saved === 'light') {
-    document.documentElement.setAttribute('data-theme', 'light');
-    const btn = document.getElementById('btn-theme');
-    if (btn) btn.textContent = '☀️';
-  }
+  var saved = null;
+  try { saved = localStorage.getItem('jiuwen-theme'); } catch(e) {}
+  state.themeMode = saved || 'auto';
+  applyTheme();
+}
+
+// ─────────────────────────────────────────────
+// Mode selector (custom dropdown, opens upward)
+// ─────────────────────────────────────────────
+function toggleModeDropdown() {
+  document.getElementById('mode-dropdown').classList.toggle('visible');
+}
+
+function closeModeDropdown() {
+  document.getElementById('mode-dropdown').classList.remove('visible');
+}
+
+function selectMode(mode) {
+  state.mode = mode;
+  document.getElementById('mode-label').textContent = mode.replace('.', ' · ');
+  document.querySelectorAll('.mode-option').forEach(function(opt) {
+    opt.classList.toggle('selected', opt.dataset.mode === mode);
+  });
+  closeModeDropdown();
 }
 
 // ─────────────────────────────────────────────
 // Settings menu
 // ─────────────────────────────────────────────
 function toggleSettingsMenu() {
-  const menu = document.getElementById('settings-menu');
-  menu.classList.toggle('visible');
+  document.getElementById('settings-menu').classList.toggle('visible');
 }
 
 function showSessionsFromMenu() {
-  toggleSettingsMenu();
+  document.getElementById('settings-menu').classList.remove('visible');
   toggleSessions();
-}
-
-function setModeFromMenu(mode) {
-  const sel = document.getElementById('mode-select');
-  if (sel) {
-    sel.value = mode;
-    sendModeChange();
-  }
-  toggleSettingsMenu();
-}
-
-function sendModeChange() {
-  const sel = document.getElementById('mode-select');
-  if (sel) send({ type: 'set_mode', mode: sel.value });
 }
 
 function toggleDebugFromMenu() {
   state.showDebug = !state.showDebug;
   document.getElementById('debug-check').textContent = state.showDebug ? '☑' : '☐';
   send({ type: 'toggle_debug', enabled: state.showDebug });
-  toggleSettingsMenu();
+  document.getElementById('settings-menu').classList.remove('visible');
+  var panel = document.getElementById('debug-panel');
+  if (state.showDebug) {
+    panel.classList.add('visible');
+  } else {
+    panel.classList.remove('visible');
+  }
 }
 
-// Click outside to close settings menu
+// Click outside to close both dropdowns
 document.addEventListener('click', function(e) {
-  const menu = document.getElementById('settings-menu');
-  const btn = document.getElementById('btn-settings');
-  if (menu.classList.contains('visible') && !menu.contains(e.target) && e.target !== btn) {
-    menu.classList.remove('visible');
+  const settingsMenu = document.getElementById('settings-menu');
+  const settingsBtn  = document.getElementById('btn-settings');
+  if (settingsMenu.classList.contains('visible') &&
+      !settingsMenu.contains(e.target) && e.target !== settingsBtn) {
+    settingsMenu.classList.remove('visible');
+  }
+
+  const modeDropdown = document.getElementById('mode-dropdown');
+  const modeBtn      = document.getElementById('mode-btn');
+  if (modeDropdown.classList.contains('visible') &&
+      !modeDropdown.contains(e.target) && e.target !== modeBtn &&
+      !modeBtn.contains(e.target)) {
+    modeDropdown.classList.remove('visible');
   }
 });
 
 function appendDebugLog(line) {
-  // Debug log is streamed to IDEA log when in debug mode.
-  // The Kotlin side logs it; nothing to show in-webview for now.
+  var log = document.getElementById('debug-log');
+  if (!log) return;
+  var lineEl = document.createElement('div');
+  lineEl.className = 'debug-line';
+  lineEl.textContent = '[' + new Date().toLocaleTimeString() + '] ' + line;
+  log.appendChild(lineEl);
+  // Keep at most 500 lines to avoid memory growth
+  while (log.children.length > 500) log.removeChild(log.firstChild);
+  log.scrollTop = log.scrollHeight;
+}
+
+function clearDebugLog() {
+  var log = document.getElementById('debug-log');
+  if (log) log.innerHTML = '';
 }
 
 // ─────────────────────────────────────────────
@@ -923,16 +1210,10 @@ inputEl.addEventListener('input', function() {
 
 sendBtn.addEventListener('click', submitMessage);
 
-const modeSelectEl = document.getElementById('mode-select');
-if (modeSelectEl) {
-  modeSelectEl.addEventListener('change', sendModeChange);
-}
-
 function submitMessage() {
   const content = inputEl.value.trim();
   if (!content || !state.connected || state.streaming) return;
 
-  const mode = document.getElementById('mode-select').value;
   const requestId = generateId();
 
   beginTurn(requestId, content);
@@ -941,7 +1222,7 @@ function submitMessage() {
   send({
     type: 'send',
     content: content,
-    mode: mode,
+    mode: state.mode,
     requestId: requestId,
   });
 
@@ -962,6 +1243,16 @@ function setStreaming(yes) {
 function hideEmptyState() {
   const es = document.getElementById('empty-state');
   if (es) es.remove();
+}
+
+function clearMessages() {
+  const msgs = document.getElementById('messages');
+  msgs.innerHTML = '';
+  state.pendingTurns = {};
+  state.streaming = false;
+  document.getElementById('input').disabled = false;
+  document.getElementById('send-btn').disabled = false;
+  document.getElementById('token-counter').textContent = '';
 }
 
 function showError(msg) {
@@ -1059,7 +1350,7 @@ function renderInline(line) {
 }
 
 // ─────────────────────────────────────────────
-// Init: notify host that webview is ready
+// Init: restore theme, notify host that webview is ready
 // ─────────────────────────────────────────────
 window.addEventListener('load', function() {
   restoreTheme();
