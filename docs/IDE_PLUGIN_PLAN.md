@@ -13,7 +13,7 @@ Legend: ✅ done · 🔶 partial · ❌ not started
 | Feature | JetBrains | VS Code |
 |---------|-----------|---------|
 | Chat panel with streaming markdown rendering | ✅ | ✅ |
-| Session list (create / switch) | ✅ | ✅ (no delete) |
+| Session list (create / switch / delete) | ✅ | ✅ (no delete) |
 | Automatic context injection (active file, selection, language) | ✅ | ✅ |
 | Tool call cards (file read/write, bash, etc.) | ✅ | ✅ (via shared webview) |
 | Inline diff for file edits (accept / reject) | ✅ | ❌ |
@@ -27,7 +27,7 @@ Legend: ✅ done · 🔶 partial · ❌ not started
 | Diagnostics context: IDE errors/warnings injected into every message | ✅ | ✅ |
 | Git context: current branch + uncommitted change count | ✅ | ❌ |
 | Multi-file context: all open tabs sent with each message | ✅ | ❌ |
-| Project tree context: directory listing of workspace | ❌ | ❌ |
+| Project tree context: directory listing of workspace | ✅ | ❌ |
 | "Fix with JiuwenSwarm" quick action on errors (Alt+Enter) | ✅ | ❌ |
 | Right-click → "Send Selection to JiuwenSwarm" | ✅ | ✅ |
 | Inline ghost text suggestions (like Copilot) | ❌ | ❌ |
@@ -41,7 +41,7 @@ Legend: ✅ done · 🔶 partial · ❌ not started
 | Approval workflow: tool calls require user confirmation | ❌ | ❌ |
 | Terminal integration: agent runs commands in IDE terminal | ❌ | ❌ |
 | Symbol navigation: agent references symbols for jump-to-definition | ❌ | ❌ |
-| Checkpoint / rewind: undo all file changes from last turn | ❌ | ❌ |
+| Checkpoint / rewind: undo all file changes from last turn | ✅ | ❌ |
 | Pair programming mode: agent narrates thought process in real time | ❌ | ❌ |
 
 ---
@@ -87,6 +87,9 @@ Legend: ✅ done · 🔶 partial · ❌ not started
 | 4 | Multi-file context (all open tabs) | ✅ | ❌ |
 | 5 | Skills browser panel | ✅ | ❌ |
 | 6 | Token usage in status bar | ✅ | ❌ |
+| 7 | Project tree context (2-level directory listing injected per message) | ✅ | ❌ |
+| 8 | Session delete from sessions overlay (two-click confirmation) | ✅ | ❌ |
+| 9 | Checkpoint / rewind: snapshot files before agent edits; one-click restore | ✅ | ❌ |
 
 **Deliverable**: First-class AI assistant experience on par with Copilot Chat / Cursor.
 

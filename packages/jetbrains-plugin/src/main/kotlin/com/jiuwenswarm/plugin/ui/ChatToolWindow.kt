@@ -4,8 +4,11 @@ import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ReadAction
+import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
@@ -84,6 +87,12 @@ class ChatPanel(
 
     // Debug logging is toggled from the webview; when true we log to IDEA log.
     @Volatile private var debugEnabled = false
+
+    // Snapshot tracking for checkpoint/rewind feature.
+    // currentTurnSnapshots: file path → content before first edit this turn (null = file didn't exist).
+    // lastTurnSnapshots: promoted from currentTurnSnapshots on chat.final; used for rewind.
+    private val currentTurnSnapshots = mutableMapOf<String, String?>()
+    @Volatile private var lastTurnSnapshots = mapOf<String, String?>()
 
     val component: JComponent get() = browser.component
 
@@ -181,6 +190,10 @@ class ChatPanel(
                     val rid = msg.get("requestId")?.asString ?: return
                     val mediaItems = msg.getAsJsonArray("media_items")
                     lastRequestId = rid
+                    // Clear snapshots from previous turn; rewind is no longer valid once user sends a new message
+                    currentTurnSnapshots.clear()
+                    lastTurnSnapshots = emptyMap()
+                    dispatchToWebview(mapOf("type" to "rewindable", "enabled" to false))
                     debug("SEND  → requestId=$rid mode=$mode content=${content.take(60)} media=${mediaItems?.size() ?: 0}")
                     val ideContext = ContextCollector.collect(project)
                     if (!service.session.sendChat(content, mode, rid, ideContext, mediaItems)) {
@@ -201,6 +214,9 @@ class ChatPanel(
                 "new_session" -> ApplicationManager.getApplication().executeOnPooledThread {
                     try {
                         debug("ACTION→ new_session (reconnecting for fresh session)")
+                        currentTurnSnapshots.clear()
+                        lastTurnSnapshots = emptyMap()
+                        dispatchToWebview(mapOf("type" to "rewindable", "enabled" to false))
                         service.ws.reconnect()
                     } catch (e: Exception) {
                         dispatchToWebview(mapOf("type" to "error", "message" to e.message))
@@ -263,6 +279,49 @@ class ChatPanel(
                         }
                     }
                 }
+                "delete_session" -> {
+                    val sid = msg.get("sessionId")?.asString ?: return
+                    ApplicationManager.getApplication().executeOnPooledThread {
+                        try {
+                            debug("ACTION→ delete_session $sid")
+                            service.session.deleteSession(sid)
+                            dispatchToWebview(mapOf("type" to "session_deleted", "sessionId" to sid))
+                        } catch (e: Exception) {
+                            LOG.warn("delete_session failed", e)
+                            dispatchToWebview(mapOf("type" to "sessions_error",
+                                "message" to (e.message ?: "Failed to delete session")))
+                        }
+                    }
+                }
+                "rewind" -> {
+                    val snapshots = lastTurnSnapshots
+                    if (snapshots.isEmpty()) return
+                    ApplicationManager.getApplication().executeOnPooledThread {
+                        var restored = 0
+                        var failed = 0
+                        for ((path, originalContent) in snapshots) {
+                            try {
+                                WriteCommandAction.runWriteCommandAction(project, "Rewind agent changes", null, Runnable {
+                                    val vf = LocalFileSystem.getInstance().refreshAndFindFileByPath(path)
+                                    if (originalContent == null) {
+                                        vf?.delete(this)
+                                    } else if (vf != null) {
+                                        vf.setBinaryContent(originalContent.toByteArray(vf.charset))
+                                    }
+                                })
+                                restored++
+                            } catch (e: Exception) {
+                                debug("Rewind failed for $path: ${e.message}")
+                                failed++
+                            }
+                        }
+                        lastTurnSnapshots = emptyMap()
+                        val resultMsg = if (failed == 0) "Rewound $restored file(s)"
+                                        else "Rewound $restored file(s), $failed failed"
+                        dispatchToWebview(mapOf("type" to "rewind_done", "message" to resultMsg,
+                            "restored" to restored, "failed" to failed))
+                    }
+                }
             }
         } catch (e: Exception) {
             LOG.warn("Failed to parse webview message: $jsonStr", e)
@@ -305,7 +364,39 @@ class ChatPanel(
         }
         val converted = convertServerMessageToLegacyEvent(msg, lastRequestId)
         if (converted != null) {
-            debug("CONV  → event_type=${converted.get("event_type")?.asString} request_id=${converted.get("request_id")?.asString}")
+            val et = converted.get("event_type")?.asString
+            // ── Snapshot files before they are edited so rewind can restore them ──
+            if (et == "chat.tool_call") {
+                val payload = converted.getAsJsonObject("payload") ?: JsonObject()
+                val toolName = payload.get("tool_name")?.asString ?: ""
+                if (toolName in setOf("str_replace_editor", "write_file", "create_file")) {
+                    val args = payload.getAsJsonObject("tool_call")?.getAsJsonObject("arguments")
+                        ?: payload.getAsJsonObject("tool_input")
+                        ?: payload.getAsJsonObject("input")
+                    val path = args?.get("path")?.asString
+                    if (path != null && !currentTurnSnapshots.containsKey(path)) {
+                        val vf = LocalFileSystem.getInstance().findFileByPath(path)
+                        currentTurnSnapshots[path] = vf?.let {
+                            try {
+                                ReadAction.compute<String, Throwable> {
+                                    String(it.contentsToByteArray(), it.charset)
+                                }
+                            } catch (_: Exception) { null }
+                        }
+                        debug("SNAP  → snapshotted $path (existed=${vf != null})")
+                    }
+                }
+            }
+            // ── On turn end, promote snapshots and show rewind bar ──
+            if (et == "chat.final") {
+                if (currentTurnSnapshots.isNotEmpty()) {
+                    lastTurnSnapshots = currentTurnSnapshots.toMap()
+                    dispatchToWebview(mapOf("type" to "rewindable", "enabled" to true))
+                    debug("SNAP  → turn complete, ${lastTurnSnapshots.size} file(s) snapshotted")
+                }
+                currentTurnSnapshots.clear()
+            }
+            debug("CONV  → event_type=$et request_id=${converted.get("request_id")?.asString}")
             dispatchToWebview(mapOf("type" to "jiuwen_event", "event" to converted))
             trackTokenUsage(converted)
         } else {

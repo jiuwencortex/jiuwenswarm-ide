@@ -99,6 +99,7 @@ Every message you send automatically has a structured context block prepended. T
 | Selected code | `Editor.selectionModel` | Fenced code block of the current selection |
 | Editor diagnostics | Document markup model (error-stripe highlighters) | Up to 10 current errors and warnings from the editor gutter |
 | Other open tabs | `FileEditorManager.openFiles` | Paths of up to 10 other files open in the editor |
+| Project tree structure | `LocalFileSystem` + `VirtualFile` traversal | 2-level directory listing of the project root; skips `node_modules`, `build`, `.git`, `target`, etc. |
 | Git status | `git` subprocess | `Git: branch=feature/auth, 3 uncommitted changes` |
 
 The block is assembled at send time. If there is nothing useful (no editor open, no git repo, no selection), the message is sent without a context block.
@@ -125,6 +126,14 @@ Other open files (3):
   /Users/mishka/project/src/api/router.py
   /Users/mishka/project/src/models/request.py
   /Users/mishka/project/tests/test_handler.py
+
+Project structure:
+src/
+  api/
+  models/
+tests/
+pyproject.toml
+README.md
 
 Git: branch=feature/async-refactor, 3 uncommitted changes
 <!-- End IDE Context -->
@@ -221,6 +230,40 @@ Enable **Auto-apply file edits** in **Settings → Tools → JiuwenSwarm** to sk
 
 ---
 
+## Checkpoint / Rewind
+
+After every agent turn that edits one or more files, a rewind bar appears between the message list and the debug/input area:
+
+```
+⟲ Agent edited files this turn    [⟲ Undo changes]
+```
+
+### How it works
+
+Before the agent's first edit to a file in a given turn the plugin snapshots the current file content. At the end of the turn (`chat.final`) the snapshots are locked in and the rewind bar becomes active.
+
+### Using the rewind bar
+
+Click **⟲ Undo changes**. The plugin restores every snapshotted file to its pre-turn state. The restore runs as a `WriteCommandAction`, meaning it is itself **undoable** with `Ctrl+Z` / `⌘Z` if you change your mind.
+
+After a successful rewind the bar disappears and a status line appears in the message list, for example:
+
+```
+⟲ Rewound 3 file(s)
+```
+
+### Scope and limits
+
+| Scenario | Behaviour |
+|----------|-----------|
+| Agent created a new file | The file is deleted on rewind |
+| Agent edited an existing file | The file is restored to the content before the first edit in the turn |
+| You send another message | The bar disappears; snapshots are discarded — only the most recent completed turn can be rewound |
+| New session | Rewind bar is cleared |
+| Rewind partially fails | Bar disappears; status line reports how many files were restored and how many failed |
+
+---
+
 ## Sessions
 
 Sessions maintain separate conversation histories. You can run several parallel conversations (one per project, feature, or topic) and resume any of them at any time.
@@ -243,6 +286,12 @@ Click a session item to switch. The overlay closes, the header title updates, an
 ### Creating a new session
 
 Click the **New** button in the header (or press `Ctrl+Shift+J` / `⌘⇧J`). This reconnects the WebSocket, which triggers automatic session creation on the server side.
+
+### Deleting a session
+
+Each non-active session row has a **✕** button on the right side of the title. Click it once — the button turns red and the tooltip changes to "Click again to confirm". Click it a second time within 2 seconds to permanently delete the session from the server. The row is removed from the list immediately.
+
+The currently active session cannot be deleted from the overlay. To delete it, click **New** to start a fresh session first, then delete the old one.
 
 ### Refreshing the list
 
@@ -352,6 +401,10 @@ This is most useful when something is not working as expected and you need to se
 | Session list stays on "Loading…" | Server timeout (5 s) or method not supported | Click **↺ Retry**; check server logs for `session.list` errors |
 | Skills list shows an error | Server does not support `skills.list` | Expected on older server versions; upgrade the server to enable the skills panel |
 | IDE log filled with `[JiuwenSwarmDebug]` lines | Debug mode was left on | Open the panel and click **⚙ → Debug log** to toggle it off |
+| Rewind bar does not appear after agent edits a file | Auto-apply may be off so edits were not applied, or the server did not send `chat.final` | Enable the Debug log to check for `SNAP →` lines; verify the turn completed normally |
+| Rewind restores 0 files | Snapshots were cleared by a subsequent message before rewind was clicked | The rewind window only lasts for the most recently completed turn |
+| Session ✕ button is not visible | The session is the currently active one | Active sessions cannot be deleted; switch to another session first |
+| "Project structure" not appearing in context | No project root detected (`project.basePath` is null) | This can happen in the default project or when no project folder is open |
 
 ### Reading the IDE log
 

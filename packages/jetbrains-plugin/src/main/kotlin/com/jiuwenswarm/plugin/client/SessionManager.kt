@@ -90,6 +90,14 @@ class SessionManager(
         request("skills.toggle", mapOf("skill_id" to skillId, "enabled" to enabled))
     }
 
+    /**
+     * Permanently deletes a session by its ID.
+     * Throws if the server does not support session.delete or the session does not exist.
+     */
+    fun deleteSession(sid: String) {
+        request("session.delete", mapOf("session_id" to sid))
+    }
+
     fun switchSession(sid: String) {
         val payload = request("session.switch", mapOf("session_id" to sid), sid)
         setSessionId(sid)
