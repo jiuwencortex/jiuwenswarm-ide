@@ -68,6 +68,7 @@
     flex-direction: column;
     height: 100vh;
     overflow: hidden;
+    position: relative;
   }
 
   /* ── Header ── */
@@ -220,35 +221,136 @@
   .mode-option:hover { background: var(--bg); color: var(--text); }
   .mode-option.selected { color: var(--text); font-weight: 600; }
 
-  /* ── Session picker ── */
-  #session-bar {
+  /* ── Session picker overlay ── */
+  #session-overlay {
     display: none;
-    background: var(--bg3);
-    border-bottom: 1px solid var(--border);
-    padding: 4px 8px;
-    flex-shrink: 0;
+    position: absolute;
+    top: 36px; /* below header */
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 200;
+    background: var(--bg2);
+    border-top: 1px solid var(--border);
+    flex-direction: column;
   }
-  #session-bar.visible { display: block; }
+  #session-overlay.visible { display: flex; }
+  #session-overlay-header {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg3);
+    flex-shrink: 0;
+    gap: 8px;
+  }
+  #session-overlay-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    flex: 1;
+  }
+  #session-overlay-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 2px 6px;
+    border-radius: var(--radius);
+    line-height: 1;
+  }
+  #session-overlay-close:hover { color: var(--text); background: var(--bg); }
   #session-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    max-height: 160px;
-    overflow-y: auto;
+    gap: 4px;
   }
+  #session-list::-webkit-scrollbar { width: 6px; }
+  #session-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
   .session-item {
-    padding: 4px 8px;
+    padding: 8px 10px;
     border-radius: var(--radius);
     cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--bg3);
+    transition: border-color 0.15s, background 0.15s;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .session-item:hover { border-color: var(--accent); background: var(--bg); }
+  .session-item.active { border-color: var(--accent); background: rgba(14,99,156,0.12); }
+  .session-item-title {
     font-size: 12px;
-    color: var(--text-muted);
+    color: var(--text);
+    font-weight: 500;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    transition: background 0.1s;
   }
-  .session-item:hover { background: var(--bg); color: var(--text); }
-  .session-item.active { color: var(--text); background: var(--accent); }
+  .session-item.active .session-item-title::after {
+    content: ' ✓';
+    color: var(--accent);
+    font-size: 11px;
+  }
+  .session-item-meta {
+    font-size: 10px;
+    color: var(--text-dim);
+    display: flex;
+    gap: 8px;
+  }
+
+  /* ── Debug console (shown above input when debug is on) ── */
+  #debug-panel {
+    display: none;
+    height: 140px;
+    border-top: 1px solid var(--border);
+    background: #0d1117;
+    flex-shrink: 0;
+    flex-direction: column;
+  }
+  #debug-panel.visible { display: flex; }
+  #debug-panel-header {
+    display: flex;
+    align-items: center;
+    padding: 2px 8px;
+    background: var(--bg3);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    gap: 6px;
+  }
+  #debug-panel-header span:first-child {
+    font-size: 10px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    flex: 1;
+  }
+  #debug-clear-btn {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 10px;
+    padding: 1px 4px;
+    border-radius: 3px;
+  }
+  #debug-clear-btn:hover { color: var(--text); background: var(--bg); }
+  #debug-log {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 8px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    line-height: 1.5;
+  }
+  #debug-log::-webkit-scrollbar { width: 4px; }
+  #debug-log::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .debug-line { color: #4ec9b0; white-space: pre-wrap; word-break: break-all; }
 
   /* ── Messages ── */
   #messages {
@@ -515,7 +617,12 @@
   </div>
 </div>
 
-<div id="session-bar">
+<!-- Sessions overlay — covers the panel when open -->
+<div id="session-overlay">
+  <div id="session-overlay-header">
+    <span id="session-overlay-title">Sessions</span>
+    <button id="session-overlay-close" onclick="toggleSessions()" title="Close">✕</button>
+  </div>
   <div id="session-list"></div>
 </div>
 
@@ -525,6 +632,15 @@
     <div>Start a conversation</div>
     <div style="font-size:11px;opacity:0.6">Connecting to JiuwenSwarm…</div>
   </div>
+</div>
+
+<!-- Debug console — shown above input when debug mode is on -->
+<div id="debug-panel">
+  <div id="debug-panel-header">
+    <span>Debug Log</span>
+    <button id="debug-clear-btn" onclick="clearDebugLog()" title="Clear">Clear</button>
+  </div>
+  <div id="debug-log"></div>
 </div>
 
 <div id="input-area">
@@ -678,16 +794,32 @@ function renderSessionList() {
   const el = document.getElementById('session-list');
   el.innerHTML = '';
   if (!state.sessions.length) {
-    el.innerHTML = '<div style="padding:8px 12px;color:var(--text-dim);font-size:12px;">No sessions available</div>';
+    el.innerHTML = '<div style="padding:16px;color:var(--text-dim);font-size:12px;text-align:center;">No sessions found</div>';
     return;
   }
   state.sessions.forEach(function(s) {
+    const isActive = s.session_id === state.sessionId;
     const item = document.createElement('div');
-    item.className = 'session-item' + (s.session_id === state.sessionId ? ' active' : '');
-    item.textContent = s.title || s.session_id;
+    item.className = 'session-item' + (isActive ? ' active' : '');
+
+    const titleEl = document.createElement('div');
+    titleEl.className = 'session-item-title';
+    titleEl.textContent = s.title || s.session_id;
+
+    const metaEl = document.createElement('div');
+    metaEl.className = 'session-item-meta';
+    var metaParts = [];
+    if (s.message_count != null) metaParts.push(s.message_count + ' msg' + (s.message_count !== 1 ? 's' : ''));
+    if (s.last_message_at) metaParts.push(relativeTime(s.last_message_at));
+    metaEl.textContent = metaParts.join(' · ');
+
+    item.appendChild(titleEl);
+    item.appendChild(metaEl);
     item.title = s.session_id;
     item.onclick = function() {
-      send({ type: 'switch_session', sessionId: s.session_id });
+      if (!isActive) {
+        send({ type: 'switch_session', sessionId: s.session_id });
+      }
       toggleSessions();
     };
     el.appendChild(item);
@@ -696,11 +828,23 @@ function renderSessionList() {
 
 function toggleSessions() {
   state.showSessions = !state.showSessions;
-  const bar = document.getElementById('session-bar');
-  bar.className = state.showSessions ? 'visible' : '';
+  const overlay = document.getElementById('session-overlay');
   if (state.showSessions) {
+    overlay.classList.add('visible');
     send({ type: 'list_sessions' });
+  } else {
+    overlay.classList.remove('visible');
   }
+}
+
+function relativeTime(ts) {
+  var now = Date.now();
+  var t = typeof ts === 'number' ? (ts < 1e12 ? ts * 1000 : ts) : now;
+  var diff = Math.floor((now - t) / 1000);
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+  if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+  return Math.floor(diff / 86400) + 'd ago';
 }
 
 // ─────────────────────────────────────────────
@@ -784,6 +928,12 @@ function toggleDebugFromMenu() {
   document.getElementById('debug-check').textContent = state.showDebug ? '☑' : '☐';
   send({ type: 'toggle_debug', enabled: state.showDebug });
   document.getElementById('settings-menu').classList.remove('visible');
+  var panel = document.getElementById('debug-panel');
+  if (state.showDebug) {
+    panel.classList.add('visible');
+  } else {
+    panel.classList.remove('visible');
+  }
 }
 
 // Click outside to close both dropdowns
@@ -805,8 +955,20 @@ document.addEventListener('click', function(e) {
 });
 
 function appendDebugLog(line) {
-  // Debug log is streamed to IDEA log when in debug mode.
-  // The Kotlin side logs it; nothing to show in-webview for now.
+  var log = document.getElementById('debug-log');
+  if (!log) return;
+  var lineEl = document.createElement('div');
+  lineEl.className = 'debug-line';
+  lineEl.textContent = '[' + new Date().toLocaleTimeString() + '] ' + line;
+  log.appendChild(lineEl);
+  // Keep at most 500 lines to avoid memory growth
+  while (log.children.length > 500) log.removeChild(log.firstChild);
+  log.scrollTop = log.scrollHeight;
+}
+
+function clearDebugLog() {
+  var log = document.getElementById('debug-log');
+  if (log) log.innerHTML = '';
 }
 
 // ─────────────────────────────────────────────

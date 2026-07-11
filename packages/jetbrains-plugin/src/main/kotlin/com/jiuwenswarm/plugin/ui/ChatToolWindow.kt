@@ -235,6 +235,7 @@ class ChatPanel(
     private fun debug(line: String) {
         if (!debugEnabled) return
         LOG.info("[JiuwenSwarmDebug] $line")
+        dispatchToWebview(mapOf("type" to "debug_log", "line" to line))
     }
 
     private fun onStatusChange(@Suppress("UNUSED_PARAMETER") s: WsStatus) {
