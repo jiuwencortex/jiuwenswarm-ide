@@ -1,0 +1,163 @@
+import * as vscode from 'vscode';
+import * as path from 'path';
+import * as fs from 'fs';
+import { WsClient } from './client/WsClient';
+import { SessionManager } from './client/SessionManager';
+import { ChatPanel } from './ui/ChatPanel';
+import { StatusBar } from './ui/StatusBar';
+
+let ws: WsClient | undefined;
+let session: SessionManager | undefined;
+let statusBar: StatusBar | undefined;
+let chatPanel: ChatPanel | undefined;
+
+export function activate(context: vscode.ExtensionContext): void {
+  const cfg = vscode.workspace.getConfiguration('jiuwenswarm');
+  const host = cfg.get<string>('host', 'localhost');
+  const port = cfg.get<number>('port', 19000);
+  const channelId = cfg.get<string>('channelId', 'ide');
+  const autoConnect = cfg.get<boolean>('autoConnect', true);
+  const url = `ws://${host}:${port}/ws`;
+
+  // Copy shared webview HTML into extension resources
+  ensureWebviewHtml(context);
+
+  // Create core singletons
+  ws = new WsClient(url);
+  session = new SessionManager(ws, channelId);
+  statusBar = new StatusBar(ws);
+  chatPanel = new ChatPanel(context, ws, session);
+
+  // Register sidebar webview provider
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(ChatPanel.viewId, chatPanel, {
+      webviewOptions: { retainContextWhenHidden: true },
+    }),
+  );
+
+  // Connect + create initial session once WS is up
+  if (autoConnect) {
+    ws.on('status', async (s) => {
+      if (s === 'connected' && !session!.sessionId) {
+        try {
+          await session!.createSession();
+        } catch (e) {
+          vscode.window.showWarningMessage(`JiuwenSwarm: Could not create session — ${e}`);
+        }
+      }
+    });
+    ws.connect();
+  }
+
+  // ── Commands ──
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('jiuwenswarm.openChat', () => {
+      vscode.commands.executeCommand('jiuwenswarm.chatView.focus');
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('jiuwenswarm.newSession', async () => {
+      if (!ws?.isConnected()) {
+        vscode.window.showWarningMessage('JiuwenSwarm: Not connected');
+        return;
+      }
+      try {
+        await session!.createSession();
+        chatPanel?.postToWebview({
+          type: 'connected',
+          sessionId: session!.sessionId!,
+          sessionTitle: session!.sessionTitle,
+        });
+        vscode.commands.executeCommand('jiuwenswarm.chatView.focus');
+      } catch (e) {
+        vscode.window.showErrorMessage(`JiuwenSwarm: ${e}`);
+      }
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('jiuwenswarm.sendSelection', () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor || editor.selection.isEmpty) {
+        vscode.window.showInformationMessage('JiuwenSwarm: No selection');
+        return;
+      }
+      const selection = editor.document.getText(editor.selection);
+      const fileName = path.basename(editor.document.fileName);
+      chatPanel?.appendSelectionContext(selection, fileName);
+      vscode.commands.executeCommand('jiuwenswarm.chatView.focus');
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('jiuwenswarm.reconnect', () => {
+      ws?.connect();
+    }),
+  );
+
+  // Re-read config if changed
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration('jiuwenswarm')) {
+        vscode.window.showInformationMessage(
+          'JiuwenSwarm: Settings changed — reload window to apply.',
+          'Reload',
+        ).then((action) => {
+          if (action === 'Reload') {
+            vscode.commands.executeCommand('workbench.action.reloadWindow');
+          }
+        });
+      }
+    }),
+  );
+
+  context.subscriptions.push({ dispose: () => cleanup() });
+}
+
+export function deactivate(): void {
+  cleanup();
+}
+
+function cleanup(): void {
+  ws?.disconnect();
+  statusBar?.dispose();
+}
+
+/**
+ * Copy the shared chat.html from the monorepo into extension resources
+ * so that it can be served from the extension's localResourceRoots.
+ * In production builds, this file is packaged alongside the extension.
+ */
+function ensureWebviewHtml(context: vscode.ExtensionContext): void {
+  const resourceDir = path.join(context.extensionPath, 'resources');
+  const destPath = path.join(resourceDir, 'chat.html');
+
+  if (fs.existsSync(destPath)) return; // already there
+
+  // Try to find the shared webview relative to this extension
+  const candidates = [
+    // Development (monorepo): extension is packages/vscode-extension
+    path.join(context.extensionPath, '..', '..', 'packages', 'shared-webview', 'chat.html'),
+    path.join(context.extensionPath, '..', 'shared-webview', 'chat.html'),
+  ];
+
+  for (const src of candidates) {
+    if (fs.existsSync(src)) {
+      try {
+        fs.mkdirSync(resourceDir, { recursive: true });
+        fs.copyFileSync(src, destPath);
+        return;
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  // If not found during development, generate a minimal placeholder
+  if (!fs.existsSync(resourceDir)) fs.mkdirSync(resourceDir, { recursive: true });
+  if (!fs.existsSync(destPath)) {
+    fs.writeFileSync(destPath, '<html><body style="color:#d4d4d4;background:#1e1e1e;font-family:sans-serif;padding:16px">Loading JiuwenSwarm…</body></html>');
+  }
+}

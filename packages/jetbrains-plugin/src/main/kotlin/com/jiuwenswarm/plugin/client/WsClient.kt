@@ -1,0 +1,121 @@
+package com.jiuwenswarm.plugin.client
+
+import com.google.gson.Gson
+import com.google.gson.JsonObject
+import com.intellij.openapi.Disposable
+import com.intellij.openapi.diagnostic.logger
+import okhttp3.*
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+
+private val LOG = logger<WsClient>()
+
+enum class WsStatus { DISCONNECTED, CONNECTING, CONNECTED, RECONNECTING }
+
+typealias StatusListener = (WsStatus) -> Unit
+typealias MessageListener = (JsonObject) -> Unit
+
+private val BACKOFF_SECONDS = longArrayOf(1, 2, 4, 8, 16, 30)
+private val gson = Gson()
+
+class WsClient(private val url: String) : Disposable {
+
+    private val client = OkHttpClient.Builder()
+        .pingInterval(15, TimeUnit.SECONDS)
+        .readTimeout(0, TimeUnit.MILLISECONDS)
+        .build()
+
+    private val scheduler = Executors.newSingleThreadScheduledExecutor { r ->
+        Thread(r, "jiuwenswarm-ws-scheduler").also { it.isDaemon = true }
+    }
+
+    @Volatile private var ws: WebSocket? = null
+    @Volatile private var status = WsStatus.DISCONNECTED
+    private val retryCount = AtomicInteger(0)
+    private var retryFuture: ScheduledFuture<*>? = null
+    @Volatile private var destroyed = false
+
+    private val statusListeners = CopyOnWriteArrayList<StatusListener>()
+    private val messageListeners = CopyOnWriteArrayList<MessageListener>()
+
+    fun addStatusListener(l: StatusListener) = statusListeners.add(l)
+    fun removeStatusListener(l: StatusListener) = statusListeners.remove(l)
+    fun addMessageListener(l: MessageListener) = messageListeners.add(l)
+    fun removeMessageListener(l: MessageListener) = messageListeners.remove(l)
+
+    fun connect() {
+        if (destroyed) return
+        retryFuture?.cancel(false)
+        setStatus(WsStatus.CONNECTING)
+        val request = Request.Builder().url(url).build()
+        ws = client.newWebSocket(request, Listener())
+    }
+
+    fun send(json: JsonObject): Boolean {
+        val sock = ws ?: return false
+        return sock.send(gson.toJson(json))
+    }
+
+    fun isConnected() = status == WsStatus.CONNECTED
+
+    fun getStatus() = status
+
+    override fun dispose() {
+        destroyed = true
+        retryFuture?.cancel(false)
+        ws?.close(1000, "Plugin disposed")
+        ws = null
+        scheduler.shutdownNow()
+        client.dispatcher.executorService.shutdown()
+        setStatus(WsStatus.DISCONNECTED)
+    }
+
+    private fun setStatus(s: WsStatus) {
+        if (status == s) return
+        status = s
+        statusListeners.forEach { it(s) }
+    }
+
+    private fun scheduleReconnect() {
+        if (destroyed) return
+        val delay = BACKOFF_SECONDS[minOf(retryCount.getAndIncrement(), BACKOFF_SECONDS.size - 1)]
+        setStatus(WsStatus.RECONNECTING)
+        LOG.info("Reconnecting in ${delay}s (attempt ${retryCount.get()})")
+        retryFuture = scheduler.schedule({ if (!destroyed) connect() }, delay, TimeUnit.SECONDS)
+    }
+
+    private inner class Listener : WebSocketListener() {
+        override fun onOpen(webSocket: WebSocket, response: Response) {
+            LOG.info("Connected to JiuwenSwarm at $url")
+            retryCount.set(0)
+            setStatus(WsStatus.CONNECTED)
+        }
+
+        override fun onMessage(webSocket: WebSocket, text: String) {
+            try {
+                val obj = gson.fromJson(text, JsonObject::class.java)
+                messageListeners.forEach { it(obj) }
+            } catch (e: Exception) {
+                LOG.warn("Failed to parse message: ${text.take(100)}", e)
+            }
+        }
+
+        override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+            LOG.warn("WebSocket error", t)
+            ws = null
+            scheduleReconnect()
+        }
+
+        override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+            webSocket.close(1000, null)
+        }
+
+        override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+            ws = null
+            if (!destroyed) scheduleReconnect()
+        }
+    }
+}

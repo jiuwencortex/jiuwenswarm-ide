@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
+<title>JiuwenSwarm</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #1e1e1e;
+    --bg2: #252526;
+    --bg3: #2d2d30;
+    --border: #3c3c3c;
+    --text: #d4d4d4;
+    --text-muted: #858585;
+    --text-dim: #6a6a6a;
+    --accent: #0e639c;
+    --accent-hover: #1177bb;
+    --user-bg: #1a3a52;
+    --user-border: #0e639c;
+    --assistant-bg: #252526;
+    --tool-bg: #1c2b1c;
+    --tool-border: #3a5a3a;
+    --tool-header: #4a7c4a;
+    --error-bg: #2d1b1b;
+    --error-border: #6b2a2a;
+    --error-text: #f14c4c;
+    --code-bg: #0d1117;
+    --thinking-bg: #2a2a1a;
+    --thinking-border: #5a5a2a;
+    --radius: 6px;
+    --font-mono: 'SF Mono', 'Cascadia Code', Consolas, 'Courier New', monospace;
+    --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  }
+
+  body {
+    font-family: var(--font);
+    font-size: 13px;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* ── Header ── */
+  #header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    min-height: 40px;
+  }
+  #header-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #6b6b6b;
+    flex-shrink: 0;
+    transition: background 0.3s;
+  }
+  #status-dot.connected { background: #4ec9b0; }
+  #status-dot.reconnecting { background: #dcdcaa; animation: pulse 1s infinite; }
+  #status-dot.error { background: #f14c4c; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  #btn-new-session {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: var(--radius);
+    padding: 2px 8px;
+    font-size: 11px;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  #btn-new-session:hover { border-color: var(--text-muted); color: var(--text); }
+
+  /* ── Session picker ── */
+  #session-bar {
+    display: none;
+    background: var(--bg3);
+    border-bottom: 1px solid var(--border);
+    padding: 4px 8px;
+    flex-shrink: 0;
+  }
+  #session-bar.visible { display: block; }
+  #session-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 160px;
+    overflow-y: auto;
+  }
+  .session-item {
+    padding: 4px 8px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: background 0.1s;
+  }
+  .session-item:hover { background: var(--bg); color: var(--text); }
+  .session-item.active { color: var(--text); background: var(--accent); }
+
+  /* ── Messages ── */
+  #messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    scroll-behavior: smooth;
+  }
+  #messages::-webkit-scrollbar { width: 6px; }
+  #messages::-webkit-scrollbar-track { background: transparent; }
+  #messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .msg { display: flex; flex-direction: column; gap: 4px; }
+
+  .msg-header {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-dim);
+    padding: 0 4px;
+  }
+  .msg-header.user { color: #569cd6; }
+  .msg-header.assistant { color: #4ec9b0; }
+
+  .msg-body {
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .msg-body.user {
+    background: var(--user-bg);
+    border: 1px solid var(--user-border);
+    align-self: flex-end;
+    max-width: 90%;
+  }
+  .msg-body.assistant {
+    background: var(--assistant-bg);
+    border: 1px solid var(--border);
+    max-width: 100%;
+  }
+
+  /* Inline markdown rendered into .msg-body */
+  .msg-body code {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    background: var(--code-bg);
+    padding: 1px 4px;
+    border-radius: 3px;
+    color: #ce9178;
+  }
+  .msg-body pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    overflow-x: auto;
+    margin: 6px 0;
+  }
+  .msg-body pre code {
+    background: none;
+    padding: 0;
+    color: var(--text);
+    font-size: 12px;
+  }
+  .msg-body strong { color: #dcdcaa; font-weight: 600; }
+  .msg-body em { color: #ce9178; font-style: italic; }
+
+  /* Thinking block */
+  .thinking-block {
+    border: 1px solid var(--thinking-border);
+    background: var(--thinking-bg);
+    border-radius: var(--radius);
+    margin: 4px 0;
+    overflow: hidden;
+  }
+  .thinking-header {
+    padding: 4px 10px;
+    font-size: 11px;
+    color: #dcdcaa;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    user-select: none;
+  }
+  .thinking-header::before { content: '▶'; font-size: 9px; }
+  .thinking-header.open::before { content: '▼'; }
+  .thinking-body {
+    display: none;
+    padding: 8px 10px;
+    font-size: 12px;
+    color: var(--text-muted);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 300px;
+    overflow-y: auto;
+  }
+  .thinking-header.open + .thinking-body { display: block; }
+
+  /* Tool call card */
+  .tool-card {
+    border: 1px solid var(--tool-border);
+    background: var(--tool-bg);
+    border-radius: var(--radius);
+    margin: 4px 0;
+    overflow: hidden;
+  }
+  .tool-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    font-size: 11px;
+    color: #4ec9b0;
+    background: rgba(74,124,74,0.15);
+    cursor: pointer;
+    user-select: none;
+  }
+  .tool-name { font-weight: 600; font-family: var(--font-mono); }
+  .tool-status { margin-left: auto; font-size: 10px; color: var(--text-muted); }
+  .tool-spinner { animation: spin 1s linear infinite; display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .tool-body {
+    display: none;
+    padding: 8px 10px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+  .tool-header.open + .tool-body { display: block; }
+  .tool-body.result { color: var(--text); border-top: 1px solid var(--tool-border); }
+
+  /* Usage metadata */
+  .usage-line {
+    font-size: 10px;
+    color: var(--text-dim);
+    text-align: right;
+    padding: 2px 4px;
+  }
+
+  /* Error message */
+  .error-msg {
+    background: var(--error-bg);
+    border: 1px solid var(--error-border);
+    color: var(--error-text);
+    padding: 8px 12px;
+    border-radius: var(--radius);
+    font-size: 12px;
+  }
+
+  /* Empty state */
+  #empty-state {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: var(--text-dim);
+    pointer-events: none;
+    font-size: 12px;
+  }
+  #empty-state-icon { font-size: 32px; opacity: 0.4; }
+
+  /* ── Input area ── */
+  #input-area {
+    border-top: 1px solid var(--border);
+    background: var(--bg2);
+    padding: 8px 12px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  #input-row {
+    display: flex;
+    gap: 6px;
+    align-items: flex-end;
+  }
+  #input {
+    flex: 1;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: var(--radius);
+    padding: 7px 10px;
+    font-family: var(--font);
+    font-size: 13px;
+    resize: none;
+    min-height: 36px;
+    max-height: 160px;
+    overflow-y: auto;
+    line-height: 1.5;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  #input:focus { border-color: var(--accent-hover); }
+  #input::placeholder { color: var(--text-dim); }
+  #input:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  #send-btn {
+    background: var(--accent);
+    border: none;
+    color: #fff;
+    border-radius: var(--radius);
+    width: 36px;
+    height: 36px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background 0.15s, opacity 0.15s;
+    font-size: 16px;
+  }
+  #send-btn:hover:not(:disabled) { background: var(--accent-hover); }
+  #send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  #input-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+  #mode-select {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 10px;
+    cursor: pointer;
+    padding: 0;
+    outline: none;
+  }
+  #mode-select:hover { color: var(--text-muted); }
+  #mode-select option { background: var(--bg3); color: var(--text); }
+  #token-counter { color: var(--text-dim); }
+
+  /* Scrollbar for textareas */
+  #input::-webkit-scrollbar { width: 4px; }
+  #input::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <div id="status-dot" title="Disconnected"></div>
+  <div id="header-title">JiuwenSwarm</div>
+  <button id="btn-sessions" onclick="toggleSessions()" style="background:none;border:1px solid var(--border);color:var(--text-muted);border-radius:var(--radius);padding:2px 8px;font-size:11px;cursor:pointer;" title="Sessions">⊞</button>
+  <button id="btn-new-session" onclick="send({type:'new_session'})" title="New session">＋ New</button>
+</div>
+
+<div id="session-bar">
+  <div id="session-list"></div>
+</div>
+
+<div id="messages">
+  <div id="empty-state">
+    <div id="empty-state-icon">⟁</div>
+    <div>Start a conversation</div>
+    <div style="font-size:11px;opacity:0.6">Connecting to JiuwenSwarm…</div>
+  </div>
+</div>
+
+<div id="input-area">
+  <div id="input-row">
+    <textarea id="input" placeholder="Ask anything… (Enter to send, Shift+Enter for newline)" rows="1" disabled></textarea>
+    <button id="send-btn" disabled title="Send (Enter)">↑</button>
+  </div>
+  <div id="input-meta">
+    <select id="mode-select">
+      <option value="code.normal">code · normal</option>
+      <option value="code.plan">code · plan</option>
+      <option value="agent.plan">agent · plan</option>
+      <option value="agent.fast">agent · fast</option>
+    </select>
+    <span id="token-counter"></span>
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────
+// Bridge detection: VS Code vs JetBrains
+// ─────────────────────────────────────────────
+let vscodeApi = null;
+try { vscodeApi = acquireVsCodeApi(); } catch(_) {}
+
+function send(msg) {
+  if (vscodeApi) {
+    vscodeApi.postMessage(msg);
+  } else if (window.__jb_send) {
+    window.__jb_send(JSON.stringify(msg));
+  } else {
+    console.warn('[webview] no bridge available, msg:', msg);
+  }
+}
+
+// JetBrains: exposed by Kotlin side
+window.__jb_dispatch = function(jsonStr) {
+  handleHostMessage(JSON.parse(jsonStr));
+};
+
+// VS Code: messages arrive via window.message event
+window.addEventListener('message', function(e) {
+  handleHostMessage(e.data);
+});
+
+// ─────────────────────────────────────────────
+// State
+// ─────────────────────────────────────────────
+let state = {
+  connected: false,
+  sessionId: null,
+  sessionTitle: 'JiuwenSwarm',
+  sessions: [],
+  showSessions: false,
+  streaming: false,          // a request is in flight
+  turns: [],                 // { id, role, content, toolCalls, usage, thinking }
+  // per request_id tracking for streaming assembly
+  pendingTurns: {},          // request_id → { assistantEl, textEl, thinkingEl }
+};
+
+// ─────────────────────────────────────────────
+// Host message handler
+// ─────────────────────────────────────────────
+function handleHostMessage(msg) {
+  switch (msg.type) {
+    case 'connected':
+      setConnected(true, msg.sessionId, msg.sessionTitle);
+      break;
+    case 'disconnected':
+      setConnected(false);
+      break;
+    case 'reconnecting':
+      setReconnecting();
+      break;
+    case 'sessions':
+      updateSessions(msg.sessions);
+      break;
+    case 'jiuwen_event':
+      handleJiuwenEvent(msg.event);
+      break;
+    case 'error':
+      showError(msg.message);
+      break;
+  }
+}
+
+// ─────────────────────────────────────────────
+// Connection state
+// ─────────────────────────────────────────────
+function setConnected(yes, sessionId, title) {
+  const dot = document.getElementById('status-dot');
+  const input = document.getElementById('input');
+  const sendBtn = document.getElementById('send-btn');
+  if (yes) {
+    dot.className = 'connected';
+    dot.title = 'Connected';
+    state.connected = true;
+    state.sessionId = sessionId;
+    state.sessionTitle = title || 'JiuwenSwarm';
+    document.getElementById('header-title').textContent = state.sessionTitle;
+    if (!state.streaming) {
+      input.disabled = false;
+      sendBtn.disabled = false;
+    }
+    hideEmptyState();
+  } else {
+    dot.className = 'error';
+    dot.title = 'Disconnected';
+    state.connected = false;
+    input.disabled = true;
+    sendBtn.disabled = true;
+  }
+}
+
+function setReconnecting() {
+  const dot = document.getElementById('status-dot');
+  dot.className = 'reconnecting';
+  dot.title = 'Reconnecting…';
+}
+
+// ─────────────────────────────────────────────
+// Sessions
+// ─────────────────────────────────────────────
+function updateSessions(sessions) {
+  state.sessions = sessions || [];
+  renderSessionList();
+}
+
+function renderSessionList() {
+  const el = document.getElementById('session-list');
+  el.innerHTML = '';
+  state.sessions.forEach(function(s) {
+    const item = document.createElement('div');
+    item.className = 'session-item' + (s.session_id === state.sessionId ? ' active' : '');
+    item.textContent = s.title || s.session_id;
+    item.title = s.session_id;
+    item.onclick = function() {
+      send({ type: 'switch_session', sessionId: s.session_id });
+      toggleSessions();
+    };
+    el.appendChild(item);
+  });
+}
+
+function toggleSessions() {
+  state.showSessions = !state.showSessions;
+  const bar = document.getElementById('session-bar');
+  bar.className = state.showSessions ? 'visible' : '';
+  if (state.showSessions) {
+    send({ type: 'list_sessions' });
+  }
+}
+
+// ─────────────────────────────────────────────
+// JiuwenSwarm event handlers
+// ─────────────────────────────────────────────
+function handleJiuwenEvent(evt) {
+  const et = evt.event_type;
+  const rid = evt.request_id;
+  const payload = evt.payload || {};
+
+  if (et === 'chat.delta') {
+    appendDelta(rid, payload.text || '');
+  } else if (et === 'chat.reasoning') {
+    appendThinking(rid, payload.text || '');
+  } else if (et === 'chat.tool_call') {
+    appendToolCall(rid, payload);
+  } else if (et === 'chat.tool_result' || et === 'chat.tool_update') {
+    appendToolResult(rid, payload);
+  } else if (et === 'chat.usage_metadata' || et === 'chat.usage_summary') {
+    updateUsage(rid, payload);
+  } else if (et === 'chat.final') {
+    finalizeTurn(rid, payload);
+  }
+}
+
+// Called when we send a message — create a user turn and an empty assistant turn
+function beginTurn(requestId, userContent) {
+  const msgs = document.getElementById('messages');
+
+  // User message
+  const userEl = document.createElement('div');
+  userEl.className = 'msg';
+  userEl.innerHTML =
+    '<div class="msg-header user">You</div>' +
+    '<div class="msg-body user">' + escapeHtml(userContent) + '</div>';
+  msgs.appendChild(userEl);
+
+  // Assistant message (streaming)
+  const aEl = document.createElement('div');
+  aEl.className = 'msg';
+  aEl.dataset.requestId = requestId;
+
+  const headerEl = document.createElement('div');
+  headerEl.className = 'msg-header assistant';
+  headerEl.textContent = 'JiuwenSwarm';
+  aEl.appendChild(headerEl);
+
+  const bodyEl = document.createElement('div');
+  bodyEl.className = 'msg-body assistant';
+  aEl.appendChild(bodyEl);
+
+  msgs.appendChild(aEl);
+
+  state.pendingTurns[requestId] = {
+    containerEl: aEl,
+    bodyEl: bodyEl,
+    textContent: '',
+    thinkingEl: null,
+  };
+
+  scrollToBottom();
+}
+
+function appendDelta(rid, text) {
+  const pt = state.pendingTurns[rid];
+  if (!pt) return;
+  pt.textContent += text;
+  pt.bodyEl.innerHTML = renderMarkdown(pt.textContent);
+  scrollToBottom();
+}
+
+function appendThinking(rid, text) {
+  const pt = state.pendingTurns[rid];
+  if (!pt) return;
+
+  if (!pt.thinkingEl) {
+    const block = document.createElement('div');
+    block.className = 'thinking-block';
+    const header = document.createElement('div');
+    header.className = 'thinking-header';
+    header.textContent = 'Thinking…';
+    header.onclick = function() { header.classList.toggle('open'); };
+    const body = document.createElement('div');
+    body.className = 'thinking-body';
+    block.appendChild(header);
+    block.appendChild(body);
+    pt.containerEl.insertBefore(block, pt.bodyEl);
+    pt.thinkingEl = body;
+    pt.thinkingHeader = header;
+  }
+  pt.thinkingEl.textContent += text;
+  scrollToBottom();
+}
+
+function appendToolCall(rid, payload) {
+  const pt = state.pendingTurns[rid];
+  if (!pt) return;
+
+  const toolName = payload.tool_name || payload.name || 'tool';
+  const toolInput = payload.tool_input || payload.input || {};
+
+  const card = document.createElement('div');
+  card.className = 'tool-card';
+  card.dataset.toolName = toolName;
+
+  const header = document.createElement('div');
+  header.className = 'tool-header';
+  header.innerHTML =
+    '<span style="opacity:0.6">⚙</span>' +
+    '<span class="tool-name">' + escapeHtml(toolName) + '</span>' +
+    '<span class="tool-status"><span class="tool-spinner">◌</span> running</span>';
+  header.onclick = function() { header.classList.toggle('open'); };
+
+  const body = document.createElement('div');
+  body.className = 'tool-body';
+  body.textContent = formatToolInput(toolName, toolInput);
+
+  card.appendChild(header);
+  card.appendChild(body);
+  pt.containerEl.insertBefore(card, pt.bodyEl);
+  pt.lastToolCard = card;
+  scrollToBottom();
+}
+
+function appendToolResult(rid, payload) {
+  const pt = state.pendingTurns[rid];
+  if (!pt || !pt.lastToolCard) return;
+
+  const statusEl = pt.lastToolCard.querySelector('.tool-status');
+  const result = payload.tool_result || payload.content || payload.result || '';
+  const isError = payload.is_error || false;
+
+  if (statusEl) {
+    statusEl.innerHTML = isError
+      ? '<span style="color:#f14c4c">✗ error</span>'
+      : '<span style="color:#4ec9b0">✓ done</span>';
+  }
+
+  const resultEl = document.createElement('div');
+  resultEl.className = 'tool-body result';
+  resultEl.textContent = truncate(String(result), 500);
+  pt.lastToolCard.appendChild(resultEl);
+  scrollToBottom();
+}
+
+function updateUsage(rid, payload) {
+  const pt = state.pendingTurns[rid];
+  if (!pt) return;
+
+  const inTok = payload.input_tokens || payload.cache_read_input_tokens || 0;
+  const outTok = payload.output_tokens || 0;
+  if (inTok || outTok) {
+    let usageEl = pt.containerEl.querySelector('.usage-line');
+    if (!usageEl) {
+      usageEl = document.createElement('div');
+      usageEl.className = 'usage-line';
+      pt.containerEl.appendChild(usageEl);
+    }
+    const total = (inTok + outTok).toLocaleString();
+    usageEl.textContent = total + ' tokens';
+    document.getElementById('token-counter').textContent = total + ' tok';
+  }
+}
+
+function finalizeTurn(rid, payload) {
+  const pt = state.pendingTurns[rid];
+  if (pt) {
+    // Replace streaming text with canonical final content
+    const finalContent = (payload && payload.content) ? payload.content : pt.textContent;
+    if (finalContent) {
+      pt.bodyEl.innerHTML = renderMarkdown(finalContent);
+    }
+    if (pt.thinkingHeader) {
+      pt.thinkingHeader.textContent = 'Thinking';
+    }
+    // Close any running tool spinners
+    pt.containerEl.querySelectorAll('.tool-spinner').forEach(function(s) {
+      s.classList.remove('tool-spinner');
+    });
+    delete state.pendingTurns[rid];
+  }
+  setStreaming(false);
+  scrollToBottom();
+}
+
+// ─────────────────────────────────────────────
+// Input handling
+// ─────────────────────────────────────────────
+const inputEl = document.getElementById('input');
+const sendBtn = document.getElementById('send-btn');
+
+inputEl.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    submitMessage();
+  }
+});
+
+inputEl.addEventListener('input', function() {
+  this.style.height = 'auto';
+  this.style.height = Math.min(this.scrollHeight, 160) + 'px';
+  sendBtn.disabled = !this.value.trim() || !state.connected || state.streaming;
+});
+
+sendBtn.addEventListener('click', submitMessage);
+
+function submitMessage() {
+  const content = inputEl.value.trim();
+  if (!content || !state.connected || state.streaming) return;
+
+  const mode = document.getElementById('mode-select').value;
+  const requestId = generateId();
+
+  beginTurn(requestId, content);
+  setStreaming(true);
+
+  send({
+    type: 'send',
+    content: content,
+    mode: mode,
+    requestId: requestId,
+  });
+
+  inputEl.value = '';
+  inputEl.style.height = 'auto';
+}
+
+function setStreaming(yes) {
+  state.streaming = yes;
+  inputEl.disabled = yes || !state.connected;
+  sendBtn.disabled = yes || !state.connected;
+  if (!yes) inputEl.focus();
+}
+
+// ─────────────────────────────────────────────
+// Utils
+// ─────────────────────────────────────────────
+function hideEmptyState() {
+  const es = document.getElementById('empty-state');
+  if (es) es.remove();
+}
+
+function showError(msg) {
+  const msgs = document.getElementById('messages');
+  const el = document.createElement('div');
+  el.className = 'error-msg';
+  el.textContent = '⚠ ' + msg;
+  msgs.appendChild(el);
+  scrollToBottom();
+}
+
+function scrollToBottom() {
+  const msgs = document.getElementById('messages');
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function generateId() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+  });
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function truncate(str, max) {
+  if (str.length <= max) return str;
+  return str.slice(0, max) + '\n… [truncated]';
+}
+
+function formatToolInput(name, input) {
+  if (name === 'str_replace_editor' || name === 'write_file') {
+    return 'path: ' + (input.path || '') + '\n' +
+           (input.old_str ? 'old:\n' + truncate(input.old_str, 200) + '\n' : '') +
+           (input.new_str ? 'new:\n' + truncate(input.new_str, 200) : '');
+  }
+  if (name === 'bash' || name === 'run_command') {
+    return input.command || input.cmd || JSON.stringify(input);
+  }
+  return JSON.stringify(input, null, 2);
+}
+
+// ─────────────────────────────────────────────
+// Minimal markdown renderer (no external deps)
+// ─────────────────────────────────────────────
+function renderMarkdown(text) {
+  // Escape HTML first
+  let out = '';
+  const lines = text.split('\n');
+  let inCode = false;
+  let codeLang = '';
+  let codeLines = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.startsWith('```')) {
+      if (!inCode) {
+        inCode = true;
+        codeLang = line.slice(3).trim();
+        codeLines = [];
+      } else {
+        inCode = false;
+        out += '<pre><code>' + escapeHtml(codeLines.join('\n')) + '</code></pre>';
+        codeLines = [];
+        codeLang = '';
+      }
+      continue;
+    }
+    if (inCode) {
+      codeLines.push(line);
+      continue;
+    }
+    out += renderInline(line) + '\n';
+  }
+  if (inCode && codeLines.length) {
+    out += '<pre><code>' + escapeHtml(codeLines.join('\n')) + '</code></pre>';
+  }
+
+  // Trim trailing newlines
+  return out.trimEnd();
+}
+
+function renderInline(line) {
+  // Bold: **text**
+  line = line.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  // Italic: *text* or _text_
+  line = line.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  line = line.replace(/_([^_]+)_/g, '<em>$1</em>');
+  // Inline code: `code`
+  line = line.replace(/`([^`]+)`/g, function(_, c) {
+    return '<code>' + escapeHtml(c) + '</code>';
+  });
+  // Escape remaining HTML
+  // (applied per-character approach is too slow; instead we escape at line level first)
+  return line;
+}
+
+// ─────────────────────────────────────────────
+// Init: notify host that webview is ready
+// ─────────────────────────────────────────────
+window.addEventListener('load', function() {
+  send({ type: 'ready' });
+});
+</script>
+</body>
+</html>

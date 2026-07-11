@@ -1,0 +1,119 @@
+{
+  "name": "jiuwenswarm",
+  "displayName": "JiuwenSwarm",
+  "description": "AI coding assistant powered by JiuwenSwarm",
+  "version": "0.1.0",
+  "publisher": "openjiuwen",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["AI", "Chat", "Other"],
+  "icon": "resources/icon.png",
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "jiuwenswarm-sidebar",
+          "title": "JiuwenSwarm",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "jiuwenswarm-sidebar": [
+        {
+          "type": "webview",
+          "id": "jiuwenswarm.chatView",
+          "name": "Chat"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "jiuwenswarm.openChat",
+        "title": "JiuwenSwarm: Open Chat"
+      },
+      {
+        "command": "jiuwenswarm.newSession",
+        "title": "JiuwenSwarm: New Session"
+      },
+      {
+        "command": "jiuwenswarm.sendSelection",
+        "title": "JiuwenSwarm: Send Selection to Chat"
+      },
+      {
+        "command": "jiuwenswarm.reconnect",
+        "title": "JiuwenSwarm: Reconnect"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "jiuwenswarm.openChat",
+        "key": "ctrl+shift+j",
+        "mac": "cmd+shift+j"
+      },
+      {
+        "command": "jiuwenswarm.sendSelection",
+        "key": "ctrl+shift+e",
+        "mac": "cmd+shift+e",
+        "when": "editorHasSelection"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "jiuwenswarm.sendSelection",
+          "when": "editorHasSelection",
+          "group": "jiuwenswarm"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "JiuwenSwarm",
+      "properties": {
+        "jiuwenswarm.host": {
+          "type": "string",
+          "default": "localhost",
+          "description": "JiuwenSwarm server hostname"
+        },
+        "jiuwenswarm.port": {
+          "type": "number",
+          "default": 19000,
+          "description": "JiuwenSwarm WebSocket port"
+        },
+        "jiuwenswarm.defaultMode": {
+          "type": "string",
+          "default": "code.normal",
+          "enum": ["code.normal", "code.plan", "agent.plan", "agent.fast"],
+          "description": "Default agent mode"
+        },
+        "jiuwenswarm.channelId": {
+          "type": "string",
+          "default": "ide",
+          "description": "Channel ID reported to JiuwenSwarm"
+        },
+        "jiuwenswarm.autoConnect": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically connect on startup"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "package": "vsce package",
+    "lint": "eslint src"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@types/ws": "^8.5.10",
+    "esbuild": "^0.21.0",
+    "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "ws": "^8.17.0"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "jiuwenswarm-ide",
+  "version": "0.1.0",
+  "private": true,
+  "description": "JiuwenSwarm IDE plugins — JetBrains & VS Code",
+  "workspaces": [
+    "packages/shared-webview",
+    "packages/vscode-extension"
+  ],
+  "scripts": {
+    "build:webview": "cd packages/shared-webview && npm run build",
+    "build:vscode": "cd packages/vscode-extension && npm run build",
+    "build": "npm run build:webview && npm run build:vscode",
+    "dev:vscode": "cd packages/vscode-extension && npm run watch"
+  }
+}
