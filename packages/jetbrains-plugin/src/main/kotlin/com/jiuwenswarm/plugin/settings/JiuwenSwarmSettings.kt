@@ -47,7 +47,7 @@ class JiuwenSwarmSettings : PersistentStateComponent<JiuwenSwarmSettings.State> 
         get() = state.autoConnect
         set(v) { state = state.copy(autoConnect = v) }
 
-    val wsUrl: String get() = "ws://$host:$port/ws"
+    val wsUrl: String get() = "ws://$host:$port"
 
     companion object {
         fun instance(): JiuwenSwarmSettings =

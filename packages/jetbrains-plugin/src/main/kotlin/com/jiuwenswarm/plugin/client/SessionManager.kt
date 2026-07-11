@@ -46,7 +46,10 @@ class SessionManager(
     /** Create a new session, blocking up to [REQUEST_TIMEOUT_SEC] seconds */
     fun createSession(): String {
         val payload = request("session.create", emptyMap())
-        val sid = payload.get("session_id")?.asString ?: error("No session_id in response")
+        // Server uses camelCase "sessionId" in the response payload
+        val sid = payload.get("sessionId")?.asString
+            ?: payload.get("session_id")?.asString
+            ?: error("No sessionId in response")
         sessionId = sid
         sessionTitle = payload.get("title")?.asString ?: "New Session"
         return sid
@@ -99,7 +102,7 @@ class SessionManager(
     ): JsonObject {
         val id = UUID.randomUUID().toString()
         val msg = buildJsonObject {
-            addProperty("id", id)
+            addProperty("request_id", id)
             addProperty("type", "req")
             addProperty("channel_id", channelId)
             if (sid != null) addProperty("session_id", sid)
@@ -122,6 +125,25 @@ class SessionManager(
     }
 
     private fun handleMessage(msg: JsonObject) {
+        // ── E2A format responses (server always sends these) ──
+        val requestId = msg.get("request_id")?.asString
+        val status = msg.get("status")?.asString
+        if (requestId != null && status != null) {
+            val future = pending.remove(requestId) ?: return
+            if (status == "succeeded") {
+                val body = msg.getAsJsonObject("body")
+                // The actual result is nested under body.result
+                val result = body?.getAsJsonObject("result") ?: JsonObject()
+                future.complete(result)
+            } else {
+                val body = msg.getAsJsonObject("body")
+                val error = body?.get("message")?.asString ?: "Request failed"
+                future.completeExceptionally(RuntimeException(error))
+            }
+            return
+        }
+
+        // ── Legacy format responses (fallback, unlikely with current server) ──
         if (msg.get("type")?.asString == "res") {
             val rid = msg.get("request_id")?.asString ?: return
             val future = pending.remove(rid) ?: return

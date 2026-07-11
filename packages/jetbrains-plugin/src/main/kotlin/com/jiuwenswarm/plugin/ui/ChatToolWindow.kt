@@ -206,9 +206,78 @@ class ChatPanel(
     }
 
     private fun onJiuwenMessage(msg: JsonObject) {
-        if (msg.get("type")?.asString == "event") {
-            dispatchToWebview(mapOf("type" to "jiuwen_event", "event" to msg))
+        val converted = convertServerMessageToLegacyEvent(msg)
+        if (converted != null) {
+            dispatchToWebview(mapOf("type" to "jiuwen_event", "event" to converted))
         }
+    }
+
+    /** Convert server messages (E2A or old format) to the legacy event format the webview expects.
+     *  Webview expects: { event_type, request_id, payload }
+     */
+    private fun convertServerMessageToLegacyEvent(msg: JsonObject): JsonObject? {
+        val responseKind = msg.get("response_kind")?.asString
+
+        // ── E2A format ──
+        if (responseKind != null) {
+            val requestId = msg.get("request_id")?.asString ?: ""
+            val body = msg.getAsJsonObject("body") ?: return null
+
+            return when (responseKind) {
+                "e2a.chunk" -> {
+                    val eventType = body.get("event_type")?.asString ?: ""
+                    val delta = body.get("delta")
+                    JsonObject().apply {
+                        addProperty("event_type", eventType)
+                        addProperty("request_id", requestId)
+                        add("payload", when (eventType) {
+                            "chat.delta" -> JsonObject().apply {
+                                addProperty("text", delta?.asString ?: "")
+                            }
+                            "chat.reasoning" -> JsonObject().apply {
+                                addProperty("text", delta?.asString ?: "")
+                            }
+                            else -> if (delta?.isJsonObject == true) delta.asJsonObject else JsonObject()
+                        })
+                    }
+                }
+                "e2a.complete" -> {
+                    val result = body.getAsJsonObject("result")
+                    val eventType = result?.get("event_type")?.asString ?: "chat.final"
+                    JsonObject().apply {
+                        addProperty("event_type", eventType)
+                        addProperty("request_id", requestId)
+                        add("payload", result ?: JsonObject())
+                    }
+                }
+                "e2a.error" -> {
+                    val details = body.getAsJsonObject("details")
+                    val errorMsg = body.get("message")?.asString ?: "Unknown error"
+                    JsonObject().apply {
+                        addProperty("event_type", "chat.error")
+                        addProperty("request_id", requestId)
+                        add("payload", JsonObject().apply {
+                            addProperty("error", errorMsg)
+                            if (details != null) add("details", details)
+                        })
+                    }
+                }
+                else -> null
+            }
+        }
+
+        // ── Old format (used for connection.ack and direct events) ──
+        if (msg.get("type")?.asString == "event") {
+            val eventName = msg.get("event")?.asString ?: ""
+            val payload = msg.getAsJsonObject("payload") ?: JsonObject()
+            return JsonObject().apply {
+                addProperty("event_type", eventName)
+                addProperty("request_id", payload.get("request_id")?.asString ?: "")
+                add("payload", payload)
+            }
+        }
+
+        return null
     }
 
     private fun sendCurrentStatus() {

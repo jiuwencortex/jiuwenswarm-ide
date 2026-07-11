@@ -16,20 +16,14 @@ repositories {
 
 dependencies {
     intellijPlatform {
-        // Use IDEA Community for the dev sandbox — avoids the broken xi:include in
-        // PyCharm Community 2024.1 on Apple Silicon. The plugin depends only on
-        // com.intellij.modules.platform so it installs in PyCharm, IDEA, WebStorm, etc.
         intellijIdeaCommunity("2024.1")
         instrumentationTools()
     }
 
     // OkHttp for WebSocket
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    // Kotlin coroutines (used by IntelliJ anyway, included in platform)
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.0")
     // Gson for JSON
     implementation("com.google.code.gson:gson:2.10.1")
-
 }
 
 kotlin {
@@ -41,11 +35,10 @@ intellijPlatform {
         id = "com.jiuwenswarm.ide-plugin"
         name = "JiuwenSwarm"
         version = project.version.toString()
-        // description intentionally omitted here — the full HTML description lives in plugin.xml
 
         ideaVersion {
-            sinceBuild = "231"   // 2023.1+
-            untilBuild = provider { null }  // no upper limit
+            sinceBuild = "231"
+            untilBuild = provider { null }
         }
 
         changeNotes = """
@@ -72,4 +65,8 @@ tasks {
     wrapper {
         gradleVersion = "8.7"
     }
+}
+
+tasks.named("instrumentCode") {
+    enabled = false
 }
