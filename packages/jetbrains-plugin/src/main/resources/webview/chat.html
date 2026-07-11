@@ -523,6 +523,20 @@
     border-radius: 3px;
     color: #ce9178;
   }
+  /* ── Clickable file links in agent messages ── */
+  a.file-link {
+    color: var(--accent);
+    text-decoration: none;
+    border-bottom: 1px dotted var(--accent);
+    cursor: pointer;
+  }
+  a.file-link:hover { border-bottom-style: solid; }
+  a.file-link > code {
+    color: var(--accent);
+    background: none;
+    padding: 0;
+    border-radius: 0;
+  }
   .msg-body pre {
     background: var(--code-bg);
     border: 1px solid var(--border);
@@ -1972,12 +1986,35 @@ function renderMarkdown(text) {
   return out.trimEnd();
 }
 
+function openFileLink(el) {
+  var path = el.getAttribute('data-path');
+  var line = parseInt(el.getAttribute('data-line'), 10) || 0;
+  send({ type: 'open_file', path: path, line: line });
+}
+
 function renderInline(line) {
   line = line.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
   line = line.replace(/\*([^*]+)\*/g, '<em>$1</em>');
   line = line.replace(/_([^_]+)_/g, '<em>$1</em>');
+  // Pattern 1: backtick-wrapped file paths — run before generic backtick handler
+  line = line.replace(/`((?:(?:\.{1,2}\/)?(?:[\w\-]+\/)+)?[\w.\-]+\.\w{2,6}(?::\d+)?)`/g, function(_, raw) {
+    var m = raw.match(/^(.*?):(\d+)$/);
+    var filePath = m ? m[1] : raw;
+    var lineNum = m ? m[2] : '0';
+    var hasSlash = filePath.indexOf('/') !== -1;
+    var hasLine = !!m;
+    if (!hasSlash && !hasLine) return '<code>' + escapeHtml(raw) + '</code>';
+    return '<a class="file-link" data-path="' + escapeHtml(filePath) + '" data-line="' + lineNum
+         + '" onclick="openFileLink(this)"><code>' + escapeHtml(raw) + '</code></a>';
+  });
+  // Generic backtick handler for remaining non-file spans
   line = line.replace(/`([^`]+)`/g, function(_, c) {
     return '<code>' + escapeHtml(c) + '</code>';
+  });
+  // Pattern 2: bare path/to/file.ext:N outside backticks and existing HTML
+  line = line.replace(/(?<![<>"'`\w\/])((?:\.{1,2}\/)?(?:[\w\-]+\/)+[\w.\-]+\.\w{2,6}):(\d+)(?!\w)/g, function(_, filePath, lineNum) {
+    return '<a class="file-link" data-path="' + escapeHtml(filePath) + '" data-line="' + lineNum
+         + '" onclick="openFileLink(this)">' + escapeHtml(filePath) + ':' + lineNum + '</a>';
   });
   return line;
 }

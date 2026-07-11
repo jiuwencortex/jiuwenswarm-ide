@@ -141,6 +141,35 @@ Git: branch=feature/async-refactor, 3 uncommitted changes
 
 ---
 
+## Clickable File Links
+
+When the agent mentions a file path in its response, the plugin turns it into a clickable link. Clicking it opens the file in the editor and jumps to the referenced line.
+
+### What gets linkified
+
+| Pattern | Example | Behaviour |
+|---------|---------|-----------|
+| Backtick path with directory | `` `src/api/handler.py` `` | Opens file; goes to line 1 |
+| Backtick path with line number | `` `src/api/handler.py:42` `` | Opens file; goes to line 42 |
+| Bare `path/to/file.ext:N` | `src/auth/router.py:87` | Opens file; goes to line 87 |
+
+### What does NOT get linkified
+
+- Plain variable names in backticks (`` `someVar` ``, `` `myFunc` ``) — no path separator and no `:N` suffix.
+- Paths inside fenced code blocks (``` ``` ``` sections) — these are rendered verbatim.
+- URLs — the colon in `http://` is not followed by a plain integer.
+
+### How it works
+
+The plugin intercepts the rendered agent text and runs two regex passes before rendering:
+
+1. Backtick-wrapped paths that contain a `/` or end with `:N` are wrapped in a clickable `<a>` element around the existing `<code>` span.
+2. Bare `path/to/file:N` references outside backticks and HTML tags are wrapped in a clickable `<a>` element.
+
+Clicking either type sends an `open_file` message from the webview to the IDE, which uses `OpenFileDescriptor` to navigate to the file and line.
+
+---
+
 ## Actions & Keyboard Shortcuts
 
 ### Keyboard shortcuts

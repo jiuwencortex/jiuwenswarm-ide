@@ -8,6 +8,7 @@ import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.wm.ToolWindow
@@ -320,6 +321,19 @@ class ChatPanel(
                                         else "Rewound $restored file(s), $failed failed"
                         dispatchToWebview(mapOf("type" to "rewind_done", "message" to resultMsg,
                             "restored" to restored, "failed" to failed))
+                    }
+                }
+                "open_file" -> {
+                    val path = msg.get("path")?.asString ?: return
+                    val line = msg.get("line")?.asInt ?: 0
+                    ApplicationManager.getApplication().invokeLater {
+                        val vf = LocalFileSystem.getInstance().findFileByPath(path)
+                            ?: LocalFileSystem.getInstance().refreshAndFindFileByPath(path)
+                        if (vf != null) {
+                            OpenFileDescriptor(project, vf, maxOf(0, line - 1), 0).navigate(true)
+                        } else {
+                            debug("open_file: not found: $path")
+                        }
                     }
                 }
             }

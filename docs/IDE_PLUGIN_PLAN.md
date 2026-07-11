@@ -32,6 +32,7 @@ Legend: ✅ done · 🔶 partial · ❌ not started
 | Right-click → "Send Selection to JiuwenSwarm" | ✅ | ✅ |
 | Inline ghost text suggestions (like Copilot) | ❌ | ❌ |
 | Skills panel: browse / toggle skills from within IDE | ✅ | ❌ |
+| Clickable file links: agent-mentioned paths open file at line in editor | ✅ | ❌ |
 | Replay / TraceHound panel: session trajectory viewer inside IDE | ❌ | ❌ |
 
 ### Power features (v3)
