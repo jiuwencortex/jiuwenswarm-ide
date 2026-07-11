@@ -218,9 +218,12 @@ class ChatPanel(
                     try {
                         debug("ACTION→ list_sessions")
                         val sessions = service.session.listSessions()
+                        debug("ACTION→ list_sessions returned ${sessions.size} sessions")
                         dispatchToWebview(mapOf("type" to "sessions", "sessions" to sessions.map { it.toMap() }))
                     } catch (e: Exception) {
-                        dispatchToWebview(mapOf("type" to "error", "message" to e.message))
+                        LOG.warn("list_sessions failed", e)
+                        // Use sessions_error (not generic error) so it shows inside the sessions overlay
+                        dispatchToWebview(mapOf("type" to "sessions_error", "message" to (e.message ?: "Failed to load sessions")))
                     }
                 }
             }

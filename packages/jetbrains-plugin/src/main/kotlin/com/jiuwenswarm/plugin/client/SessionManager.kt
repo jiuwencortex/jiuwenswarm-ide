@@ -143,6 +143,27 @@ class SessionManager(
     private fun handleMessage(msg: JsonObject) {
         val msgType = msg.get("type")?.asString
 
+        // ── E2A format responses (gateway may wrap session.list/switch in E2A) ──
+        val responseKind = msg.get("response_kind")?.asString
+        if (responseKind != null) {
+            val rid = msg.get("request_id")?.asString ?: return
+            val future = pending.remove(rid) ?: return   // not our request — ignore
+            when (responseKind) {
+                "e2a.complete" -> {
+                    val body = msg.getAsJsonObject("body") ?: JsonObject()
+                    val result = body.getAsJsonObject("result") ?: body
+                    future.complete(result)
+                }
+                "e2a.error" -> {
+                    val body = msg.getAsJsonObject("body") ?: JsonObject()
+                    val err = body.get("message")?.asString ?: "E2A error"
+                    future.completeExceptionally(RuntimeException(err))
+                }
+                else -> future.completeExceptionally(RuntimeException("Unexpected response_kind: $responseKind"))
+            }
+            return
+        }
+
         // ── Gateway legacy format responses ──
         if (msgType == "res") {
             val rid = msg.get("id")?.asString

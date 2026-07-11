@@ -30,6 +30,7 @@
     --code-bg: #0d1117;
     --thinking-bg: #2a2a1a;
     --thinking-border: #5a5a2a;
+    --debug-text: #4ec9b0;
     --radius: 6px;
     --font-mono: 'SF Mono', 'Cascadia Code', Consolas, 'Courier New', monospace;
     --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
@@ -57,6 +58,7 @@
     --code-bg: #f5f5f5;
     --thinking-bg: #fffde7;
     --thinking-border: #fbc02d;
+    --debug-text: #007a6e;
   }
 
   body {
@@ -309,7 +311,7 @@
     display: none;
     height: 140px;
     border-top: 1px solid var(--border);
-    background: #0d1117;
+    background: var(--code-bg);
     flex-shrink: 0;
     flex-direction: column;
   }
@@ -350,7 +352,7 @@
   }
   #debug-log::-webkit-scrollbar { width: 4px; }
   #debug-log::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
-  .debug-line { color: #4ec9b0; white-space: pre-wrap; word-break: break-all; }
+  .debug-line { color: var(--debug-text); white-space: pre-wrap; word-break: break-all; }
 
   /* ── Messages ── */
   #messages {
@@ -728,6 +730,9 @@ function handleHostMessage(msg) {
     case 'sessions':
       updateSessions(msg.sessions);
       break;
+    case 'sessions_error':
+      showSessionsError(msg.message);
+      break;
     case 'jiuwen_event':
       handleJiuwenEvent(msg.event);
       break;
@@ -758,10 +763,16 @@ function setConnected(yes, sessionId, title) {
   if (yes) {
     dot.className = 'connected';
     dot.title = 'Connected';
+    // Clear messages when a brand-new session starts (different ID means the
+    // previous session's history is no longer active)
+    const isNewSession = sessionId && sessionId !== state.sessionId;
     state.connected = true;
     state.sessionId = sessionId;
     state.sessionTitle = title || 'JiuwenSwarm';
     document.getElementById('header-title').textContent = state.sessionTitle;
+    if (isNewSession) {
+      clearMessages();
+    }
     if (!state.streaming) {
       input.disabled = false;
       sendBtn.disabled = false;
@@ -831,10 +842,19 @@ function toggleSessions() {
   const overlay = document.getElementById('session-overlay');
   if (state.showSessions) {
     overlay.classList.add('visible');
+    // Show loading placeholder while sessions are fetched
+    document.getElementById('session-list').innerHTML =
+      '<div style="padding:16px;color:var(--text-dim);font-size:12px;text-align:center;">Loading…</div>';
     send({ type: 'list_sessions' });
   } else {
     overlay.classList.remove('visible');
   }
+}
+
+function showSessionsError(message) {
+  document.getElementById('session-list').innerHTML =
+    '<div style="padding:16px;color:var(--error-text);font-size:12px;">' +
+    '⚠ ' + escapeHtml(message || 'Failed to load sessions') + '</div>';
 }
 
 function relativeTime(ts) {
@@ -1211,6 +1231,16 @@ function setStreaming(yes) {
 function hideEmptyState() {
   const es = document.getElementById('empty-state');
   if (es) es.remove();
+}
+
+function clearMessages() {
+  const msgs = document.getElementById('messages');
+  msgs.innerHTML = '';
+  state.pendingTurns = {};
+  state.streaming = false;
+  document.getElementById('input').disabled = false;
+  document.getElementById('send-btn').disabled = false;
+  document.getElementById('token-counter').textContent = '';
 }
 
 function showError(msg) {
