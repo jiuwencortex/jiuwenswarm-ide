@@ -57,10 +57,24 @@ The chat panel renders in the sidebar using a VS Code webview. It supports:
 - Collapsible tool call cards showing every agent action with live status, inputs, and outputs
 - A mode selector dropdown (`agent.plan`, `agent.fast`, `team`)
 - A session dropdown to create or switch conversations
+- A skills panel to view and toggle registered skills
 - An attach button to include the current file as context
 - A dark/light theme toggle
+
+## Status Bar
+
+The status bar widget in the bottom-right shows:
+
+| State | Icon | Behaviour |
+|-------|------|-----------|
+| Connected | `$(check)` | Click to open chat |
+| Connecting | `$(loading~spin)` | — |
+| Reconnecting | `$(sync~spin)` | Auto-retry with exponential back-off |
+| Disconnected | `$(circle-slash)` | Click to force reconnect |
+
+When token usage metadata is received from the server, the token count is displayed next to the status label.
 
 ## Troubleshooting
 
 - **Panel shows blank / no connection**: Check that JiuwenSwarm is running on the configured host and port. The status bar shows connection state; click it to reconnect.
-- **No responses appear**: Verify the WebSocket endpoint (`ws://host:port/ws`) is reachable. Check the Output panel → JiuwenSwarm for debug messages.
+- **No responses appear**: Verify the WebSocket endpoint (`ws://host:port/ws`) is reachable. Open the webview developer tools (**Developer: Open Webview Developer Tools** from the command palette) and check the console for debug messages.

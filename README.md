@@ -15,11 +15,12 @@ Both the VS Code extension and the JetBrains plugin share the same web-based cha
 - **Session Management** — create, switch between, and resume named sessions. Each session preserves its full conversation history and agent context.
 - **Send Selection** — select any code in the editor and send it to JiuwenSwarm with **Ctrl+Shift+E** (Win/Linux) / **⌘⇧E** (Mac) for instant review, explanation, or refactoring.
 - **New Session Shortcut** — open a fresh chat at any time with **Ctrl+Shift+J** / **⌘⇧J**.
-- **Connection Status** — a status indicator shows the live WebSocket state (connected / reconnecting / disconnected). Click to reconnect.
+- **Connection Status** — a status indicator shows the live WebSocket state (connected / reconnecting / disconnected). Click to reconnect. VS Code status bar also displays token usage when available.
 - **Multi-model Support** — JiuwenSwarm supports Claude (Anthropic), GPT-4o (OpenAI), Gemini, and other providers. Switch models in the JiuwenSwarm settings without changing the plugin configuration.
 - **Skills & MCP** — invoke built-in slash-command skills (`/commit`, `/review`, `/init`, …) and any MCP server tools registered with your JiuwenSwarm instance.
-- **IDE Context Injection** — every message automatically includes the active file path, cursor position, selected code, and editor diagnostics (warnings/errors). The agent always knows what you are looking at.
+- **IDE Context Injection** — every message automatically includes the active file path, cursor position, selected code, editor diagnostics (warnings/errors), other open files, and git branch/status. The agent always knows what you are looking at.
 - **File Edit Diff Viewer** (JetBrains) — when the agent proposes a file edit, the plugin opens a side-by-side diff window showing Current vs Proposed before applying changes. Enable Auto-apply in settings to skip the dialog.
+- **Alt+Enter Quick Fix** (JetBrains) — place the cursor on any error or warning and press **Alt+Enter** to see "Fix with JiuwenSwarm", which prefills the chat with the error text and surrounding code.
 
 ## Prerequisites
 
@@ -34,7 +35,33 @@ cd jiuwenswarm && jiuwenswarm-start
 
 - [VS Code Extension](docs/vscode/README.md) — install from VSIX or marketplace, configure, and use
 - [JetBrains Plugin](docs/jetbrains/README.md) — install from ZIP or marketplace, configure, and use
-  - [JetBrains Usage Guide](docs/jetbrains/USER_GUIDE.md) — complete reference for every panel, action, and workflow
+
+## Feature Parity
+
+| Feature | VS Code | JetBrains |
+|---------|---------|-----------|
+| Streaming chat panel | ✅ | ✅ |
+| Tool call cards | ✅ | ✅ |
+| Session management (create / switch / list) | ✅ | ✅ |
+| Send selection (Ctrl+Shift+E) | ✅ | ✅ |
+| New session shortcut (Ctrl+Shift+J) | ✅ | ✅ |
+| Reconnect command | ✅ | ✅ |
+| Connection status widget | ✅ (status bar) | ✅ (status bar + tool window) |
+| Token usage display in status bar | ✅ | ✅ |
+| Multi-model listing & display | ✅ | ✅ |
+| Skills list & toggle | ✅ | ✅ |
+| IDE context (file, cursor, selection, diagnostics) | ✅ | ✅ |
+| IDE context (other open files) | ✅ | ✅ |
+| IDE context (git branch & status) | ✅ | ✅ |
+| Debug logging toggle from webview | ✅ | ✅ |
+| Image/media attachments | ✅ | ✅ |
+| E2A streaming format support | ✅ | ✅ |
+| Legacy event format support | ✅ | ✅ |
+| Theme toggle (dark/light) | ✅ | ✅ |
+| Auto-connect on startup | ✅ | ✅ |
+| File edit diff viewer | ⚠️ logs only | ✅ (native diff dialog) |
+| Auto-apply file edits | ❌ | ✅ (setting) |
+| Alt+Enter quick fix | ❌ | ✅ (intention action) |
 
 ## Publishing
 

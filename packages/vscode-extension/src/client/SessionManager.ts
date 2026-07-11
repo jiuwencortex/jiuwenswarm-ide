@@ -92,6 +92,17 @@ export class SessionManager {
     return this.ws.send(msg);
   }
 
+  /** List available skills */
+  async listSkills(): Promise<Record<string, unknown>[]> {
+    const payload = await this.request('skills.list', {});
+    return (payload.skills as Record<string, unknown>[]) || [];
+  }
+
+  /** Enable/disable a skill */
+  async toggleSkill(skillId: string, enabled: boolean): Promise<void> {
+    await this.request('skills.toggle', { skill_id: skillId, enabled });
+  }
+
   // ──────────────────────────────────────────
   // Internal
   // ──────────────────────────────────────────
@@ -118,20 +129,26 @@ export class SessionManager {
 
   private handleMessage(msg: JiuwenMessage): void {
     // ── E2A format responses ──
-    const responseKind = msg.payload?.response_kind as string | undefined;
+    const responseKind = msg.response_kind
+      || (msg.payload?.response_kind as string | undefined);
     if (responseKind) {
-      const rid = msg.payload?.request_id as string | undefined;
+      const rid = msg.request_id
+        || (msg.payload?.request_id as string | undefined);
       if (!rid) return;
       const future = this.pending.get(rid);
       if (!future) return;
       if (responseKind === 'e2a.complete') {
-        const body = (msg.payload?.body as Record<string, unknown>) || {};
+        const body = (msg.body as Record<string, unknown>)
+          || (msg.payload?.body as Record<string, unknown>)
+          || {};
         const result = (body.result as Record<string, unknown>) || body;
         clearTimeout(future.timer);
         this.pending.delete(rid);
         future.resolve(result);
       } else if (responseKind === 'e2a.error') {
-        const body = (msg.payload?.body as Record<string, unknown>) || {};
+        const body = (msg.body as Record<string, unknown>)
+          || (msg.payload?.body as Record<string, unknown>)
+          || {};
         const err = (body.message as string) || 'E2A error';
         clearTimeout(future.timer);
         this.pending.delete(rid);

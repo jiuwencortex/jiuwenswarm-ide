@@ -43,6 +43,7 @@ Open **Settings → Tools → JiuwenSwarm**:
 |--------|-----------|-----|-------------|
 | New session | `Ctrl+Shift+J` | `⌘⇧J` | Opens a fresh chat session |
 | Send selection | `Ctrl+Shift+E` | `⌘⇧E` | Sends selected code to the chat |
+| Fix with AI | `Alt+Enter` | `⌥Enter` | Appears on errors/warnings in quick-fix menu |
 
 1. Start JiuwenSwarm locally.
 2. Open the JiuwenSwarm tool window from the right sidebar.
@@ -55,8 +56,9 @@ The chat panel renders inside the IDE via JCEF. It supports:
 
 - Markdown rendering with syntax-highlighted code blocks
 - Collapsible tool call cards showing every agent action with live status, inputs, and outputs
-- A mode selector dropdown (Planning Mode, Performance Mode, Cluster Mode)
+- A mode selector dropdown (`agent.plan`, `agent.fast`, `team`)
 - A session dropdown to create or switch conversations
+- A skills panel to view and toggle registered skills
 - An attach button to include the current file as context
 - A dark/light theme toggle
 
@@ -75,8 +77,14 @@ A widget in the status bar shows the live WebSocket state:
 | `↻` | Reconnecting (exponential back-off: 1 s → 2 s → 4 s → … → 30 s) |
 | `○` | Disconnected — click to reconnect |
 
+The status bar also shows the current session ID and cumulative token usage when available.
+
+## Alt+Enter Quick Fix
+
+Place the cursor on any highlighted error or warning and press **Alt+Enter**. The quick-fix menu includes **Fix with JiuwenSwarm**, which opens the chat panel and prefills the input with the error message and surrounding code context.
+
 ## Troubleshooting
 
 - **Panel shows blank**: Enable JCEF via **Help → Find Action → Registry** → `ide.browser.jcef.enabled`, then restart.
-- **No connection**: Check that Jiuwenswarm is running on the configured host and port. Click the status bar widget to reconnect.
+- **No connection**: Check that JiuwenSwarm is running on the configured host and port. Click the status bar widget to reconnect.
 - **No responses appear**: Verify the WebSocket endpoint (`ws://host:port/ws`) is reachable. Check **Help → Show Log in Explorer** for plugin logs.

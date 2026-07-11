@@ -26,7 +26,7 @@ export function activate(context: vscode.ExtensionContext): void {
   ws = new WsClient(url);
   session = new SessionManager(ws, channelId);
   statusBar = new StatusBar(ws);
-  chatPanel = new ChatPanel(context, ws, session);
+  chatPanel = new ChatPanel(context, ws, session, statusBar);
 
   // Register sidebar webview provider
   context.subscriptions.push(
@@ -68,10 +68,10 @@ export function activate(context: vscode.ExtensionContext): void {
       }
       const selection = editor.document.getText(editor.selection);
       const fileName = path.basename(editor.document.fileName);
-      const contextPrefix = `[File: ${fileName}]\n\`\`\`\n${selection}\n\`\`\`\n\n`;
-      chatPanel?.postToWebview({ type: 'error', message: '' }); // trigger focus
-      chatPanel?.postToWebview({ type: 'debug_log', line: 'prepend_context' });
+      const prefill = `[File: ${fileName}]\n\`\`\`\n${selection}\n\`\`\`\n\n`;
+
       vscode.commands.executeCommand('jiuwenswarm.chatView.focus');
+      chatPanel?.postToWebview({ type: 'prefill', content: prefill });
     }),
   );
 
