@@ -13,6 +13,7 @@ export class ChatPanel implements vscode.WebviewViewProvider {
   private readonly webviewHtmlPath: string;
   private disposables: vscode.Disposable[] = [];
   private debugEnabled = false;
+  private lastRequestId = '';
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -85,6 +86,7 @@ export class ChatPanel implements vscode.WebviewViewProvider {
         const rid = msg.requestId as string;
         const mediaItems = msg.media_items as unknown[] | undefined;
         if (!rid) return;
+        this.lastRequestId = rid;
         if (!this.ws.isConnected() || !this.session.sessionId) {
           this.postToWebview({ type: 'error', message: 'Not connected to JiuwenSwarm' });
           return;
@@ -141,8 +143,26 @@ export class ChatPanel implements vscode.WebviewViewProvider {
     const msgType = msg.type;
     // Forward streaming events to the webview
     if (msgType === 'event') {
-      this.postToWebview({ type: 'jiuwen_event', event: msg });
+      // Remap gateway "event" field → "event_type" so webview handlers work
+      const legacy = this.convertToLegacyEvent(msg);
+      if (legacy) {
+        this.postToWebview({ type: 'jiuwen_event', event: legacy });
+      }
     }
+  }
+
+  private convertToLegacyEvent(msg: JiuwenMessage): Record<string, unknown> | null {
+    const eventName = msg.event;
+    if (!eventName) return null;
+    const payload = (msg.payload as Record<string, unknown>) || {};
+    const rid = (msg.id as string)
+      || (payload.request_id as string)
+      || this.lastRequestId;
+    return {
+      event_type: eventName,
+      request_id: rid,
+      payload,
+    };
   }
 
   private onStatusChange(s: WsStatus): void {
@@ -236,14 +256,12 @@ export class ChatPanel implements vscode.WebviewViewProvider {
   private getHtml(webview: vscode.Webview): string {
     try {
       let html = fs.readFileSync(this.webviewHtmlPath, 'utf-8');
-      const nonce = getNonce();
-      // Replace the entire CSP meta tag with a nonce-based one
+      // Use 'unsafe-inline' for scripts so inline onclick handlers work.
+      // img-src data: blob: allows base64 image previews from attachments.
       html = html.replace(
         /<meta http-equiv="Content-Security-Policy"[^>]*>/,
-        `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline' ${webview.cspSource}; script-src 'nonce-${nonce}' ${webview.cspSource};">`,
+        `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline' ${webview.cspSource}; script-src 'unsafe-inline' ${webview.cspSource}; img-src data: blob: ${webview.cspSource};">`,
       );
-      // Add nonce to inline <script> blocks
-      html = html.replace(/<script>/g, `<script nonce="${nonce}">`);
       return html;
     } catch {
       return this.getFallbackHtml();

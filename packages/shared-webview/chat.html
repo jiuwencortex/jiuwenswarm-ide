@@ -1112,7 +1112,14 @@ function relativeTime(ts) {
 function applyTheme() {
   var isDark;
   if (state.themeMode === 'auto') {
-    isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    // VS Code webviews set .vscode-dark / .vscode-light on body
+    var isVsCodeDark = document.body.classList.contains('vscode-dark') || document.body.classList.contains('vscode-high-contrast');
+    var isVsCodeLight = document.body.classList.contains('vscode-light') || document.body.classList.contains('vscode-high-contrast-light');
+    if (isVsCodeDark || isVsCodeLight) {
+      isDark = isVsCodeDark;
+    } else {
+      isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    }
   } else {
     isDark = (state.themeMode === 'dark');
   }
