@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data: blob:;">
 <title>JiuwenSwarm</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -901,8 +901,7 @@ function setConnected(yes, sessionId, title) {
     document.getElementById('header-title').textContent = state.sessionTitle;
     if (isNewSession) {
       clearMessages();
-      state.attachments = [];
-      renderAttachments();
+      clearAttachments();
     }
     if (!state.streaming) {
       input.disabled = false;
@@ -963,12 +962,14 @@ function handleImageInput(files) {
       console.warn('[webview] Image too large:', file.name, file.size);
       return;
     }
+    // Create a blob URL immediately for preview (avoids embedding large base64 in DOM)
+    var previewUrl = URL.createObjectURL(file);
     readFileAsBase64(file, function(base64) {
       state.attachments.push({
         filename: file.name,
         mimeType: file.type,
         base64Data: base64,
-        previewUrl: 'data:' + file.type + ';base64,' + base64
+        previewUrl: previewUrl
       });
       renderAttachments();
     });
@@ -1015,7 +1016,20 @@ function renderAttachments() {
 }
 
 function removeAttachment(index) {
-  state.attachments.splice(index, 1);
+  var att = state.attachments.splice(index, 1)[0];
+  if (att && att.previewUrl && att.previewUrl.startsWith('blob:')) {
+    URL.revokeObjectURL(att.previewUrl);
+  }
+  renderAttachments();
+}
+
+function clearAttachments() {
+  state.attachments.forEach(function(att) {
+    if (att.previewUrl && att.previewUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(att.previewUrl);
+    }
+  });
+  state.attachments = [];
   renderAttachments();
 }
 
@@ -1509,8 +1523,7 @@ function submitMessage() {
         base64Data: att.base64Data,
       };
     });
-    state.attachments = [];
-    renderAttachments();
+    clearAttachments();
   }
   send(msg);
 
