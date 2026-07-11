@@ -216,16 +216,21 @@ class ChatPanel(
                     val mode = msg.get("mode")?.asString ?: "code.normal"
                     val rid = msg.get("requestId")?.asString ?: return
                     lastRequestId = rid
+                    debug("SEND  → requestId=$rid mode=$mode content=${content.take(60)}")
                     if (!service.session.sendChat(content, mode, rid)) {
+                        debug("SEND  → FAILED (no session or disconnected)")
                         dispatchToWebview(mapOf(
                             "type" to "error",
                             "message" to "Not connected or no active session",
                             "requestId" to rid
                         ))
+                    } else {
+                        debug("SEND  → OK")
                     }
                 }
                 "new_session" -> ApplicationManager.getApplication().executeOnPooledThread {
                     try {
+                        debug("ACTION→ new_session")
                         // Server auto-creates session on connect via connection.ack.
                         // If none exists yet, just refresh status; session may arrive shortly.
                         sendCurrentStatus()
@@ -235,6 +240,7 @@ class ChatPanel(
                 }
                 "switch_session" -> {
                     val sid = msg.get("sessionId")?.asString ?: return
+                    debug("ACTION→ switch_session $sid")
                     ApplicationManager.getApplication().executeOnPooledThread {
                         try {
                             service.session.switchSession(sid)
@@ -246,6 +252,7 @@ class ChatPanel(
                 }
                 "list_sessions" -> ApplicationManager.getApplication().executeOnPooledThread {
                     try {
+                        debug("ACTION→ list_sessions")
                         val sessions = service.session.listSessions()
                         dispatchToWebview(mapOf("type" to "sessions", "sessions" to sessions.map { it.toMap() }))
                     } catch (e: Exception) {
@@ -372,6 +379,7 @@ class ChatPanel(
     private fun sendCurrentStatus() {
         val s = service.ws.getStatus()
         val sid = service.session.sessionId
+        debug("STATUS→ ws=$s session=$sid")
         when {
             s == WsStatus.CONNECTED && sid != null ->
                 dispatchToWebview(mapOf(
