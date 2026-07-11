@@ -140,8 +140,8 @@
     background: var(--bg3);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    min-width: 140px;
-    z-index: 100;
+    min-width: 160px;
+    z-index: 9999;
     padding: 4px 0;
     box-shadow: 0 4px 12px rgba(0,0,0,0.3);
   }
@@ -153,27 +153,72 @@
     cursor: pointer;
     white-space: nowrap;
     transition: background 0.1s, color 0.1s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
   }
   .dropdown-item:hover { background: var(--bg); color: var(--text); }
+  .dropdown-item.active { color: var(--text); font-weight: 600; }
   .dropdown-divider {
     height: 1px;
     background: var(--border);
     margin: 4px 8px;
   }
+  .dropdown-section-label {
+    padding: 4px 12px 2px;
+    font-size: 10px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    pointer-events: none;
+  }
 
-  #mode-select {
+  /* ── Mode selector (bottom-left, custom dropdown) ── */
+  #mode-wrap {
+    position: relative;
+  }
+  #mode-btn {
     background: var(--bg3);
     border: 1px solid var(--border);
     color: var(--text-muted);
     border-radius: var(--radius);
-    padding: 1px 4px;
-    font-size: 10px;
+    padding: 2px 7px;
+    font-size: 11px;
     cursor: pointer;
     outline: none;
-    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    transition: border-color 0.15s, color 0.15s;
+    white-space: nowrap;
   }
-  #mode-select:hover { color: var(--text); border-color: var(--text-muted); }
-  #mode-select option { background: var(--bg3); color: var(--text); }
+  #mode-btn:hover { color: var(--text); border-color: var(--text-muted); }
+  #mode-btn .chevron { font-size: 9px; opacity: 0.7; }
+
+  #mode-dropdown {
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 4px);
+    left: 0;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    min-width: 140px;
+    z-index: 9999;
+    padding: 4px 0;
+    box-shadow: 0 -4px 12px rgba(0,0,0,0.3);
+  }
+  #mode-dropdown.visible { display: block; }
+  .mode-option {
+    padding: 6px 12px;
+    font-size: 12px;
+    color: var(--text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.1s, color 0.1s;
+  }
+  .mode-option:hover { background: var(--bg); color: var(--text); }
+  .mode-option.selected { color: var(--text); font-weight: 600; }
 
   /* ── Session picker ── */
   #session-bar {
@@ -432,9 +477,10 @@
   #send-btn:hover:not(:disabled) { background: var(--accent-hover); }
   #send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
+  /* Mode on left, token counter on right */
   #input-meta {
     display: flex;
-    justify-content: flex-end;
+    justify-content: space-between;
     align-items: center;
     font-size: 10px;
     color: var(--text-dim);
@@ -452,17 +498,15 @@
   <div id="status-dot" title="Disconnected"></div>
   <div id="header-title">JiuwenSwarm</div>
   <button id="btn-new-session" class="header-btn" onclick="send({type:'new_session'})" title="New session">New</button>
-  <button id="btn-theme" class="header-btn" onclick="toggleTheme()" title="Toggle dark / light theme">🌙</button>
   <div class="header-dropdown">
     <button id="btn-settings" class="header-btn" onclick="toggleSettingsMenu()" title="Settings">⚙</button>
     <div id="settings-menu" class="dropdown-menu">
       <div class="dropdown-item" onclick="showSessionsFromMenu()">📁 Sessions</div>
       <div class="dropdown-divider"></div>
-      <div class="dropdown-item" style="padding:4px 12px;font-size:11px;color:var(--text-dim);">Mode</div>
-      <div class="dropdown-item" onclick="setModeFromMenu('code.normal')" id="mode-item-code.normal"> code · normal</div>
-      <div class="dropdown-item" onclick="setModeFromMenu('code.plan')" id="mode-item-code.plan"> code · plan</div>
-      <div class="dropdown-item" onclick="setModeFromMenu('agent.plan')" id="mode-item-agent.plan"> agent · plan</div>
-      <div class="dropdown-item" onclick="setModeFromMenu('agent.fast')" id="mode-item-agent.fast"> agent · fast</div>
+      <div class="dropdown-section-label">Theme</div>
+      <div class="dropdown-item" id="theme-item-auto"  onclick="setThemeMode('auto')">◐ Auto</div>
+      <div class="dropdown-item" id="theme-item-dark"  onclick="setThemeMode('dark')">🌙 Dark</div>
+      <div class="dropdown-item" id="theme-item-light" onclick="setThemeMode('light')">☀ Light</div>
       <div class="dropdown-divider"></div>
       <div class="dropdown-item" onclick="toggleDebugFromMenu()">
         <span id="debug-check">☐</span> Debug log
@@ -489,12 +533,20 @@
     <button id="send-btn" disabled title="Send (Enter)">↑</button>
   </div>
   <div id="input-meta">
-    <select id="mode-select" title="Agent mode">
-      <option value="code.normal">code · normal</option>
-      <option value="code.plan">code · plan</option>
-      <option value="agent.plan">agent · plan</option>
-      <option value="agent.fast">agent · fast</option>
-    </select>
+    <!-- Mode selector — left side, custom dropdown so it stays inside JCEF's render layer -->
+    <div id="mode-wrap">
+      <button id="mode-btn" onclick="toggleModeDropdown()" title="Agent mode">
+        <span id="mode-label">code · normal</span>
+        <span class="chevron">▾</span>
+      </button>
+      <div id="mode-dropdown">
+        <div class="mode-option selected" data-mode="code.normal"  onclick="selectMode('code.normal')">code · normal</div>
+        <div class="mode-option"          data-mode="code.plan"    onclick="selectMode('code.plan')">code · plan</div>
+        <div class="mode-option"          data-mode="agent.plan"   onclick="selectMode('agent.plan')">agent · plan</div>
+        <div class="mode-option"          data-mode="agent.fast"   onclick="selectMode('agent.fast')">agent · fast</div>
+      </div>
+    </div>
+    <!-- Token counter — right side -->
     <span id="token-counter"></span>
   </div>
 </div>
@@ -539,6 +591,8 @@ let state = {
   streaming: false,
   turns: [],
   pendingTurns: {},
+  mode: 'code.normal',
+  themeMode: 'auto',   // 'auto' | 'dark' | 'light'
 };
 
 // ─────────────────────────────────────────────
@@ -650,72 +704,103 @@ function toggleSessions() {
 }
 
 // ─────────────────────────────────────────────
-// Theme toggle
+// Theme  (auto / dark / light)
 // ─────────────────────────────────────────────
-function toggleTheme() {
-  const html = document.documentElement;
-  const btn = document.getElementById('btn-theme');
-  const isLight = html.getAttribute('data-theme') === 'light';
-  if (isLight) {
-    html.removeAttribute('data-theme');
-    if (btn) btn.textContent = '🌙';
-    try { localStorage.setItem('jiuwen-theme', 'dark'); } catch(e){}
+function applyTheme() {
+  var isDark;
+  if (state.themeMode === 'auto') {
+    isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
   } else {
-    html.setAttribute('data-theme', 'light');
-    if (btn) btn.textContent = '☀️';
-    try { localStorage.setItem('jiuwen-theme', 'light'); } catch(e){}
+    isDark = (state.themeMode === 'dark');
   }
+  if (isDark) {
+    document.documentElement.removeAttribute('data-theme');
+  } else {
+    document.documentElement.setAttribute('data-theme', 'light');
+  }
+  updateThemeMenuChecks();
 }
 
+function setThemeMode(mode) {
+  state.themeMode = mode;
+  try { localStorage.setItem('jiuwen-theme', mode); } catch(e) {}
+  applyTheme();
+  document.getElementById('settings-menu').classList.remove('visible');
+}
+
+function updateThemeMenuChecks() {
+  ['auto', 'dark', 'light'].forEach(function(m) {
+    var el = document.getElementById('theme-item-' + m);
+    if (el) el.classList.toggle('active', state.themeMode === m);
+  });
+}
+
+// React to OS/IDE colour-scheme changes while in auto mode
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function() {
+  if (state.themeMode === 'auto') applyTheme();
+});
+
 function restoreTheme() {
-  const saved = (function(){ try { return localStorage.getItem('jiuwen-theme'); } catch(e){ return null; } })();
-  if (saved === 'light') {
-    document.documentElement.setAttribute('data-theme', 'light');
-    const btn = document.getElementById('btn-theme');
-    if (btn) btn.textContent = '☀️';
-  }
+  var saved = null;
+  try { saved = localStorage.getItem('jiuwen-theme'); } catch(e) {}
+  state.themeMode = saved || 'auto';
+  applyTheme();
+}
+
+// ─────────────────────────────────────────────
+// Mode selector (custom dropdown, opens upward)
+// ─────────────────────────────────────────────
+function toggleModeDropdown() {
+  document.getElementById('mode-dropdown').classList.toggle('visible');
+}
+
+function closeModeDropdown() {
+  document.getElementById('mode-dropdown').classList.remove('visible');
+}
+
+function selectMode(mode) {
+  state.mode = mode;
+  document.getElementById('mode-label').textContent = mode.replace('.', ' · ');
+  document.querySelectorAll('.mode-option').forEach(function(opt) {
+    opt.classList.toggle('selected', opt.dataset.mode === mode);
+  });
+  closeModeDropdown();
 }
 
 // ─────────────────────────────────────────────
 // Settings menu
 // ─────────────────────────────────────────────
 function toggleSettingsMenu() {
-  const menu = document.getElementById('settings-menu');
-  menu.classList.toggle('visible');
+  document.getElementById('settings-menu').classList.toggle('visible');
 }
 
 function showSessionsFromMenu() {
-  toggleSettingsMenu();
+  document.getElementById('settings-menu').classList.remove('visible');
   toggleSessions();
-}
-
-function setModeFromMenu(mode) {
-  const sel = document.getElementById('mode-select');
-  if (sel) {
-    sel.value = mode;
-    sendModeChange();
-  }
-  toggleSettingsMenu();
-}
-
-function sendModeChange() {
-  const sel = document.getElementById('mode-select');
-  if (sel) send({ type: 'set_mode', mode: sel.value });
 }
 
 function toggleDebugFromMenu() {
   state.showDebug = !state.showDebug;
   document.getElementById('debug-check').textContent = state.showDebug ? '☑' : '☐';
   send({ type: 'toggle_debug', enabled: state.showDebug });
-  toggleSettingsMenu();
+  document.getElementById('settings-menu').classList.remove('visible');
 }
 
-// Click outside to close settings menu
+// Click outside to close both dropdowns
 document.addEventListener('click', function(e) {
-  const menu = document.getElementById('settings-menu');
-  const btn = document.getElementById('btn-settings');
-  if (menu.classList.contains('visible') && !menu.contains(e.target) && e.target !== btn) {
-    menu.classList.remove('visible');
+  const settingsMenu = document.getElementById('settings-menu');
+  const settingsBtn  = document.getElementById('btn-settings');
+  if (settingsMenu.classList.contains('visible') &&
+      !settingsMenu.contains(e.target) && e.target !== settingsBtn) {
+    settingsMenu.classList.remove('visible');
+  }
+
+  const modeDropdown = document.getElementById('mode-dropdown');
+  const modeBtn      = document.getElementById('mode-btn');
+  if (modeDropdown.classList.contains('visible') &&
+      !modeDropdown.contains(e.target) && e.target !== modeBtn &&
+      !modeBtn.contains(e.target)) {
+    modeDropdown.classList.remove('visible');
   }
 });
 
@@ -931,16 +1016,10 @@ inputEl.addEventListener('input', function() {
 
 sendBtn.addEventListener('click', submitMessage);
 
-const modeSelectEl = document.getElementById('mode-select');
-if (modeSelectEl) {
-  modeSelectEl.addEventListener('change', sendModeChange);
-}
-
 function submitMessage() {
   const content = inputEl.value.trim();
   if (!content || !state.connected || state.streaming) return;
 
-  const mode = document.getElementById('mode-select').value;
   const requestId = generateId();
 
   beginTurn(requestId, content);
@@ -949,7 +1028,7 @@ function submitMessage() {
   send({
     type: 'send',
     content: content,
-    mode: mode,
+    mode: state.mode,
     requestId: requestId,
   });
 
@@ -1067,7 +1146,7 @@ function renderInline(line) {
 }
 
 // ─────────────────────────────────────────────
-// Init: notify host that webview is ready
+// Init: restore theme, notify host that webview is ready
 // ─────────────────────────────────────────────
 window.addEventListener('load', function() {
   restoreTheme();
