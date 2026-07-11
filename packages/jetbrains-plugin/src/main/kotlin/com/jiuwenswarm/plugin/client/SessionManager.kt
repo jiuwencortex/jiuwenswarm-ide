@@ -70,16 +70,31 @@ class SessionManager(
         sessionTitle = payload.get("title")?.asString ?: sid
     }
 
-    /** Fire-and-forget chat message. Streaming events arrive via WsClient message listener. */
-    fun sendChat(content: String, mode: String, requestId: String): Boolean {
+    /**
+     * Fire-and-forget chat message. Streaming events arrive via WsClient message listener.
+     * If [ideContext] is non-null it is prepended to [content] as a structured block so the
+     * agent can see the current file, selection, and diagnostics without the user having to
+     * copy-paste them manually.
+     */
+    fun sendChat(
+        content: String,
+        mode: String,
+        requestId: String,
+        ideContext: String? = null,
+    ): Boolean {
         val sid = sessionId ?: return false
+        val fullContent = if (!ideContext.isNullOrBlank()) {
+            "$ideContext\n\n$content"
+        } else {
+            content
+        }
         val msg = buildJsonObject {
             addProperty("id", requestId)
             addProperty("type", "req")
             addProperty("channel_id", channelId)
             addProperty("method", "chat.send")
             add("params", buildJsonObject {
-                addProperty("content", content)
+                addProperty("content", fullContent)
                 addProperty("mode", mode)
                 addProperty("session_id", sid)
             })

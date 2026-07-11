@@ -17,6 +17,8 @@ class JiuwenSwarmSettings : PersistentStateComponent<JiuwenSwarmSettings.State> 
         var channelId: String = "ide",
         var defaultMode: String = "code.normal",
         var autoConnect: Boolean = true,
+        /** When true, file edits from the agent are applied directly without a diff dialog. */
+        var autoApplyEdits: Boolean = false,
     )
 
     private var state = State()
@@ -46,6 +48,10 @@ class JiuwenSwarmSettings : PersistentStateComponent<JiuwenSwarmSettings.State> 
     var autoConnect: Boolean
         get() = state.autoConnect
         set(v) { state = state.copy(autoConnect = v) }
+
+    var autoApplyEdits: Boolean
+        get() = state.autoApplyEdits
+        set(v) { state = state.copy(autoApplyEdits = v) }
 
     val wsUrl: String get() = "ws://$host:$port/ws"
 

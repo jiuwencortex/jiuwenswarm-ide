@@ -567,6 +567,14 @@ function handleHostMessage(msg) {
     case 'debug_log':
       appendDebugLog(msg.line);
       break;
+    case 'prefill':
+      var inp = document.getElementById('input');
+      if (inp && msg.content) {
+        inp.value = msg.content;
+        inp.dispatchEvent(new Event('input'));
+        inp.focus();
+      }
+      break;
   }
 }
 

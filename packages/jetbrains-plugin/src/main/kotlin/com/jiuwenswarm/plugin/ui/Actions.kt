@@ -33,15 +33,14 @@ class SendSelectionAction : AnAction() {
         val selection = editor.selectionModel.selectedText ?: return
         val fileName = e.getData(CommonDataKeys.VIRTUAL_FILE)?.name ?: "file"
 
-        val contextPrefix = "[File: $fileName]\n```\n$selection\n```\n\n"
+        val prefillContent = "[File: $fileName]\n```\n$selection\n```\n\n"
 
         ApplicationManager.getApplication().invokeLater {
             val tw = ToolWindowManager.getInstance(project).getToolWindow("JiuwenSwarm")
             tw?.show()
-            // The ChatPanel will pick up context from a postMessage
-            // (simplified: user sees the selection in a prefill message)
-            val content = tw?.contentManager?.selectedContent?.component
-            // For now, just focus — full prepend_context support in Phase 2
+            val comp = tw?.contentManager?.selectedContent?.component
+            val chatPanel = comp?.getClientProperty("jiuwenswarm.panel") as? ChatPanel
+            chatPanel?.dispatchToWebview(mapOf("type" to "prefill", "content" to prefillContent))
         }
     }
 

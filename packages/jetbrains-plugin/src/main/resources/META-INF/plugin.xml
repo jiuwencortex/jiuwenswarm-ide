@@ -119,6 +119,12 @@
             implementation="com.jiuwenswarm.plugin.ui.StatusBarWidgetFactory"
             order="last"/>
 
+        <!-- Notification group for diff-apply confirmations -->
+        <notificationGroup
+            id="JiuwenSwarm"
+            displayType="BALLOON"
+            isLogByDefault="true"/>
+
     </extensions>
 
     <actions>

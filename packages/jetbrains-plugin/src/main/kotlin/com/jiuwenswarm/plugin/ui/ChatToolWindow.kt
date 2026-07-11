@@ -17,6 +17,9 @@ import com.intellij.ui.jcef.JBCefJSQuery
 import com.jiuwenswarm.plugin.JiuwenSwarmService
 import com.jiuwenswarm.plugin.client.SessionInfo
 import com.jiuwenswarm.plugin.client.WsStatus
+import com.jiuwenswarm.plugin.context.ContextCollector
+import com.jiuwenswarm.plugin.editor.DiffApplier
+import com.jiuwenswarm.plugin.settings.JiuwenSwarmSettings
 import org.cef.browser.CefBrowser
 import org.cef.browser.CefFrame
 import org.cef.handler.CefLoadHandlerAdapter
@@ -42,6 +45,8 @@ class ChatToolWindowFactory : ToolWindowFactory {
         try {
             val panel = ChatPanel(project, toolWindow)
             Disposer.register(toolWindow.disposable, panel)
+            // Store the panel on its own component so SendSelectionAction can retrieve it
+            panel.component.putClientProperty("jiuwenswarm.panel", panel)
             val content = ContentFactory.getInstance()
                 .createContent(panel.component, "", false)
             toolWindow.contentManager.addContent(content)
@@ -173,7 +178,8 @@ class ChatPanel(
                     val rid = msg.get("requestId")?.asString ?: return
                     lastRequestId = rid
                     debug("SEND  → requestId=$rid mode=$mode content=${content.take(60)}")
-                    if (!service.session.sendChat(content, mode, rid)) {
+                    val ideContext = ContextCollector.collect(project)
+                    if (!service.session.sendChat(content, mode, rid, ideContext)) {
                         debug("SEND  → FAILED (no session or disconnected)")
                         dispatchToWebview(mapOf(
                             "type" to "error",
@@ -231,7 +237,7 @@ class ChatPanel(
         LOG.info("[JiuwenSwarmDebug] $line")
     }
 
-    private fun onStatusChange(s: WsStatus) {
+    private fun onStatusChange(@Suppress("UNUSED_PARAMETER") s: WsStatus) {
         debug("WS status → $s")
         sendCurrentStatus()
     }
@@ -243,6 +249,15 @@ class ChatPanel(
 
     private fun onJiuwenMessage(msg: JsonObject) {
         debug("RAW ← ${gson.toJson(msg)}")
+        // Route file-edit tool calls to DiffApplier (show diff or auto-apply).
+        // Only applies to old-format events where tool_name sits at the message root.
+        if (msg.get("type")?.asString == "event" &&
+            msg.get("event_type")?.asString == "chat.tool_call") {
+            val autoApply = JiuwenSwarmSettings.instance().autoApplyEdits
+            ApplicationManager.getApplication().executeOnPooledThread {
+                DiffApplier.handle(project, msg, autoApply)
+            }
+        }
         val converted = convertServerMessageToLegacyEvent(msg, lastRequestId)
         if (converted != null) {
             debug("CONV  → event_type=${converted.get("event_type")?.asString} request_id=${converted.get("request_id")?.asString}")
@@ -254,6 +269,7 @@ class ChatPanel(
 
     /** Convert server messages (E2A or old format) to the legacy event format the webview expects.
      *  Webview expects: { event_type, request_id, payload }
+     *  Pure conversion — no side-effects (no dispatch, no DiffApplier calls).
      */
     private fun convertServerMessageToLegacyEvent(msg: JsonObject, fallbackRequestId: String? = null): JsonObject? {
         val responseKind = msg.get("response_kind")?.asString
