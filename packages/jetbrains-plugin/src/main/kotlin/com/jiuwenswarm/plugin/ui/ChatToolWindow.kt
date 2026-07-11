@@ -359,15 +359,36 @@ class ChatPanel(
         val sid = service.session.sessionId
         debug("STATUS→ ws=$s session=$sid")
         when {
-            s == WsStatus.CONNECTED && sid != null ->
-                dispatchToWebview(mapOf(
-                    "type" to "connected",
-                    "sessionId" to sid,
-                    "sessionTitle" to service.session.sessionTitle,
-                ))
+            s == WsStatus.CONNECTED && sid != null -> {
+                // Fetch models in background and include them
+                ApplicationManager.getApplication().executeOnPooledThread {
+                    try {
+                        val (models, activeModel) = service.session.listModels()
+                        val modelList = models.map { m ->
+                            mapOf(
+                                "model_name" to (m.get("model_name")?.asString ?: ""),
+                                "alias" to (m.get("alias")?.asString ?: ""),
+                                "model_provider" to (m.get("model_provider")?.asString ?: ""),
+                            )
+                        }
+                        dispatchToWebview(mapOf(
+                            "type" to "connected",
+                            "sessionId" to sid,
+                            "sessionTitle" to service.session.sessionTitle,
+                            "models" to modelList,
+                            "activeModel" to activeModel,
+                        ))
+                    } catch (e: Exception) {
+                        debug("STATUS→ models.list failed: ${e.message}")
+                        dispatchToWebview(mapOf(
+                            "type" to "connected",
+                            "sessionId" to sid,
+                            "sessionTitle" to service.session.sessionTitle,
+                        ))
+                    }
+                }
+            }
             s == WsStatus.CONNECTED ->
-                // WS is up but no session yet — ask webview to show "connecting" state
-                // so user knows they should click New Session or wait
                 dispatchToWebview(mapOf(
                     "type" to "connected",
                     "sessionId" to null,

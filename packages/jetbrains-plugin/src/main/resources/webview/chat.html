@@ -102,7 +102,7 @@
     flex-shrink: 0;
     transition: background 0.3s;
   }
-  #status-dot.connected { background: #4ade80; }
+  #status-dot.connected { background: #00FF00; }
   #status-dot.reconnecting { background: #dcdcaa; animation: pulse 1s infinite; }
   #status-dot.error { background: #f14c4c; }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
@@ -589,6 +589,17 @@
     color: var(--text-dim);
   }
   #token-counter { color: var(--text-dim); }
+  #model-display {
+    color: var(--text-dim);
+    font-size: 10px;
+    margin-left: auto;
+    margin-right: 8px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 200px;
+  }
+  #model-display:empty { display: none; }
 
   /* Scrollbar for textareas */
   #input::-webkit-scrollbar { width: 4px; }
@@ -651,7 +662,7 @@
     <button id="send-btn" disabled title="Send (Enter)">↑</button>
   </div>
   <div id="input-meta">
-    <!-- Mode selector — left side, custom dropdown so it stays inside JCEF's render layer -->
+    <!-- Mode selector — left side -->
     <div id="mode-wrap">
       <button id="mode-btn" onclick="toggleModeDropdown()" title="Agent mode">
         <span id="mode-label">Planning Mode</span>
@@ -663,6 +674,8 @@
         <div class="mode-option"          data-mode="team"      onclick="selectMode('team')">Cluster Mode</div>
       </div>
     </div>
+    <!-- Model display — center/right -->
+    <span id="model-display" title="Current model"></span>
     <!-- Token counter — right side -->
     <span id="token-counter"></span>
   </div>
@@ -708,7 +721,7 @@ let state = {
   streaming: false,
   turns: [],
   pendingTurns: {},
-  mode: 'code.normal',
+  mode: 'agent.plan',
   themeMode: 'auto',   // 'auto' | 'dark' | 'light'
 };
 
@@ -719,6 +732,7 @@ function handleHostMessage(msg) {
   switch (msg.type) {
     case 'connected':
       setConnected(true, msg.sessionId, msg.sessionTitle);
+      if (msg.models) updateModelDisplay(msg.models, msg.activeModel);
       break;
     case 'disconnected':
       setConnected(false);
@@ -790,6 +804,28 @@ function setReconnecting() {
   const dot = document.getElementById('status-dot');
   dot.className = 'reconnecting';
   dot.title = 'Reconnecting…';
+}
+
+function updateModelDisplay(models, activeModel) {
+  const el = document.getElementById('model-display');
+  if (!el) return;
+  if (!models || !models.length) {
+    el.textContent = '';
+    return;
+  }
+  // Find the active model entry
+  const active = models.find(function(m) {
+    return m.model_name === activeModel || m.alias === activeModel;
+  });
+  if (active) {
+    el.textContent = active.alias || active.model_name;
+    el.title = active.model_name + (active.model_provider ? ' · ' + active.model_provider : '');
+  } else if (activeModel) {
+    el.textContent = activeModel;
+    el.title = activeModel;
+  } else {
+    el.textContent = '';
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -936,7 +972,12 @@ function closeModeDropdown() {
 
 function selectMode(mode) {
   state.mode = mode;
-  document.getElementById('mode-label').textContent = mode.replace('.', ' · ');
+  var labels = {
+    'agent.plan': 'Planning Mode',
+    'agent.fast': 'Performance Mode',
+    'team': 'Cluster Mode'
+  };
+  document.getElementById('mode-label').textContent = labels[mode] || mode;
   document.querySelectorAll('.mode-option').forEach(function(opt) {
     opt.classList.toggle('selected', opt.dataset.mode === mode);
   });

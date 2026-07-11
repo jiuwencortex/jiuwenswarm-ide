@@ -64,6 +64,14 @@ class SessionManager(
         }
     }
 
+    /** Returns available models and the currently active model name. */
+    fun listModels(): Pair<List<JsonObject>, String?> {
+        val payload = request("models.list", emptyMap())
+        val models = payload.getAsJsonArray("models")?.map { it.asJsonObject } ?: emptyList()
+        val activeModel = payload.get("active_model")?.asString
+        return models to activeModel
+    }
+
     fun switchSession(sid: String) {
         val payload = request("session.switch", mapOf("session_id" to sid), sid)
         setSessionId(sid)
