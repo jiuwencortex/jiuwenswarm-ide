@@ -9,6 +9,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
+import com.intellij.openapi.wm.WindowManager
 import com.intellij.ui.content.ContentFactory
 import com.intellij.ui.jcef.JBCefApp
 import com.intellij.ui.jcef.JBCefBrowser
@@ -320,6 +321,10 @@ class ChatPanel(
         val input   = payload.get("input_tokens")?.asInt  ?: payload.get("cache_read_input_tokens")?.asInt ?: 0
         val output  = payload.get("output_tokens")?.asInt ?: 0
         service.lastTokenCount += input + output
+        // Refresh the status bar widget so the new count appears immediately
+        ApplicationManager.getApplication().invokeLater {
+            WindowManager.getInstance().getStatusBar(project)?.updateWidget("JiuwenSwarmStatusWidget")
+        }
     }
 
     /** Convert server messages (E2A or old format) to the legacy event format the webview expects.

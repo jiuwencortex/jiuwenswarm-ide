@@ -69,7 +69,7 @@ Responses stream token-by-token. Each turn shows:
   - Live status indicator (running spinner → done checkmark or error)
   - Collapsible inputs (the parameters sent to the tool)
   - Collapsible output (the result returned by the tool)
-- **Token usage line** — a small line below each completed turn shows the token count for that exchange (also accumulated in the status bar tooltip).
+- **Token usage** — after each completed turn, a small counter in the bottom-right of the input bar shows the token count for that exchange (e.g. `1,234 tok`). The running total is also shown directly in the status bar widget.
 
 ### Input bar
 
@@ -291,12 +291,19 @@ A coloured text widget in the IDE status bar (bottom of the window) shows the li
 | `↻ JiuwenSwarm` | Yellow | Reconnecting — automatic exponential backoff: 1 s → 2 s → 4 s → 8 s → … → 30 s max |
 | `○ JiuwenSwarm` | Grey | Disconnected — **click the widget to reconnect** |
 
-Hovering the widget shows a tooltip:
+Once tokens are used, the running total appears directly in the widget:
+
+```
+⬤ JiuwenSwarm · 42.3k
+```
+
+Hovering shows a detailed tooltip:
+
 ```
 JiuwenSwarm: Connected — session a1b2c3d4 | 42.3k tokens used
 ```
 
-The token count accumulates across all turns in the current IDE session (resets on reconnect/new session).
+The count accumulates across all turns in the current IDE session and resets on reconnect or new session.
 
 ---
 

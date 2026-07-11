@@ -79,11 +79,13 @@ class JiuwenStatusBarWidget : StatusBarWidget, StatusBarWidget.IconPresentation 
     }
 
     override fun getIcon(): Icon {
+        val tokens = service.lastTokenCount
+        val tokenLabel = if (tokens > 0) " · ${formatTokenCount(tokens)}" else ""
         val (label, color) = when (service.ws.getStatus()) {
-            WsStatus.CONNECTED    -> "⬤ JiuwenSwarm" to Color(0x2d, 0xa4, 0x4e)   // dark green
-            WsStatus.CONNECTING   -> "◌ JiuwenSwarm" to Color(0x2d, 0xa4, 0x4e)   // dark green (pending)
-            WsStatus.RECONNECTING -> "↻ JiuwenSwarm" to Color(0xdc, 0xdc, 0xaa)   // yellow
-            WsStatus.DISCONNECTED -> "○ JiuwenSwarm" to Color(0x6b, 0x6b, 0x6b)   // grey
+            WsStatus.CONNECTED    -> "⬤ JiuwenSwarm$tokenLabel" to Color(0x2d, 0xa4, 0x4e)
+            WsStatus.CONNECTING   -> "◌ JiuwenSwarm" to Color(0x2d, 0xa4, 0x4e)
+            WsStatus.RECONNECTING -> "↻ JiuwenSwarm" to Color(0xdc, 0xdc, 0xaa)
+            WsStatus.DISCONNECTED -> "○ JiuwenSwarm" to Color(0x6b, 0x6b, 0x6b)
         }
         return StatusTextIcon(label, color)
     }
@@ -101,7 +103,7 @@ class JiuwenStatusBarWidget : StatusBarWidget, StatusBarWidget.IconPresentation 
  */
 private class StatusTextIcon(private val text: String, private val color: Color) : Icon {
 
-    override fun getIconWidth(): Int = 110   // enough for "⬤ JiuwenSwarm" at any DPI
+    override fun getIconWidth(): Int = maxOf(110, text.length * 8)  // scales with token label
     override fun getIconHeight(): Int = 16
 
     override fun paintIcon(c: Component?, g: Graphics, x: Int, y: Int) {
