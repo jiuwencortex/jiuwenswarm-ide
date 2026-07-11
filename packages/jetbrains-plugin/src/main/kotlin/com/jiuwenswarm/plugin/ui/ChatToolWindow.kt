@@ -153,7 +153,9 @@ class ChatPanel(
     }
 
     fun dispatchToWebview(msg: JsonObject) {
-        val json = gson.toJson(msg).replace("'", "\\'")
+        val json = gson.toJson(msg)
+            .replace("\\", "\\\\")  // must come first: escape backslashes before single-quotes
+            .replace("'", "\\'")
         val js = "if(window.__jb_dispatch) window.__jb_dispatch('$json');"
         ApplicationManager.getApplication().invokeLater {
             browser.cefBrowser.executeJavaScript(js, browser.cefBrowser.url, 0)
