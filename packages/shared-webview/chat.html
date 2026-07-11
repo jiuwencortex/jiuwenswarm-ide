@@ -580,6 +580,60 @@
   #send-btn:hover:not(:disabled) { background: var(--accent-hover); }
   #send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
+  #attach-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0 6px;
+    font-size: 16px;
+    line-height: 1;
+    flex-shrink: 0;
+    transition: color 0.15s;
+  }
+  #attach-btn:hover:not(:disabled) { color: var(--text); }
+  #attach-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+  #attachment-preview {
+    display: none;
+    gap: 6px;
+    padding: 0 0 6px 0;
+    flex-wrap: wrap;
+  }
+  #attachment-preview.has-items { display: flex; }
+  .attachment-thumb {
+    position: relative;
+    width: 48px;
+    height: 48px;
+    border-radius: var(--radius);
+    overflow: hidden;
+    border: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .attachment-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .attachment-remove {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--error-bg);
+    color: var(--error-text);
+    border: 1px solid var(--error-border);
+    font-size: 10px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+
   /* Mode on left, token counter on right */
   #input-meta {
     display: flex;
@@ -657,10 +711,13 @@
 </div>
 
 <div id="input-area">
+  <div id="attachment-preview"></div>
   <div id="input-row">
     <textarea id="input" placeholder="Ask anything… (Enter to send, Shift+Enter for newline)" rows="1" disabled></textarea>
+    <button id="attach-btn" disabled title="Add image" onclick="document.getElementById('image-input').click()">📎</button>
     <button id="send-btn" disabled title="Send (Enter)">↑</button>
   </div>
+  <input type="file" id="image-input" accept="image/png,image/jpeg,image/webp,image/gif" multiple style="display:none">
   <div id="input-meta">
     <!-- Mode selector — left side -->
     <div id="mode-wrap">
@@ -723,6 +780,7 @@ let state = {
   pendingTurns: {},
   mode: 'agent.plan',
   themeMode: 'auto',   // 'auto' | 'dark' | 'light'
+  attachments: [],     // { filename, mimeType, base64Data, previewUrl }
 };
 
 // ─────────────────────────────────────────────
@@ -773,11 +831,10 @@ function setConnected(yes, sessionId, title) {
   const dot = document.getElementById('status-dot');
   const input = document.getElementById('input');
   const sendBtn = document.getElementById('send-btn');
+  const attachBtn = document.getElementById('attach-btn');
   if (yes) {
     dot.className = 'connected';
     dot.title = 'Connected';
-    // Clear messages when a brand-new session starts (different ID means the
-    // previous session's history is no longer active)
     const isNewSession = sessionId && sessionId !== state.sessionId;
     state.connected = true;
     state.sessionId = sessionId;
@@ -785,10 +842,13 @@ function setConnected(yes, sessionId, title) {
     document.getElementById('header-title').textContent = state.sessionTitle;
     if (isNewSession) {
       clearMessages();
+      state.attachments = [];
+      renderAttachments();
     }
     if (!state.streaming) {
       input.disabled = false;
       sendBtn.disabled = false;
+      attachBtn.disabled = false;
     }
     hideEmptyState();
   } else {
@@ -826,6 +886,78 @@ function updateModelDisplay(models, activeModel) {
   } else {
     el.textContent = '';
   }
+}
+
+// ─────────────────────────────────────────────
+// Image attachments
+// ─────────────────────────────────────────────
+function handleImageInput(files) {
+  if (!files || !files.length) return;
+  const validTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
+  const maxSize = 10 * 1024 * 1024; // 10 MB
+  Array.from(files).forEach(function(file) {
+    if (!validTypes.includes(file.type)) {
+      console.warn('[webview] Unsupported image type:', file.type);
+      return;
+    }
+    if (file.size > maxSize) {
+      console.warn('[webview] Image too large:', file.name, file.size);
+      return;
+    }
+    readFileAsBase64(file, function(base64) {
+      state.attachments.push({
+        filename: file.name,
+        mimeType: file.type,
+        base64Data: base64,
+        previewUrl: 'data:' + file.type + ';base64,' + base64
+      });
+      renderAttachments();
+    });
+  });
+}
+
+function readFileAsBase64(file, callback) {
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var dataUrl = e.target.result;
+    var base64 = dataUrl.split(',')[1];
+    callback(base64);
+  };
+  reader.onerror = function() {
+    console.warn('[webview] Failed to read file:', file.name);
+  };
+  reader.readAsDataURL(file);
+}
+
+function renderAttachments() {
+  var preview = document.getElementById('attachment-preview');
+  if (!preview) return;
+  preview.innerHTML = '';
+  if (!state.attachments.length) {
+    preview.classList.remove('has-items');
+    return;
+  }
+  preview.classList.add('has-items');
+  state.attachments.forEach(function(att, idx) {
+    var thumb = document.createElement('div');
+    thumb.className = 'attachment-thumb';
+    var img = document.createElement('img');
+    img.src = att.previewUrl;
+    img.alt = att.filename;
+    thumb.appendChild(img);
+    var removeBtn = document.createElement('button');
+    removeBtn.className = 'attachment-remove';
+    removeBtn.textContent = '✕';
+    removeBtn.title = 'Remove';
+    removeBtn.onclick = function() { removeAttachment(idx); };
+    thumb.appendChild(removeBtn);
+    preview.appendChild(thumb);
+  });
+}
+
+function removeAttachment(index) {
+  state.attachments.splice(index, 1);
+  renderAttachments();
 }
 
 // ─────────────────────────────────────────────
@@ -1251,6 +1383,14 @@ inputEl.addEventListener('input', function() {
 
 sendBtn.addEventListener('click', submitMessage);
 
+const imageInputEl = document.getElementById('image-input');
+if (imageInputEl) {
+  imageInputEl.addEventListener('change', function(e) {
+    handleImageInput(e.target.files);
+    imageInputEl.value = '';
+  });
+}
+
 function submitMessage() {
   const content = inputEl.value.trim();
   if (!content || !state.connected || state.streaming) return;
@@ -1260,12 +1400,26 @@ function submitMessage() {
   beginTurn(requestId, content);
   setStreaming(true);
 
-  send({
+  const msg = {
     type: 'send',
     content: content,
     mode: state.mode,
     requestId: requestId,
-  });
+  };
+  // Attach images if any
+  if (state.attachments.length) {
+    msg.media_items = state.attachments.map(function(att) {
+      return {
+        type: 'image',
+        filename: att.filename,
+        mimeType: att.mimeType,
+        base64Data: att.base64Data,
+      };
+    });
+    state.attachments = [];
+    renderAttachments();
+  }
+  send(msg);
 
   inputEl.value = '';
   inputEl.style.height = 'auto';
@@ -1275,6 +1429,8 @@ function setStreaming(yes) {
   state.streaming = yes;
   inputEl.disabled = yes || !state.connected;
   sendBtn.disabled = yes || !state.connected;
+  const attachBtn = document.getElementById('attach-btn');
+  if (attachBtn) attachBtn.disabled = yes || !state.connected;
   if (!yes) inputEl.focus();
 }
 

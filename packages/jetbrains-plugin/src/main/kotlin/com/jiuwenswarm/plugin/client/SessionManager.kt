@@ -83,12 +83,14 @@ class SessionManager(
      * If [ideContext] is non-null it is prepended to [content] as a structured block so the
      * agent can see the current file, selection, and diagnostics without the user having to
      * copy-paste them manually.
+     * If [mediaItems] is non-null, image attachments are included in base64 format.
      */
     fun sendChat(
         content: String,
         mode: String,
         requestId: String,
         ideContext: String? = null,
+        mediaItems: com.google.gson.JsonArray? = null,
     ): Boolean {
         val sid = sessionId ?: return false
         val fullContent = if (!ideContext.isNullOrBlank()) {
@@ -105,8 +107,10 @@ class SessionManager(
                 addProperty("content", fullContent)
                 addProperty("mode", mode)
                 addProperty("session_id", sid)
+                if (mediaItems != null && mediaItems.size() > 0) {
+                    add("media_items", mediaItems)
+                }
             })
-            addProperty("timestamp", System.currentTimeMillis() / 1000.0)
         }
         return ws.send(msg)
     }

@@ -178,10 +178,11 @@ class ChatPanel(
                     val content = msg.get("content")?.asString ?: return
                     val mode = msg.get("mode")?.asString ?: "agent.plan"
                     val rid = msg.get("requestId")?.asString ?: return
+                    val mediaItems = msg.getAsJsonArray("media_items")
                     lastRequestId = rid
-                    debug("SEND  → requestId=$rid mode=$mode content=${content.take(60)}")
+                    debug("SEND  → requestId=$rid mode=$mode content=${content.take(60)} media=${mediaItems?.size() ?: 0}")
                     val ideContext = ContextCollector.collect(project)
-                    if (!service.session.sendChat(content, mode, rid, ideContext)) {
+                    if (!service.session.sendChat(content, mode, rid, ideContext, mediaItems)) {
                         debug("SEND  → FAILED (no session or disconnected)")
                         dispatchToWebview(mapOf(
                             "type" to "error",
