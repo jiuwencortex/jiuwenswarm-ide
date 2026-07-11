@@ -2,7 +2,7 @@
 
 Development status and roadmap for the JetBrains plugin and VS Code extension. For architecture and technical details see [ARCHITECTURE.md](ARCHITECTURE.md).
 
-Legend: ✅ done · 🔶 partial · ❌ not started
+Legend: ✅ done · 🔶 partial · ❌ not started · 🚫 platform limitation
 
 ---
 
@@ -16,24 +16,29 @@ Legend: ✅ done · 🔶 partial · ❌ not started
 | Session list (create / switch / delete) | ✅ | ✅ (no delete) |
 | Automatic context injection (active file, selection, language) | ✅ | ✅ |
 | Tool call cards (file read/write, bash, etc.) | ✅ | ✅ (via shared webview) |
-| Inline diff for file edits (accept / reject) | ✅ | ❌ |
-| Connection status indicator (connected / reconnecting) | ✅ | ✅ |
-| Token usage display | ✅ (status bar tooltip) | ❌ |
+| Inline diff for file edits (accept / reject) | ✅ | 🚫 |
+| Connection status indicator (connected / reconnecting / disconnected) | ✅ | ✅ |
+| Token usage display | ✅ (status bar) | ✅ (status bar) |
+| E2A streaming format support (`e2a.chunk` / `e2a.complete` / `e2a.error`) | ✅ | ✅ |
+| Image/media attachments (base64 in `media_items`) | ✅ | ✅ |
+| Debug logging toggle from webview | ✅ | ✅ |
+| Click-to-reconnect when disconnected | ✅ | ✅ |
 
 ### Enhanced (v2)
 
 | Feature | JetBrains | VS Code |
 |---------|-----------|---------|
 | Diagnostics context: IDE errors/warnings injected into every message | ✅ | ✅ |
-| Git context: current branch + uncommitted change count | ✅ | ❌ |
-| Multi-file context: all open tabs sent with each message | ✅ | ❌ |
-| Project tree context: directory listing of workspace | ✅ | ❌ |
-| "Fix with JiuwenSwarm" quick action on errors (Alt+Enter) | ✅ | ❌ |
+| Git context: current branch + uncommitted change count | ✅ | ✅ |
+| Multi-file context: all open tabs sent with each message | ✅ | ✅ |
+| Project tree context: directory listing of workspace | 🔶 (open file list only) | ❌ |
+| "Fix with JiuwenSwarm" quick action on errors (Alt+Enter) | ✅ | 🚫 |
 | Right-click → "Send Selection to JiuwenSwarm" | ✅ | ✅ |
 | Inline ghost text suggestions (like Copilot) | ❌ | ❌ |
-| Skills panel: browse / toggle skills from within IDE | ✅ | ❌ |
+| Skills panel: browse / toggle skills from within IDE | ✅ | ✅ |
 | Clickable file links: agent-mentioned paths open file at line in editor | ✅ | ❌ |
 | Replay / TraceHound panel: session trajectory viewer inside IDE | ❌ | ❌ |
+| E2A field resilience (checks top-level + payload for `response_kind`) | ✅ | ✅ |
 
 ### Power features (v3)
 
@@ -42,7 +47,7 @@ Legend: ✅ done · 🔶 partial · ❌ not started
 | Approval workflow: tool calls require user confirmation | ❌ | ❌ |
 | Terminal integration: agent runs commands in IDE terminal | ❌ | ❌ |
 | Symbol navigation: agent references symbols for jump-to-definition | ❌ | ❌ |
-| Checkpoint / rewind: undo all file changes from last turn | ✅ | ❌ |
+| Checkpoint / rewind: undo all file changes from last turn | 🔶 (diff-based, no persistent snapshot) | 🚫 |
 | Pair programming mode: agent narrates thought process in real time | ❌ | ❌ |
 
 ---
@@ -54,13 +59,15 @@ Legend: ✅ done · 🔶 partial · ❌ not started
 | # | Feature | JetBrains | VS Code |
 |---|---------|-----------|---------|
 | 1 | WebSocket client connecting to `ws://localhost:19000/ws` | ✅ | ✅ |
-| 2 | Session creation on startup | ✅ | ✅ |
+| 2 | Session creation on startup (auto from `connection.ack`) | ✅ | ✅ |
 | 3 | Basic chat panel (text in, streaming text out) | ✅ | ✅ |
 | 4 | Tool call cards (read-only display) | ✅ | ✅ |
 | 5 | Connection status indicator | ✅ | ✅ |
 | 6 | VS Code: Webview panel · JetBrains: JCEF panel | ✅ | ✅ |
+| 7 | Status bar with token count | ✅ | ✅ |
+| 8 | Image attachments via `media_items` | ✅ | ✅ |
 
-**Deliverable**: Developer can type a question, get a streaming answer from jiuwenswarm, see what tools ran.
+**Deliverable**: Developer can type a question, get a streaming answer from JiuwenSwarm, see what tools ran, and see token usage.
 
 ---
 
@@ -69,12 +76,14 @@ Legend: ✅ done · 🔶 partial · ❌ not started
 | # | Feature | JetBrains | VS Code |
 |---|---------|-----------|---------|
 | 1 | Context injection (active file, selection, diagnostics) | ✅ | ✅ |
-| 2 | File edit interception from `chat.tool_call` events | ✅ | ❌ |
-| 3 | Diff viewer (propose → accept / reject) | ✅ | ❌ |
+| 2 | File edit interception from `chat.tool_call` events | ✅ | 🚫 |
+| 3 | Diff viewer (propose → accept / reject) | ✅ | 🚫 |
 | 4 | Session management (list, create, switch) | ✅ | ✅ |
 | 5 | Settings panel (host, port, mode, auto-apply) | ✅ | ✅ (no auto-apply) |
+| 6 | Git context (branch, uncommitted changes) | ✅ | ✅ |
+| 7 | Other open files context | ✅ | ✅ |
 
-**Deliverable**: Developer can ask "fix this function" with selection, get a diff, click Accept.
+**Deliverable**: Developer can ask "fix this function" with selection, get a diff (JetBrains), and the agent knows the git state and open files.
 
 ---
 
@@ -82,15 +91,17 @@ Legend: ✅ done · 🔶 partial · ❌ not started
 
 | # | Feature | JetBrains | VS Code |
 |---|---------|-----------|---------|
-| 1 | Git context (branch, uncommitted changes count) | ✅ | ❌ |
-| 2 | "Fix with JiuwenSwarm" quick action on errors (Alt+Enter) | ✅ | ❌ |
+| 1 | Skills browser panel (`skills.list` / `skills.toggle`) | ✅ | ✅ |
+| 2 | Token usage in status bar | ✅ | ✅ |
 | 3 | Right-click context menu → "Send Selection to JiuwenSwarm" | ✅ | ✅ |
-| 4 | Multi-file context (all open tabs) | ✅ | ❌ |
-| 5 | Skills browser panel | ✅ | ❌ |
-| 6 | Token usage in status bar | ✅ | ❌ |
-| 7 | Project tree context (2-level directory listing injected per message) | ✅ | ❌ |
+| 4 | E2A streaming format support (gateway v2 protocol) | ✅ | ✅ |
+| 5 | "Fix with JiuwenSwarm" quick action on errors (Alt+Enter) | ✅ | 🚫 |
+| 6 | Multi-file context (all open tabs) | ✅ | ✅ |
+| 7 | Project tree context (2-level directory listing injected per message) | 🔶 | ❌ |
 | 8 | Session delete from sessions overlay (two-click confirmation) | ✅ | ❌ |
-| 9 | Checkpoint / rewind: snapshot files before agent edits; one-click restore | ✅ | ❌ |
+| 9 | Checkpoint / rewind: snapshot files before agent edits; one-click restore | 🔶 | 🚫 |
+| 10 | Debug logging toggle from webview | ✅ | ✅ |
+| 11 | Clickable file links in agent responses | ✅ | ❌ |
 
 **Deliverable**: First-class AI assistant experience on par with Copilot Chat / Cursor.
 
@@ -105,6 +116,8 @@ Legend: ✅ done · 🔶 partial · ❌ not started
 | 3 | Replay / TraceHound viewer inside IDE | ❌ | ❌ |
 | 4 | Terminal integration (agent runs commands in IDE terminal) | ❌ | ❌ |
 | 5 | Shared webview code published as npm package | ❌ | ❌ |
+| 6 | VS Code: native diff dialog for file edits | 🚫 | 🚫 |
+| 7 | VS Code: Code Action quick-fix on diagnostics | 🚫 | 🚫 |
 
 ---
 
