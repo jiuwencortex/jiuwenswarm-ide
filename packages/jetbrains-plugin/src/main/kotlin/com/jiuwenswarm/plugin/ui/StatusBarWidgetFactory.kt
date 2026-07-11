@@ -70,8 +70,8 @@ class JiuwenStatusBarWidget : StatusBarWidget, StatusBarWidget.IconPresentation 
 
     override fun getIcon(): Icon {
         val (label, color) = when (service.ws.getStatus()) {
-            WsStatus.CONNECTED    -> "⬤ JiuwenSwarm" to Color(0x00, 0xFF, 0x00)   // regular green
-            WsStatus.CONNECTING   -> "◌ JiuwenSwarm" to Color(0x00, 0xFF, 0x00)   // regular green (pending)
+            WsStatus.CONNECTED    -> "⬤ JiuwenSwarm" to Color(0x2d, 0xa4, 0x4e)   // dark green
+            WsStatus.CONNECTING   -> "◌ JiuwenSwarm" to Color(0x2d, 0xa4, 0x4e)   // dark green (pending)
             WsStatus.RECONNECTING -> "↻ JiuwenSwarm" to Color(0xdc, 0xdc, 0xaa)   // yellow
             WsStatus.DISCONNECTED -> "○ JiuwenSwarm" to Color(0x6b, 0x6b, 0x6b)   // grey
         }

@@ -102,7 +102,7 @@
     flex-shrink: 0;
     transition: background 0.3s;
   }
-  #status-dot.connected { background: #00FF00; }
+  #status-dot.connected { background: #2da44e; }
   #status-dot.reconnecting { background: #dcdcaa; animation: pulse 1s infinite; }
   #status-dot.error { background: #f14c4c; }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
@@ -174,6 +174,12 @@
     text-transform: uppercase;
     letter-spacing: 0.06em;
     pointer-events: none;
+  }
+  .emoji-fix {
+    display: inline-block;
+    width: 1.3em;
+    text-align: center;
+    margin-right: 2px;
   }
 
   /* ── Mode selector (bottom-left, custom dropdown) ── */
@@ -262,6 +268,44 @@
     line-height: 1;
   }
   #session-overlay-close:hover { color: var(--text); background: var(--bg); }
+
+  /* ── Modal dialog ── */
+  #modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 10000;
+    align-items: center;
+    justify-content: center;
+  }
+  #modal-overlay.visible { display: flex; }
+  #modal-box {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 24px;
+    min-width: 320px;
+    max-width: 420px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  }
+  #modal-title { font-size: 14px; font-weight: 600; margin-bottom: 8px; color: var(--text); }
+  #modal-body  { font-size: 12px; color: var(--text-muted); margin-bottom: 16px; line-height: 1.5; }
+  #modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+  .modal-btn {
+    padding: 6px 14px;
+    font-size: 12px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    background: var(--bg3);
+    color: var(--text);
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .modal-btn:hover { background: var(--bg); border-color: var(--text-muted); }
+  .modal-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .modal-btn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+
   #session-list {
     flex: 1;
     overflow-y: auto;
@@ -582,16 +626,18 @@
 
   #attach-btn {
     background: none;
-    border: none;
+    border: 1px solid var(--border);
     color: var(--text-muted);
     cursor: pointer;
-    padding: 0 6px;
-    font-size: 16px;
+    padding: 0 5px;
+    font-size: 13px;
     line-height: 1;
     flex-shrink: 0;
-    transition: color 0.15s;
+    border-radius: var(--radius);
+    transition: color 0.15s, border-color 0.15s;
+    margin-right: 6px;
   }
-  #attach-btn:hover:not(:disabled) { color: var(--text); }
+  #attach-btn:hover:not(:disabled) { color: var(--text); border-color: var(--text-muted); }
   #attach-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 
   #attachment-preview {
@@ -672,9 +718,9 @@
       <div class="dropdown-item" onclick="showSessionsFromMenu()">📁 Sessions</div>
       <div class="dropdown-divider"></div>
       <div class="dropdown-section-label">Theme</div>
-      <div class="dropdown-item" id="theme-item-auto"  onclick="setThemeMode('auto')">◐ Auto</div>
-      <div class="dropdown-item" id="theme-item-dark"  onclick="setThemeMode('dark')">🌙 Dark</div>
-      <div class="dropdown-item" id="theme-item-light" onclick="setThemeMode('light')">☀ Light</div>
+      <div class="dropdown-item" id="theme-item-auto" onclick="setThemeMode('auto')"><span class="emoji-fix">◐</span> Auto</div>
+      <div class="dropdown-item" id="theme-item-dark" onclick="setThemeMode('dark')"><span class="emoji-fix">🌙</span> Dark</div>
+      <div class="dropdown-item" id="theme-item-light" onclick="setThemeMode('light')"><span class="emoji-fix">☀</span> Light</div>
       <div class="dropdown-divider"></div>
       <div class="dropdown-item" onclick="toggleDebugFromMenu()">
         <span id="debug-check">☐</span> Debug log
@@ -691,6 +737,18 @@
     <button id="session-overlay-close" onclick="toggleSessions()" title="Close">✕</button>
   </div>
   <div id="session-list"></div>
+</div>
+
+<!-- Mode-change confirmation modal -->
+<div id="modal-overlay" onclick="if(event.target===this) closeModal()">
+  <div id="modal-box">
+    <div id="modal-title">Switch Mode</div>
+    <div id="modal-body">Current session has history messages. Switching mode will create a new session.</div>
+    <div id="modal-actions">
+      <button class="modal-btn" onclick="closeModal()">Cancel</button>
+      <button class="modal-btn primary" onclick="confirmModeSwitch()">Confirm</button>
+    </div>
+  </div>
 </div>
 
 <div id="messages">
@@ -713,13 +771,14 @@
 <div id="input-area">
   <div id="attachment-preview"></div>
   <div id="input-row">
-    <textarea id="input" placeholder="Ask anything… (Enter to send, Shift+Enter for newline)" rows="1" disabled></textarea>
-    <button id="attach-btn" disabled title="Add image" onclick="document.getElementById('image-input').click()">📎</button>
+    <textarea id="input" placeholder="Enter to send, Shift+Enter for new line" rows="1" disabled></textarea>
     <button id="send-btn" disabled title="Send (Enter)">↑</button>
   </div>
   <input type="file" id="image-input" accept="image/png,image/jpeg,image/webp,image/gif" multiple style="display:none">
   <div id="input-meta">
-    <!-- Mode selector — left side -->
+    <!-- Attach button — leftmost -->
+    <button id="attach-btn" disabled title="Add Image" onclick="document.getElementById('image-input').click()">+</button>
+    <!-- Mode selector -->
     <div id="mode-wrap">
       <button id="mode-btn" onclick="toggleModeDropdown()" title="Agent mode">
         <span id="mode-label">Planning Mode</span>
@@ -1102,7 +1161,26 @@ function closeModeDropdown() {
   document.getElementById('mode-dropdown').classList.remove('visible');
 }
 
+var pendingModeSwitch = null;
+
 function selectMode(mode) {
+  if (mode === state.mode) {
+    closeModeDropdown();
+    return;
+  }
+  // If session has messages, ask for confirmation
+  var hasMessages = state.turns.length > 0 || document.getElementById('messages').children.length > 1;
+  if (hasMessages) {
+    pendingModeSwitch = mode;
+    openModal();
+    closeModeDropdown();
+    return;
+  }
+  applyMode(mode);
+  closeModeDropdown();
+}
+
+function applyMode(mode) {
   state.mode = mode;
   var labels = {
     'agent.plan': 'Planning Mode',
@@ -1113,7 +1191,22 @@ function selectMode(mode) {
   document.querySelectorAll('.mode-option').forEach(function(opt) {
     opt.classList.toggle('selected', opt.dataset.mode === mode);
   });
-  closeModeDropdown();
+}
+
+function openModal() {
+  document.getElementById('modal-overlay').classList.add('visible');
+}
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('visible');
+  pendingModeSwitch = null;
+}
+function confirmModeSwitch() {
+  if (pendingModeSwitch) {
+    applyMode(pendingModeSwitch);
+    // Request new session after mode switch
+    send({ type: 'new_session' });
+  }
+  closeModal();
 }
 
 // ─────────────────────────────────────────────
