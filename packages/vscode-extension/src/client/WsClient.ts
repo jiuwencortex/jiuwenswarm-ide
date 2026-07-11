@@ -79,6 +79,18 @@ export class WsClient {
     });
   }
 
+  /** Force a fresh reconnect (used for "New session"). */
+  reconnect(): void {
+    if (this.destroyed) return;
+    this.clearTimers();
+    this.retryCount = 0;
+    if (this.ws) {
+      try { this.ws.close(); } catch { /* ignore */ }
+      this.ws = null;
+    }
+    this.connect();
+  }
+
   send(msg: JiuwenMessage): boolean {
     if (this.ws?.readyState !== WebSocket.OPEN) return false;
     this.ws.send(JSON.stringify(msg));
@@ -97,7 +109,6 @@ export class WsClient {
   }
 
   getStatus(): WsStatus { return this.status; }
-
   isConnected(): boolean { return this.status === 'connected'; }
 
   private setStatus(s: WsStatus): void {

@@ -3,15 +3,16 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { WsClient, WsStatus } from '../client/WsClient';
 import { SessionManager } from '../client/SessionManager';
-import { JiuwenMessage, ExtToWebviewMsg, WebviewToExtMsg } from '../client/protocol';
+import { JiuwenMessage, ExtToWebviewMsg } from '../client/protocol';
+import { collectContext } from '../context/ContextCollector';
 
 export class ChatPanel implements vscode.WebviewViewProvider {
   public static readonly viewId = 'jiuwenswarm.chatView';
 
   private view?: vscode.WebviewView;
   private readonly webviewHtmlPath: string;
-  private messageListener?: (msg: JiuwenMessage) => void;
-  private statusListener?: (s: WsStatus) => void;
+  private disposables: vscode.Disposable[] = [];
+  private debugEnabled = false;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -36,40 +37,32 @@ export class ChatPanel implements vscode.WebviewViewProvider {
     webviewView.webview.html = this.getHtml(webviewView.webview);
 
     // Webview → extension
-    webviewView.webview.onDidReceiveMessage((raw: WebviewToExtMsg) => {
-      this.handleWebviewMessage(raw);
-    });
+    const d1 = webviewView.webview.onDidReceiveMessage((raw) => this.handleWebviewMessage(raw));
+    this.disposables.push(d1);
 
     // WS events → webview
-    this.messageListener = (msg) => this.onJiuwenMessage(msg);
-    this.statusListener = (s) => this.onStatusChange(s);
-    this.ws.on('message', this.messageListener);
-    this.ws.on('status', this.statusListener);
+    const statusListener = (s: WsStatus) => this.onStatusChange(s);
+    const msgListener = (m: JiuwenMessage) => this.onJiuwenMessage(m);
+    const sessionListener = (sid: string | null) => this.onSessionChange(sid);
+    this.ws.on('status', statusListener);
+    this.ws.on('message', msgListener);
+    this.session.addSessionListener(sessionListener);
 
-    // Clean up when view is disposed
+    this.disposables.push(
+      new vscode.Disposable(() => this.ws.off('status', statusListener)),
+      new vscode.Disposable(() => this.ws.off('message', msgListener)),
+      new vscode.Disposable(() => this.session.removeSessionListener(sessionListener)),
+    );
+
     webviewView.onDidDispose(() => {
-      if (this.messageListener) this.ws.off('message', this.messageListener);
-      if (this.statusListener) this.ws.off('status', this.statusListener);
+      this.disposables.forEach((d) => d.dispose());
+      this.disposables = [];
     });
 
     // Send current status immediately if already connected
-    if (this.ws.isConnected() && this.session.sessionId) {
-      this.postToWebview({
-        type: 'connected',
-        sessionId: this.session.sessionId,
-        sessionTitle: this.session.sessionTitle,
-      });
+    if (this.ws.isConnected()) {
+      this.sendCurrentStatus();
     }
-  }
-
-  // Called from command: prepend selection as context
-  appendSelectionContext(selection: string, filePath: string): void {
-    if (!this.view) return;
-    const contextPrefix = `[File: ${filePath}]\n\`\`\`\n${selection}\n\`\`\`\n\n`;
-    this.postToWebview({ type: 'error', message: '' }); // just focus
-    // Focus the input via a custom msg type
-    this.view.webview.postMessage({ type: 'prepend_context', text: contextPrefix });
-    this.view.show(true);
   }
 
   postToWebview(msg: ExtToWebviewMsg): void {
@@ -79,31 +72,65 @@ export class ChatPanel implements vscode.WebviewViewProvider {
   // ──────────────────────────────────────────
   // Webview → Extension
   // ──────────────────────────────────────────
-  private handleWebviewMessage(msg: WebviewToExtMsg): void {
-    switch (msg.type) {
+  private handleWebviewMessage(msg: Record<string, unknown>): void {
+    const type = msg.type as string;
+    switch (type) {
       case 'ready':
         this.sendCurrentStatus();
         break;
 
-      case 'send':
+      case 'send': {
+        const content = msg.content as string;
+        const mode = (msg.mode as string) || 'agent.plan';
+        const rid = msg.requestId as string;
+        const mediaItems = msg.media_items as unknown[] | undefined;
+        if (!rid) return;
         if (!this.ws.isConnected() || !this.session.sessionId) {
           this.postToWebview({ type: 'error', message: 'Not connected to JiuwenSwarm' });
           return;
         }
-        this.session.sendChat(msg.content, msg.mode, msg.requestId);
+        this.debug(`SEND\u2192 requestId=${rid} mode=${mode} content=${content.substring(0, 60)}`);
+        const ideContext = collectContext();
+        if (!this.session.sendChat(content, mode, rid, ideContext || undefined, mediaItems)) {
+          this.debug('SEND\u2192 FAILED (no session or disconnected)');
+          this.postToWebview({ type: 'error', message: 'Not connected or no active session', requestId: rid });
+        } else {
+          this.debug('SEND\u2192 OK');
+        }
         break;
+      }
 
-      case 'new_session':
-        this.createSession();
+      case 'new_session': {
+        if (!this.ws.isConnected()) {
+          this.postToWebview({ type: 'error', message: 'Not connected' });
+          return;
+        }
+        this.debug('ACTION\u2192 new_session (reconnecting for fresh session)');
+        this.ws.reconnect();
         break;
+      }
 
-      case 'switch_session':
-        this.switchSession(msg.sessionId);
+      case 'toggle_debug': {
+        this.debugEnabled = (msg.enabled as boolean) || false;
+        this.debug(`Debug mode toggled: ${this.debugEnabled}`);
         break;
+      }
 
-      case 'list_sessions':
+      case 'list_sessions': {
         this.listSessions();
         break;
+      }
+
+      case 'switch_session': {
+        const sid = msg.sessionId as string;
+        if (sid) this.switchSession(sid);
+        break;
+      }
+
+      case 'set_mode': {
+        // Mode is handled purely in the webview; no backend action needed
+        break;
+      }
     }
   }
 
@@ -111,25 +138,62 @@ export class ChatPanel implements vscode.WebviewViewProvider {
   // JiuwenSwarm events → webview
   // ──────────────────────────────────────────
   private onJiuwenMessage(msg: JiuwenMessage): void {
+    const msgType = msg.type;
     // Forward streaming events to the webview
-    if (msg.type === 'event') {
+    if (msgType === 'event') {
       this.postToWebview({ type: 'jiuwen_event', event: msg });
     }
   }
 
   private onStatusChange(s: WsStatus): void {
-    if (s === 'connected') {
-      // Session may have been created before the view was resolved
-      if (this.session.sessionId) {
-        this.postToWebview({
-          type: 'connected',
-          sessionId: this.session.sessionId,
-          sessionTitle: this.session.sessionTitle,
+    this.sendCurrentStatus();
+  }
+
+  private onSessionChange(_sid: string | null): void {
+    // Session changed (from connection.ack) — refresh status
+    if (this.ws.isConnected()) {
+      this.sendCurrentStatus();
+    }
+  }
+
+  private sendCurrentStatus(): void {
+    const s = this.ws.getStatus();
+    const sid = this.session.sessionId;
+    this.debug(`STATUS\u2192 ws=${s} session=${sid}`);
+    if (s === 'connected' && sid) {
+      // Fetch models in background
+      this.session.listModels()
+        .then(({ models, activeModel }) => {
+          const modelList = models.map((m) => ({
+            model_name: (m.model_name as string) || '',
+            alias: (m.alias as string) || '',
+            model_provider: (m.model_provider as string) || '',
+          }));
+          this.postToWebview({
+            type: 'connected',
+            sessionId: sid,
+            sessionTitle: this.session.sessionTitle,
+            models: modelList,
+            activeModel: activeModel || undefined,
+          });
+        })
+        .catch(() => {
+          this.postToWebview({
+            type: 'connected',
+            sessionId: sid,
+            sessionTitle: this.session.sessionTitle,
+          });
         });
-      }
+    } else if (s === 'connected') {
+      this.postToWebview({
+        type: 'connected',
+        sessionId: null,
+        sessionTitle: 'JiuwenSwarm',
+        needsSession: true,
+      });
     } else if (s === 'reconnecting') {
       this.postToWebview({ type: 'reconnecting' });
-    } else if (s === 'disconnected') {
+    } else {
       this.postToWebview({ type: 'disconnected' });
     }
   }
@@ -137,14 +201,10 @@ export class ChatPanel implements vscode.WebviewViewProvider {
   // ──────────────────────────────────────────
   // Session helpers
   // ──────────────────────────────────────────
-  private async createSession(): Promise<void> {
+  private async listSessions(): Promise<void> {
     try {
-      const sid = await this.session.createSession();
-      this.postToWebview({
-        type: 'connected',
-        sessionId: sid,
-        sessionTitle: this.session.sessionTitle,
-      });
+      const sessions = await this.session.listSessions();
+      this.postToWebview({ type: 'sessions', sessions });
     } catch (e) {
       this.postToWebview({ type: 'error', message: String(e) });
     }
@@ -163,27 +223,10 @@ export class ChatPanel implements vscode.WebviewViewProvider {
     }
   }
 
-  private async listSessions(): Promise<void> {
-    try {
-      const sessions = await this.session.listSessions();
-      this.postToWebview({ type: 'sessions', sessions });
-    } catch (e) {
-      this.postToWebview({ type: 'error', message: String(e) });
-    }
-  }
-
-  private sendCurrentStatus(): void {
-    const s = this.ws.getStatus();
-    if (s === 'connected' && this.session.sessionId) {
-      this.postToWebview({
-        type: 'connected',
-        sessionId: this.session.sessionId,
-        sessionTitle: this.session.sessionTitle,
-      });
-    } else if (s === 'reconnecting') {
-      this.postToWebview({ type: 'reconnecting' });
-    } else {
-      this.postToWebview({ type: 'disconnected' });
+  private debug(line: string): void {
+    if (this.debugEnabled) {
+      console.log(`[JiuwenSwarm] ${line}`);
+      this.postToWebview({ type: 'debug_log', line });
     }
   }
 
@@ -191,20 +234,18 @@ export class ChatPanel implements vscode.WebviewViewProvider {
   // HTML
   // ──────────────────────────────────────────
   private getHtml(webview: vscode.Webview): string {
-    // Read the shared HTML from resources/chat.html
     try {
       let html = fs.readFileSync(this.webviewHtmlPath, 'utf-8');
       const nonce = getNonce();
       // Replace the entire CSP meta tag with a nonce-based one
       html = html.replace(
         /<meta http-equiv="Content-Security-Policy"[^>]*>/,
-        `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline' ${webview.cspSource}; script-src 'nonce-${nonce}';">`,
+        `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline' ${webview.cspSource}; script-src 'nonce-${nonce}' ${webview.cspSource};">`,
       );
-      // Add nonce to the single inline <script> block
-      html = html.replace('<script>', `<script nonce="${nonce}">`);
+      // Add nonce to inline <script> blocks
+      html = html.replace(/<script>/g, `<script nonce="${nonce}">`);
       return html;
     } catch {
-      // Fallback: minimal inline HTML if file not found
       return this.getFallbackHtml();
     }
   }

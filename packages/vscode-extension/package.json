@@ -6,7 +6,6 @@
   "publisher": "openjiuwen",
   "engines": { "vscode": "^1.85.0" },
   "categories": ["AI", "Chat", "Other"],
-  "icon": "resources/icon.png",
   "activationEvents": ["onStartupFinished"],
   "main": "./out/extension.js",
   "contributes": {
@@ -83,9 +82,9 @@
         },
         "jiuwenswarm.defaultMode": {
           "type": "string",
-          "default": "code.normal",
-          "enum": ["code.normal", "code.plan", "agent.plan", "agent.fast"],
-          "description": "Default agent mode"
+          "default": "agent.plan",
+          "enum": ["agent.plan", "agent.fast", "team"],
+          "description": "Default agent mode: Planning / Performance / Cluster"
         },
         "jiuwenswarm.channelId": {
           "type": "string",

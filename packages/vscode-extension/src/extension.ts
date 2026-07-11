@@ -35,17 +35,8 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
-  // Connect + create initial session once WS is up
+  // Auto-connect on startup
   if (autoConnect) {
-    ws.on('status', async (s) => {
-      if (s === 'connected' && !session!.sessionId) {
-        try {
-          await session!.createSession();
-        } catch (e) {
-          vscode.window.showWarningMessage(`JiuwenSwarm: Could not create session — ${e}`);
-        }
-      }
-    });
     ws.connect();
   }
 
@@ -58,22 +49,13 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('jiuwenswarm.newSession', async () => {
+    vscode.commands.registerCommand('jiuwenswarm.newSession', () => {
       if (!ws?.isConnected()) {
         vscode.window.showWarningMessage('JiuwenSwarm: Not connected');
         return;
       }
-      try {
-        await session!.createSession();
-        chatPanel?.postToWebview({
-          type: 'connected',
-          sessionId: session!.sessionId!,
-          sessionTitle: session!.sessionTitle,
-        });
-        vscode.commands.executeCommand('jiuwenswarm.chatView.focus');
-      } catch (e) {
-        vscode.window.showErrorMessage(`JiuwenSwarm: ${e}`);
-      }
+      ws.reconnect();
+      vscode.commands.executeCommand('jiuwenswarm.chatView.focus');
     }),
   );
 
@@ -86,14 +68,16 @@ export function activate(context: vscode.ExtensionContext): void {
       }
       const selection = editor.document.getText(editor.selection);
       const fileName = path.basename(editor.document.fileName);
-      chatPanel?.appendSelectionContext(selection, fileName);
+      const contextPrefix = `[File: ${fileName}]\n\`\`\`\n${selection}\n\`\`\`\n\n`;
+      chatPanel?.postToWebview({ type: 'error', message: '' }); // trigger focus
+      chatPanel?.postToWebview({ type: 'debug_log', line: 'prepend_context' });
       vscode.commands.executeCommand('jiuwenswarm.chatView.focus');
     }),
   );
 
   context.subscriptions.push(
     vscode.commands.registerCommand('jiuwenswarm.reconnect', () => {
-      ws?.connect();
+      ws?.reconnect();
     }),
   );
 
@@ -141,6 +125,8 @@ function ensureWebviewHtml(context: vscode.ExtensionContext): void {
     // Development (monorepo): extension is packages/vscode-extension
     path.join(context.extensionPath, '..', '..', 'packages', 'shared-webview', 'chat.html'),
     path.join(context.extensionPath, '..', 'shared-webview', 'chat.html'),
+    // Check jetbrains-plugin resources as canonical source
+    path.join(context.extensionPath, '..', 'jetbrains-plugin', 'src', 'main', 'resources', 'webview', 'chat.html'),
   ];
 
   for (const src of candidates) {

@@ -31,7 +31,7 @@ export class StatusBar {
         break;
       case 'disconnected':
         this.item.text = '$(circle-slash) JiuwenSwarm';
-        this.item.tooltip = 'JiuwenSwarm: Disconnected — click to open chat';
+        this.item.tooltip = 'JiuwenSwarm: Disconnected — click to reconnect';
         this.item.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
         break;
     }
