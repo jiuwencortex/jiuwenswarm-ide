@@ -77,11 +77,11 @@ class SessionManager(
             addProperty("id", requestId)
             addProperty("type", "req")
             addProperty("channel_id", channelId)
-            addProperty("session_id", sid)
             addProperty("method", "chat.send")
             add("params", buildJsonObject {
                 addProperty("content", content)
                 addProperty("mode", mode)
+                addProperty("session_id", sid)
             })
             addProperty("timestamp", System.currentTimeMillis() / 1000.0)
         }
@@ -101,13 +101,14 @@ class SessionManager(
         sid: String? = null,
     ): JsonObject {
         val id = UUID.randomUUID().toString()
+        val paramsWithSession = params.toMutableMap()
+        if (sid != null) paramsWithSession["session_id"] = sid
         val msg = buildJsonObject {
             addProperty("id", id)
             addProperty("type", "req")
             addProperty("channel_id", channelId)
-            if (sid != null) addProperty("session_id", sid)
             addProperty("method", method)
-            add("params", gson.toJsonTree(params).asJsonObject)
+            add("params", gson.toJsonTree(paramsWithSession).asJsonObject)
             addProperty("timestamp", System.currentTimeMillis() / 1000.0)
         }
         val future = CompletableFuture<JsonObject>()
