@@ -35,6 +35,30 @@
     --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   }
 
+  :root[data-theme="light"] {
+    --bg: #ffffff;
+    --bg2: #f3f3f3;
+    --bg3: #e8e8e8;
+    --border: #d4d4d4;
+    --text: #242424;
+    --text-muted: #6e6e6e;
+    --text-dim: #9e9e9e;
+    --accent: #0078d4;
+    --accent-hover: #005a9e;
+    --user-bg: #e1f0ff;
+    --user-border: #0078d4;
+    --assistant-bg: #f3f3f3;
+    --tool-bg: #e8f5e9;
+    --tool-border: #4caf50;
+    --tool-header: #388e3c;
+    --error-bg: #ffebee;
+    --error-border: #ef5350;
+    --error-text: #c62828;
+    --code-bg: #f5f5f5;
+    --thinking-bg: #fffde7;
+    --thinking-border: #fbc02d;
+  }
+
   body {
     font-family: var(--font);
     font-size: 13px;
@@ -428,6 +452,7 @@
   <div id="status-dot" title="Disconnected"></div>
   <div id="header-title">JiuwenSwarm</div>
   <button id="btn-new-session" class="header-btn" onclick="send({type:'new_session'})" title="New session">New</button>
+  <button id="btn-theme" class="header-btn" onclick="toggleTheme()" title="Toggle dark / light theme">🌙</button>
   <div class="header-dropdown">
     <button id="btn-settings" class="header-btn" onclick="toggleSettingsMenu()" title="Settings">⚙</button>
     <div id="settings-menu" class="dropdown-menu">
@@ -613,6 +638,33 @@ function toggleSessions() {
   bar.className = state.showSessions ? 'visible' : '';
   if (state.showSessions) {
     send({ type: 'list_sessions' });
+  }
+}
+
+// ─────────────────────────────────────────────
+// Theme toggle
+// ─────────────────────────────────────────────
+function toggleTheme() {
+  const html = document.documentElement;
+  const btn = document.getElementById('btn-theme');
+  const isLight = html.getAttribute('data-theme') === 'light';
+  if (isLight) {
+    html.removeAttribute('data-theme');
+    if (btn) btn.textContent = '🌙';
+    try { localStorage.setItem('jiuwen-theme', 'dark'); } catch(e){}
+  } else {
+    html.setAttribute('data-theme', 'light');
+    if (btn) btn.textContent = '☀️';
+    try { localStorage.setItem('jiuwen-theme', 'light'); } catch(e){}
+  }
+}
+
+function restoreTheme() {
+  const saved = (function(){ try { return localStorage.getItem('jiuwen-theme'); } catch(e){ return null; } })();
+  if (saved === 'light') {
+    document.documentElement.setAttribute('data-theme', 'light');
+    const btn = document.getElementById('btn-theme');
+    if (btn) btn.textContent = '☀️';
   }
 }
 
@@ -1010,6 +1062,7 @@ function renderInline(line) {
 // Init: notify host that webview is ready
 // ─────────────────────────────────────────────
 window.addEventListener('load', function() {
+  restoreTheme();
   send({ type: 'ready' });
 });
 </script>
