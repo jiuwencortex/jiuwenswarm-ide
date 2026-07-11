@@ -11,7 +11,7 @@ import java.util.concurrent.TimeUnit
 
 private val LOG = logger<SessionManager>()
 private val gson = Gson()
-private const val REQUEST_TIMEOUT_SEC = 15L
+private const val REQUEST_TIMEOUT_SEC = 5L
 
 typealias SessionChangeListener = (String?) -> Unit
 

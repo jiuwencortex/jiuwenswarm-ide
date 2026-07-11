@@ -623,6 +623,7 @@
 <div id="session-overlay">
   <div id="session-overlay-header">
     <span id="session-overlay-title">Sessions</span>
+    <button id="session-retry-btn" class="header-btn" onclick="retrySessions()" title="Refresh">↺</button>
     <button id="session-overlay-close" onclick="toggleSessions()" title="Close">✕</button>
   </div>
   <div id="session-list"></div>
@@ -842,19 +843,29 @@ function toggleSessions() {
   const overlay = document.getElementById('session-overlay');
   if (state.showSessions) {
     overlay.classList.add('visible');
-    // Show loading placeholder while sessions are fetched
-    document.getElementById('session-list').innerHTML =
-      '<div style="padding:16px;color:var(--text-dim);font-size:12px;text-align:center;">Loading…</div>';
-    send({ type: 'list_sessions' });
+    retrySessions();   // shows "Loading…" and fires list_sessions
   } else {
     overlay.classList.remove('visible');
   }
 }
 
 function showSessionsError(message) {
+  var msg = escapeHtml(message || 'Failed to load sessions');
   document.getElementById('session-list').innerHTML =
-    '<div style="padding:16px;color:var(--error-text);font-size:12px;">' +
-    '⚠ ' + escapeHtml(message || 'Failed to load sessions') + '</div>';
+    '<div style="padding:16px;display:flex;flex-direction:column;gap:10px;">' +
+      '<div style="color:var(--error-text);font-size:12px;">⚠ ' + msg + '</div>' +
+      '<button onclick="retrySessions()" style="' +
+        'background:var(--bg3);border:1px solid var(--border);color:var(--text-muted);' +
+        'border-radius:var(--radius);padding:4px 10px;font-size:11px;cursor:pointer;' +
+        'align-self:flex-start;"' +
+      '>↺ Retry</button>' +
+    '</div>';
+}
+
+function retrySessions() {
+  document.getElementById('session-list').innerHTML =
+    '<div style="padding:16px;color:var(--text-dim);font-size:12px;text-align:center;">Loading…</div>';
+  send({ type: 'list_sessions' });
 }
 
 function relativeTime(ts) {
