@@ -50,12 +50,12 @@
   #header {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
+    gap: 6px;
+    padding: 6px 10px;
     background: var(--bg2);
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
-    min-height: 40px;
+    min-height: 36px;
   }
   #header-title {
     font-size: 12px;
@@ -65,10 +65,11 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    min-width: 0;
   }
   #status-dot {
-    width: 8px;
-    height: 8px;
+    width: 7px;
+    height: 7px;
     border-radius: 50%;
     background: #6b6b6b;
     flex-shrink: 0;
@@ -79,18 +80,76 @@
   #status-dot.error { background: #f14c4c; }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
-  #btn-new-session {
+  .header-btn {
     background: none;
-    border: 1px solid var(--border);
+    border: 1px solid transparent;
     color: var(--text-muted);
     border-radius: var(--radius);
-    padding: 2px 8px;
+    padding: 2px 6px;
     font-size: 11px;
     cursor: pointer;
     flex-shrink: 0;
-    transition: border-color 0.15s, color 0.15s;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+    line-height: 1.4;
   }
-  #btn-new-session:hover { border-color: var(--text-muted); color: var(--text); }
+  .header-btn:hover {
+    border-color: var(--border);
+    color: var(--text);
+    background: var(--bg3);
+  }
+  .header-btn.active {
+    color: var(--text);
+    border-color: var(--accent);
+    background: rgba(14,99,156,0.15);
+  }
+
+  .header-dropdown {
+    position: relative;
+    display: inline-block;
+  }
+  .dropdown-menu {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: 100%;
+    margin-top: 4px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    min-width: 140px;
+    z-index: 100;
+    padding: 4px 0;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  }
+  .dropdown-menu.visible { display: block; }
+  .dropdown-item {
+    padding: 6px 12px;
+    font-size: 12px;
+    color: var(--text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.1s, color 0.1s;
+  }
+  .dropdown-item:hover { background: var(--bg); color: var(--text); }
+  .dropdown-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 4px 8px;
+  }
+
+  #mode-select {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: var(--radius);
+    padding: 1px 4px;
+    font-size: 10px;
+    cursor: pointer;
+    outline: none;
+    flex-shrink: 0;
+  }
+  #mode-select:hover { color: var(--text); border-color: var(--text-muted); }
+  #mode-select option { background: var(--bg3); color: var(--text); }
 
   /* ── Session picker ── */
   #session-bar {
@@ -351,22 +410,11 @@
 
   #input-meta {
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-end;
     align-items: center;
     font-size: 10px;
     color: var(--text-dim);
   }
-  #mode-select {
-    background: none;
-    border: none;
-    color: var(--text-dim);
-    font-size: 10px;
-    cursor: pointer;
-    padding: 0;
-    outline: none;
-  }
-  #mode-select:hover { color: var(--text-muted); }
-  #mode-select option { background: var(--bg3); color: var(--text); }
   #token-counter { color: var(--text-dim); }
 
   /* Scrollbar for textareas */
@@ -379,8 +427,23 @@
 <div id="header">
   <div id="status-dot" title="Disconnected"></div>
   <div id="header-title">JiuwenSwarm</div>
-  <button id="btn-sessions" onclick="toggleSessions()" style="background:none;border:1px solid var(--border);color:var(--text-muted);border-radius:var(--radius);padding:2px 8px;font-size:11px;cursor:pointer;" title="Sessions">⊞</button>
-  <button id="btn-new-session" onclick="send({type:'new_session'})" title="New session">＋ New</button>
+  <button id="btn-new-session" class="header-btn" onclick="send({type:'new_session'})" title="New session">New</button>
+  <div class="header-dropdown">
+    <button id="btn-settings" class="header-btn" onclick="toggleSettingsMenu()" title="Settings">⚙</button>
+    <div id="settings-menu" class="dropdown-menu">
+      <div class="dropdown-item" onclick="showSessionsFromMenu()">📁 Sessions</div>
+      <div class="dropdown-divider"></div>
+      <div class="dropdown-item" style="padding:4px 12px;font-size:11px;color:var(--text-dim);">Mode</div>
+      <div class="dropdown-item" onclick="setModeFromMenu('code.normal')" id="mode-item-code.normal"> code · normal</div>
+      <div class="dropdown-item" onclick="setModeFromMenu('code.plan')" id="mode-item-code.plan"> code · plan</div>
+      <div class="dropdown-item" onclick="setModeFromMenu('agent.plan')" id="mode-item-agent.plan"> agent · plan</div>
+      <div class="dropdown-item" onclick="setModeFromMenu('agent.fast')" id="mode-item-agent.fast"> agent · fast</div>
+      <div class="dropdown-divider"></div>
+      <div class="dropdown-item" onclick="toggleDebugFromMenu()">
+        <span id="debug-check">☐</span> Debug log
+      </div>
+    </div>
+  </div>
 </div>
 
 <div id="session-bar">
@@ -401,7 +464,7 @@
     <button id="send-btn" disabled title="Send (Enter)">↑</button>
   </div>
   <div id="input-meta">
-    <select id="mode-select">
+    <select id="mode-select" title="Agent mode">
       <option value="code.normal">code · normal</option>
       <option value="code.plan">code · plan</option>
       <option value="agent.plan">agent · plan</option>
@@ -447,10 +510,10 @@ let state = {
   sessionTitle: 'JiuwenSwarm',
   sessions: [],
   showSessions: false,
-  streaming: false,          // a request is in flight
-  turns: [],                 // { id, role, content, toolCalls, usage, thinking }
-  // per request_id tracking for streaming assembly
-  pendingTurns: {},          // request_id → { assistantEl, textEl, thinkingEl }
+  showDebug: false,
+  streaming: false,
+  turns: [],
+  pendingTurns: {},
 };
 
 // ─────────────────────────────────────────────
@@ -475,6 +538,9 @@ function handleHostMessage(msg) {
       break;
     case 'error':
       showError(msg.message);
+      break;
+    case 'debug_log':
+      appendDebugLog(msg.line);
       break;
   }
 }
@@ -524,6 +590,10 @@ function updateSessions(sessions) {
 function renderSessionList() {
   const el = document.getElementById('session-list');
   el.innerHTML = '';
+  if (!state.sessions.length) {
+    el.innerHTML = '<div style="padding:8px 12px;color:var(--text-dim);font-size:12px;">No sessions available</div>';
+    return;
+  }
   state.sessions.forEach(function(s) {
     const item = document.createElement('div');
     item.className = 'session-item' + (s.session_id === state.sessionId ? ' active' : '');
@@ -547,6 +617,54 @@ function toggleSessions() {
 }
 
 // ─────────────────────────────────────────────
+// Settings menu
+// ─────────────────────────────────────────────
+function toggleSettingsMenu() {
+  const menu = document.getElementById('settings-menu');
+  menu.classList.toggle('visible');
+}
+
+function showSessionsFromMenu() {
+  toggleSettingsMenu();
+  toggleSessions();
+}
+
+function setModeFromMenu(mode) {
+  const sel = document.getElementById('mode-select');
+  if (sel) {
+    sel.value = mode;
+    sendModeChange();
+  }
+  toggleSettingsMenu();
+}
+
+function sendModeChange() {
+  const sel = document.getElementById('mode-select');
+  if (sel) send({ type: 'set_mode', mode: sel.value });
+}
+
+function toggleDebugFromMenu() {
+  state.showDebug = !state.showDebug;
+  document.getElementById('debug-check').textContent = state.showDebug ? '☑' : '☐';
+  send({ type: 'toggle_debug', enabled: state.showDebug });
+  toggleSettingsMenu();
+}
+
+// Click outside to close settings menu
+document.addEventListener('click', function(e) {
+  const menu = document.getElementById('settings-menu');
+  const btn = document.getElementById('btn-settings');
+  if (menu.classList.contains('visible') && !menu.contains(e.target) && e.target !== btn) {
+    menu.classList.remove('visible');
+  }
+});
+
+function appendDebugLog(line) {
+  // Debug log is streamed to IDEA log when in debug mode.
+  // The Kotlin side logs it; nothing to show in-webview for now.
+}
+
+// ─────────────────────────────────────────────
 // JiuwenSwarm event handlers
 // ─────────────────────────────────────────────
 function handleJiuwenEvent(evt) {
@@ -566,6 +684,11 @@ function handleJiuwenEvent(evt) {
     updateUsage(rid, payload);
   } else if (et === 'chat.final') {
     finalizeTurn(rid, payload);
+  } else if (et === 'chat.processing_status' && payload.is_processing === false) {
+    // Stream ended but no chat.final was sent by gateway — release the UI
+    if (state.streaming) {
+      finalizeTurn(rid, payload);
+    }
   }
 }
 
@@ -711,7 +834,6 @@ function updateUsage(rid, payload) {
 function finalizeTurn(rid, payload) {
   const pt = state.pendingTurns[rid];
   if (pt) {
-    // Replace streaming text with canonical final content
     const finalContent = (payload && payload.content) ? payload.content : pt.textContent;
     if (finalContent) {
       pt.bodyEl.innerHTML = renderMarkdown(finalContent);
@@ -719,7 +841,6 @@ function finalizeTurn(rid, payload) {
     if (pt.thinkingHeader) {
       pt.thinkingHeader.textContent = 'Thinking';
     }
-    // Close any running tool spinners
     pt.containerEl.querySelectorAll('.tool-spinner').forEach(function(s) {
       s.classList.remove('tool-spinner');
     });
@@ -749,6 +870,11 @@ inputEl.addEventListener('input', function() {
 });
 
 sendBtn.addEventListener('click', submitMessage);
+
+const modeSelectEl = document.getElementById('mode-select');
+if (modeSelectEl) {
+  modeSelectEl.addEventListener('change', sendModeChange);
+}
 
 function submitMessage() {
   const content = inputEl.value.trim();
@@ -836,7 +962,6 @@ function formatToolInput(name, input) {
 // Minimal markdown renderer (no external deps)
 // ─────────────────────────────────────────────
 function renderMarkdown(text) {
-  // Escape HTML first
   let out = '';
   const lines = text.split('\n');
   let inCode = false;
@@ -868,22 +993,16 @@ function renderMarkdown(text) {
     out += '<pre><code>' + escapeHtml(codeLines.join('\n')) + '</code></pre>';
   }
 
-  // Trim trailing newlines
   return out.trimEnd();
 }
 
 function renderInline(line) {
-  // Bold: **text**
   line = line.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  // Italic: *text* or _text_
   line = line.replace(/\*([^*]+)\*/g, '<em>$1</em>');
   line = line.replace(/_([^_]+)_/g, '<em>$1</em>');
-  // Inline code: `code`
   line = line.replace(/`([^`]+)`/g, function(_, c) {
     return '<code>' + escapeHtml(c) + '</code>';
   });
-  // Escape remaining HTML
-  // (applied per-character approach is too slow; instead we escape at line level first)
   return line;
 }
 

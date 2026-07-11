@@ -20,18 +20,10 @@ import com.jiuwenswarm.plugin.client.WsStatus
 import org.cef.browser.CefBrowser
 import org.cef.browser.CefFrame
 import org.cef.handler.CefLoadHandlerAdapter
-import java.awt.BorderLayout
 import java.io.File
-import java.time.LocalTime
-import java.time.format.DateTimeFormatter
 import javax.swing.BorderFactory
-import javax.swing.JButton
 import javax.swing.JComponent
 import javax.swing.JLabel
-import javax.swing.JPanel
-import javax.swing.JScrollPane
-import javax.swing.JTextArea
-import javax.swing.JToolBar
 
 private val LOG = logger<ChatToolWindowFactory>()
 private val gson = Gson()
@@ -84,46 +76,10 @@ class ChatPanel(
     // events that carry no request_id in their payload (gateway quirk).
     @Volatile private var lastRequestId: String? = null
 
-    // Debug
+    // Debug logging is toggled from the webview; when true we log to IDEA log.
     @Volatile private var debugEnabled = false
-    private val debugLog = JTextArea(8, 0).apply {
-        isEditable = false
-        font = java.awt.Font(java.awt.Font.MONOSPACED, java.awt.Font.PLAIN, 11)
-    }
-    private val debugScroll = JScrollPane(debugLog)
-    private val debugToggle = JButton("Debug: OFF").apply {
-        addActionListener {
-            debugEnabled = !debugEnabled
-            text = if (debugEnabled) "Debug: ON" else "Debug: OFF"
-            debugScroll.isVisible = debugEnabled
-            if (debugEnabled) {
-                debugLog.append("[${time()}] DEBUG MODE ON\n")
-                debugLog.append("[${time()}] Session: ${service.session.sessionId ?: "none"}\n")
-                debugLog.append("[${time()}] WS Status: ${service.ws.getStatus()}\n")
-                debugLog.append("---\n")
-            }
-        }
-    }
 
-    private val rootPanel = JPanel(BorderLayout()).apply {
-        // Toolbar
-        val toolbar = JToolBar().apply {
-            isFloatable = false
-            add(debugToggle)
-            add(JLabel(" JiuwenSwarm plugin v2").apply {
-                font = font.deriveFont(java.awt.Font.ITALIC, 10f)
-            })
-        }
-        add(toolbar, BorderLayout.NORTH)
-        // Browser
-        add(browser.component, BorderLayout.CENTER)
-        // Debug log (hidden by default)
-        debugScroll.isVisible = false
-        debugScroll.preferredSize = java.awt.Dimension(0, 140)
-        add(debugScroll, BorderLayout.SOUTH)
-    }
-
-    val component: JComponent get() = rootPanel
+    val component: JComponent get() = browser.component
 
     init {
         jsQuery = JBCefJSQuery.create(browser as JBCefBrowserBase)
@@ -228,12 +184,14 @@ class ChatPanel(
                         debug("SEND  → OK")
                     }
                 }
+                "toggle_debug" -> {
+                    debugEnabled = msg.get("enabled")?.asBoolean ?: false
+                    debug("Debug mode toggled: $debugEnabled")
+                }
                 "new_session" -> ApplicationManager.getApplication().executeOnPooledThread {
                     try {
-                        debug("ACTION→ new_session")
-                        // Server auto-creates session on connect via connection.ack.
-                        // If none exists yet, just refresh status; session may arrive shortly.
-                        sendCurrentStatus()
+                        debug("ACTION→ new_session (reconnecting for fresh session)")
+                        service.ws.reconnect()
                     } catch (e: Exception) {
                         dispatchToWebview(mapOf("type" to "error", "message" to e.message))
                     }
@@ -270,14 +228,8 @@ class ChatPanel(
     // ──────────────────────────────────────────
     private fun debug(line: String) {
         if (!debugEnabled) return
-        ApplicationManager.getApplication().invokeLater {
-            debugLog.append("[${time()}] $line\n")
-            // Auto-scroll to bottom
-            debugLog.caretPosition = debugLog.document.length
-        }
+        LOG.info("[JiuwenSwarmDebug] $line")
     }
-
-    private fun time(): String = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss.SSS"))
 
     private fun onStatusChange(s: WsStatus) {
         debug("WS status → $s")

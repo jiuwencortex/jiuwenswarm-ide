@@ -54,6 +54,16 @@ class WsClient(private val url: String) : Disposable {
         ws = client.newWebSocket(request, Listener())
     }
 
+    /** Force a fresh reconnect (used for "New session"). */
+    fun reconnect() {
+        if (destroyed) return
+        retryFuture?.cancel(false)
+        retryCount.set(0)
+        ws?.close(1000, "User requested reconnect")
+        ws = null
+        connect()
+    }
+
     fun send(json: JsonObject): Boolean {
         val sock = ws ?: return false
         return sock.send(gson.toJson(json))
