@@ -14,9 +14,11 @@ import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.openapi.vfs.VirtualFile
+import com.jiuwenswarm.plugin.settings.JiuwenSwarmSettings
 import java.io.File
 
 private val LOG = logger<DiffApplier>()
@@ -34,7 +36,7 @@ private val LOG = logger<DiffApplier>()
 object DiffApplier {
 
     /** Callable from any thread. Returns true if the event was handled. */
-    fun handle(project: Project, event: JsonObject, autoApply: Boolean): Boolean {
+    fun handle(project: Project, event: JsonObject): Boolean {
         val toolName = event.get("tool_name")?.asString ?: return false
         if (toolName !in EDIT_TOOLS) return false
 
@@ -43,9 +45,13 @@ object DiffApplier {
             return false
         }
 
+        val settings = JiuwenSwarmSettings.instance()
+        val autoApply = settings.autoApplyEdits
+        val requireApproval = settings.approveEdits
+
         return when (toolName) {
-            "str_replace_editor" -> handleStrReplaceEditor(project, args, autoApply)
-            "write_file", "create_file" -> handleWriteFile(project, args, autoApply)
+            "str_replace_editor" -> handleStrReplaceEditor(project, args, autoApply, requireApproval)
+            "write_file", "create_file" -> handleWriteFile(project, args, autoApply, requireApproval)
             else -> false
         }
     }
@@ -58,6 +64,7 @@ object DiffApplier {
         project: Project,
         args: JsonObject,
         autoApply: Boolean,
+        requireApproval: Boolean,
     ): Boolean {
         val command = args.get("command")?.asString ?: "str_replace"
         val path = args.get("path")?.asString ?: return false
@@ -66,15 +73,22 @@ object DiffApplier {
             "str_replace" -> {
                 val oldStr = args.get("old_str")?.asString ?: return false
                 val newStr = args.get("new_str")?.asString ?: ""
+                if (requireApproval && !askApproval(project, "Apply edit to ${File(path).name}?")) {
+                    notify(project, "Edit rejected: ${File(path).name}")
+                    return false
+                }
                 applyStrReplace(project, path, oldStr, newStr, autoApply)
             }
             "create" -> {
                 val content = args.get("file_text")?.asString
                     ?: args.get("content")?.asString
                     ?: ""
+                if (requireApproval && !askApproval(project, "Create file ${File(path).name}?")) {
+                    notify(project, "Create rejected: ${File(path).name}")
+                    return false
+                }
                 writeEntireFile(project, path, content, autoApply, isNew = true)
             }
-            // "view" and other commands are read-only — nothing to intercept
             else -> false
         }
     }
@@ -87,11 +101,30 @@ object DiffApplier {
         project: Project,
         args: JsonObject,
         autoApply: Boolean,
+        requireApproval: Boolean,
     ): Boolean {
         val path = args.get("path")?.asString ?: return false
         val content = args.get("content")?.asString ?: ""
         val isNew = !File(path).exists()
+        val label = if (isNew) "Create" else "Overwrite"
+        if (requireApproval && !askApproval(project, "$label file ${File(path).name}?")) {
+            notify(project, "$label rejected: ${File(path).name}")
+            return false
+        }
         return writeEntireFile(project, path, content, autoApply, isNew)
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // Approval dialog
+    // ──────────────────────────────────────────────────────────────────────────
+
+    private fun askApproval(project: Project, message: String): Boolean {
+        return Messages.showYesNoDialog(
+            project,
+            message,
+            "JiuwenSwarm — File Edit",
+            Messages.getQuestionIcon(),
+        ) == Messages.YES
     }
 
     // ──────────────────────────────────────────────────────────────────────────

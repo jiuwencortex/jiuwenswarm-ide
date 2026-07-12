@@ -35,6 +35,7 @@ Open **Settings → Tools → JiuwenSwarm**:
 | Server port | `19000` | WebSocket port |
 | Channel ID | `ide` | Channel ID reported to the server |
 | Connect automatically on IDE startup | on | Open connection on startup |
+| Require approval before applying agent file edits | off | Show confirmation dialog before every file change |
 | Auto-apply file edits (skip diff dialog) | off | Apply agent file edits immediately without review |
 
 ## Usage
@@ -57,14 +58,26 @@ The chat panel renders inside the IDE via JCEF. It supports:
 - Markdown rendering with syntax-highlighted code blocks
 - Collapsible tool call cards showing every agent action with live status, inputs, and outputs
 - A mode selector dropdown (`agent.plan`, `agent.fast`, `team`)
-- A session dropdown to create or switch conversations
+- A session dropdown to create, switch, or delete conversations
 - A skills panel to view and toggle registered skills
+- Clickable file links in agent responses — click to open the file at the referenced line
+- A rewind bar that appears after the agent edits files — click to undo all changes from that turn
 - An attach button to include the current file as context
 - A dark/light theme toggle
 
 ## File Edit Review
 
-When the agent proposes a file edit, the plugin opens a **side-by-side diff window** showing Current vs Proposed. Review the changes and close the window to apply. Enable **Auto-apply file edits** in settings to skip the diff dialog and apply edits immediately (with a notification confirming what changed).
+When the agent proposes a file edit, the plugin opens a **side-by-side diff window** showing Current vs Proposed. Review the changes and close the window to apply.
+
+Enable **Auto-apply file edits** in settings to skip the diff dialog and apply edits immediately (with a notification confirming what changed).
+
+Enable **Require approval** in settings to see a confirmation dialog before the diff window opens or before auto-applying. This gives you a chance to reject unwanted edits.
+
+## Checkpoint / Rewind
+
+After each agent turn that modifies files, a rewind bar appears at the bottom of the chat panel. Click **Undo Changes** to restore all files to their state before that turn. Files that did not exist before the turn are deleted on rewind.
+
+Rewind is cleared when you send a new message or start a new session.
 
 ## Connection Status
 

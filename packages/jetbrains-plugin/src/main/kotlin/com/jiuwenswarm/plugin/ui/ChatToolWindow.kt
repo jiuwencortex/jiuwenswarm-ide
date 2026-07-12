@@ -371,9 +371,8 @@ class ChatPanel(
         // Only applies to old-format events where tool_name sits at the message root.
         if (msg.get("type")?.asString == "event" &&
             msg.get("event_type")?.asString == "chat.tool_call") {
-            val autoApply = JiuwenSwarmSettings.instance().autoApplyEdits
             ApplicationManager.getApplication().executeOnPooledThread {
-                DiffApplier.handle(project, msg, autoApply)
+                DiffApplier.handle(project, msg)
             }
         }
         val converted = convertServerMessageToLegacyEvent(msg, lastRequestId)

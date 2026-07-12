@@ -34,6 +34,7 @@ Open **Settings → Extensions → JiuwenSwarm**:
 | `jiuwenswarm.defaultMode` | `agent.plan` | Default agent mode: `agent.plan` / `agent.fast` / `team` |
 | `jiuwenswarm.channelId` | `ide` | Channel ID reported to the server |
 | `jiuwenswarm.autoConnect` | `true` | Connect on startup |
+| `jiuwenswarm.approveEdits` | `false` | Show approval prompt before applying agent file edits |
 
 ## Usage
 
@@ -56,10 +57,24 @@ The chat panel renders in the sidebar using a VS Code webview. It supports:
 - Markdown rendering with syntax-highlighted code blocks
 - Collapsible tool call cards showing every agent action with live status, inputs, and outputs
 - A mode selector dropdown (`agent.plan`, `agent.fast`, `team`)
-- A session dropdown to create or switch conversations
+- A session dropdown to create, switch, or delete conversations
 - A skills panel to view and toggle registered skills
+- Clickable file links in agent responses — click to open the file at the referenced line
+- A rewind bar that appears after the agent edits files — click to undo all changes from that turn
 - An attach button to include the current file as context
 - A dark/light theme toggle
+
+## File Edits
+
+When the agent proposes a file edit, the extension applies it directly to your workspace. A notification toast confirms each applied change.
+
+Enable **Approve edits** in settings to require your confirmation before every file change. When enabled, a prompt appears with **Approve** and **Reject** buttons for each proposed edit.
+
+## Checkpoint / Rewind
+
+After each agent turn that modifies files, a rewind bar appears at the bottom of the chat panel. Click **Undo Changes** to restore all files to their state before that turn. Files that did not exist before the turn are deleted on rewind.
+
+Rewind is cleared when you send a new message or start a new session.
 
 ## Status Bar
 
@@ -78,3 +93,5 @@ When token usage metadata is received from the server, the token count is displa
 
 - **Panel shows blank / no connection**: Check that JiuwenSwarm is running on the configured host and port. The status bar shows connection state; click it to reconnect.
 - **No responses appear**: Verify the WebSocket endpoint (`ws://host:port/ws`) is reachable. Open the webview developer tools (**Developer: Open Webview Developer Tools** from the command palette) and check the console for debug messages.
+- **Send Selection does nothing**: Make sure text is actually selected in the editor.
+- **Clickable file links don't open**: Ensure the file path exists in your workspace.

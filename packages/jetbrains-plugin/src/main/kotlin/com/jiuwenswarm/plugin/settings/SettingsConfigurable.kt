@@ -18,6 +18,10 @@ class SettingsConfigurable : Configurable {
     private val portSpinner = JSpinner(SpinnerNumberModel(settings.port, 1, 65535, 1))
     private val channelIdField = JBTextField(settings.channelId, 10)
     private val autoConnectBox = JBCheckBox("Connect automatically on IDE startup", settings.autoConnect)
+    private val approveEditsBox = JBCheckBox(
+        "Require approval before applying agent file edits",
+        settings.approveEdits,
+    )
     private val autoApplyEditsBox = JBCheckBox(
         "Auto-apply file edits (skip diff dialog)",
         settings.autoApplyEdits,
@@ -33,6 +37,7 @@ class SettingsConfigurable : Configurable {
             .addLabeledComponent(JBLabel("Server port:"), portSpinner, 1, false)
             .addLabeledComponent(JBLabel("Channel ID:"), channelIdField, 1, false)
             .addComponent(autoConnectBox, 1)
+            .addComponent(approveEditsBox, 1)
             .addComponent(autoApplyEditsBox, 1)
             .addComponentFillVertically(JPanel(), 0)
             .panel
@@ -44,6 +49,7 @@ class SettingsConfigurable : Configurable {
         (portSpinner.value as Int) != settings.port ||
         channelIdField.text != settings.channelId ||
         autoConnectBox.isSelected != settings.autoConnect ||
+        approveEditsBox.isSelected != settings.approveEdits ||
         autoApplyEditsBox.isSelected != settings.autoApplyEdits
 
     override fun apply() {
@@ -51,6 +57,7 @@ class SettingsConfigurable : Configurable {
         settings.port = portSpinner.value as Int
         settings.channelId = channelIdField.text.trim()
         settings.autoConnect = autoConnectBox.isSelected
+        settings.approveEdits = approveEditsBox.isSelected
         settings.autoApplyEdits = autoApplyEditsBox.isSelected
     }
 
@@ -59,6 +66,7 @@ class SettingsConfigurable : Configurable {
         portSpinner.value = settings.port
         channelIdField.text = settings.channelId
         autoConnectBox.isSelected = settings.autoConnect
+        approveEditsBox.isSelected = settings.approveEdits
         autoApplyEditsBox.isSelected = settings.autoApplyEdits
     }
 

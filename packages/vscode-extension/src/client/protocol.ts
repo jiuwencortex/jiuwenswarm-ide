@@ -30,13 +30,16 @@ export type ExtToWebviewMsg =
   | { type: 'disconnected' }
   | { type: 'reconnecting' }
   | { type: 'sessions'; sessions: SessionInfo[] }
+  | { type: 'session_deleted'; sessionId: string }
   | { type: 'skills'; skills: SkillEntry[] }
   | { type: 'skill_toggled'; skillId: string; enabled: boolean }
   | { type: 'skills_error'; message: string }
   | { type: 'jiuwen_event'; event: JiuwenMessage }
   | { type: 'error'; message?: string; requestId?: string }
   | { type: 'debug_log'; line: string }
-  | { type: 'prefill'; content: string };
+  | { type: 'prefill'; content: string }
+  | { type: 'rewindable'; enabled: boolean }
+  | { type: 'rewind_done'; message: string; restored: number; failed: number };
 
 export interface ModelEntry {
   model_name: string;
@@ -58,11 +61,14 @@ export type WebviewToExtMsg =
   | { type: 'send'; content: string; mode: string; requestId: string; media_items?: unknown[] }
   | { type: 'new_session' }
   | { type: 'switch_session'; sessionId: string }
+  | { type: 'delete_session'; sessionId: string }
   | { type: 'list_sessions' }
   | { type: 'list_skills' }
   | { type: 'toggle_skill'; skillId: string; enabled: boolean }
   | { type: 'toggle_debug'; enabled: boolean }
-  | { type: 'set_mode'; mode: string };
+  | { type: 'set_mode'; mode: string }
+  | { type: 'open_file'; path: string; line?: number }
+  | { type: 'rewind' };
 
 function randomId(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {

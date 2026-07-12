@@ -103,6 +103,11 @@ export class SessionManager {
     await this.request('skills.toggle', { skill_id: skillId, enabled });
   }
 
+  /** Delete a session */
+  async deleteSession(sid: string): Promise<void> {
+    await this.request('session.delete', { session_id: sid }, sid);
+  }
+
   // ──────────────────────────────────────────
   // Internal
   // ──────────────────────────────────────────

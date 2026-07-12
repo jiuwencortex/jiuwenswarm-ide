@@ -1,34 +1,36 @@
 import * as vscode from 'vscode';
 import { execSync } from 'child_process';
 import * as path from 'path';
+import * as fs from 'fs';
 
 /**
  * Collects IDE context (active file path, language, selection, diagnostics,
- * other open files, and git status) and formats it as a structured text block
- * to prepend to outgoing chat messages.
+ * other open files, project tree, and git status) and formats it as a structured
+ * text block to prepend to outgoing chat messages.
  */
 export function collectContext(): string | undefined {
   const editor = vscode.window.activeTextEditor;
-  if (!editor) return undefined;
 
-  const doc = editor.document;
-  const filePath = doc.fileName;
-  const lang = doc.languageId;
+  const filePath = editor?.document.fileName;
+  const lang = editor?.document.languageId;
 
-  const selection = editor.selection.isEmpty
-    ? null
-    : editor.document.getText(editor.selection);
+  const selection = editor && !editor.selection.isEmpty
+    ? editor.document.getText(editor.selection)
+    : null;
 
-  const diagnostics = collectDiagnostics(doc);
+  const diagnostics = editor ? collectDiagnostics(editor.document) : [];
 
   // Other open files (excluding the active one)
-  const otherOpenFiles = collectOtherOpenFiles(filePath);
+  const otherOpenFiles = filePath ? collectOtherOpenFiles(filePath) : [];
+
+  // Project tree (2-level directory listing)
+  const projectTree = collectProjectTree();
 
   // Git context
-  const gitInfo = collectGitContext(filePath);
+  const gitInfo = filePath ? collectGitContext(filePath) : undefined;
 
   // Nothing meaningful if everything is empty
-  if (!filePath && !selection && diagnostics.length === 0 && otherOpenFiles.length === 0 && !gitInfo) {
+  if (!filePath && !selection && diagnostics.length === 0 && otherOpenFiles.length === 0 && !projectTree && !gitInfo) {
     return undefined;
   }
 
@@ -36,7 +38,7 @@ export function collectContext(): string | undefined {
   lines.push('<!-- IDE Context -->');
   if (filePath) {
     lines.push(`Active file: ${filePath}  (${lang})`);
-    lines.push(`Cursor line: ${editor.selection.active.line + 1}`);
+    lines.push(`Cursor line: ${editor!.selection.active.line + 1}`);
   }
   if (selection && selection.trim()) {
     lines.push('');
@@ -54,6 +56,11 @@ export function collectContext(): string | undefined {
     lines.push('');
     lines.push(`Other open files (${otherOpenFiles.length}):`);
     otherOpenFiles.forEach((f) => lines.push(`  ${f}`));
+  }
+  if (projectTree) {
+    lines.push('');
+    lines.push('Project structure:');
+    lines.push(projectTree);
   }
   if (gitInfo) {
     lines.push('');
@@ -91,6 +98,49 @@ function collectOtherOpenFiles(activePath: string): string[] {
   return files.slice(0, 10);
 }
 
+const SKIP_DIRS = new Set([
+  '.git', '.gradle', '.idea', 'build', 'dist', 'node_modules',
+  'target', '__pycache__', '.venv', 'venv', '.tox', 'coverage', '.cache',
+]);
+
+function collectProjectTree(): string | undefined {
+  const folders = vscode.workspace.workspaceFolders;
+  if (!folders || folders.length === 0) return undefined;
+  const root = folders[0].uri.fsPath;
+  try {
+    const tree = buildDirTree(root, 0);
+    return tree || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function buildDirTree(dir: string, depth: number): string | undefined {
+  const entries = fs.readdirSync(dir, { withFileTypes: true })
+    .filter((e) => !SKIP_DIRS.has(e.name) && !e.name.startsWith('.'))
+    .sort((a, b) => {
+      if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+
+  if (entries.length === 0) return undefined;
+
+  const lines: string[] = [];
+  for (const e of entries) {
+    const indent = '  '.repeat(depth);
+    if (e.isDirectory()) {
+      lines.push(`${indent}${e.name}/`);
+      if (depth < 1) {
+        const sub = buildDirTree(path.join(dir, e.name), depth + 1);
+        if (sub) lines.push(sub);
+      }
+    } else {
+      lines.push(`${indent}${e.name}`);
+    }
+  }
+  return lines.join('\n');
+}
+
 function collectGitContext(filePath: string): string | undefined {
   try {
     const workDir = path.dirname(filePath);
@@ -118,7 +168,6 @@ function collectGitContext(filePath: string): string | undefined {
     }
     return result;
   } catch {
-    // Not a git repo, git not on PATH, or timed out — suppress silently
     return undefined;
   }
 }

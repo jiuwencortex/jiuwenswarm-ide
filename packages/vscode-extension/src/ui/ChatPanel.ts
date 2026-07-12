@@ -6,6 +6,7 @@ import { SessionManager } from '../client/SessionManager';
 import { JiuwenMessage, ExtToWebviewMsg } from '../client/protocol';
 import { collectContext } from '../context/ContextCollector';
 import { StatusBar } from './StatusBar';
+import * as DiffApplier from '../editor/DiffApplier';
 
 export class ChatPanel implements vscode.WebviewViewProvider {
   public static readonly viewId = 'jiuwenswarm.chatView';
@@ -90,17 +91,20 @@ export class ChatPanel implements vscode.WebviewViewProvider {
         const mediaItems = msg.media_items as unknown[] | undefined;
         if (!rid) return;
         this.lastRequestId = rid;
+        // Clear snapshots from previous turn; rewind is no longer valid
+        DiffApplier.clearSnapshots();
+        this.postToWebview({ type: 'rewindable', enabled: false });
         if (!this.ws.isConnected() || !this.session.sessionId) {
           this.postToWebview({ type: 'error', message: 'Not connected to JiuwenSwarm' });
           return;
         }
-        this.debug(`SEND\u2192 requestId=${rid} mode=${mode} content=${content.substring(0, 60)}`);
+        this.debug(`SEND→ requestId=${rid} mode=${mode} content=${content.substring(0, 60)}`);
         const ideContext = collectContext();
         if (!this.session.sendChat(content, mode, rid, ideContext || undefined, mediaItems)) {
-          this.debug('SEND\u2192 FAILED (no session or disconnected)');
+          this.debug('SEND→ FAILED (no session or disconnected)');
           this.postToWebview({ type: 'error', message: 'Not connected or no active session', requestId: rid });
         } else {
-          this.debug('SEND\u2192 OK');
+          this.debug('SEND→ OK');
         }
         break;
       }
@@ -110,7 +114,9 @@ export class ChatPanel implements vscode.WebviewViewProvider {
           this.postToWebview({ type: 'error', message: 'Not connected' });
           return;
         }
-        this.debug('ACTION\u2192 new_session (reconnecting for fresh session)');
+        this.debug('ACTION→ new_session (reconnecting for fresh session)');
+        DiffApplier.clearSnapshots();
+        this.postToWebview({ type: 'rewindable', enabled: false });
         this.ws.reconnect();
         break;
       }
@@ -132,6 +138,12 @@ export class ChatPanel implements vscode.WebviewViewProvider {
         break;
       }
 
+      case 'delete_session': {
+        const sid = msg.sessionId as string;
+        if (sid) this.deleteSession(sid);
+        break;
+      }
+
       case 'list_skills': {
         this.listSkills();
         break;
@@ -150,6 +162,18 @@ export class ChatPanel implements vscode.WebviewViewProvider {
         // Mode is handled purely in the webview; no backend action needed
         break;
       }
+
+      case 'open_file': {
+        const filePath = msg.path as string;
+        const line = (msg.line as number) || 0;
+        if (filePath) this.openFile(filePath, line);
+        break;
+      }
+
+      case 'rewind': {
+        this.handleRewind();
+        break;
+      }
     }
   }
 
@@ -161,24 +185,48 @@ export class ChatPanel implements vscode.WebviewViewProvider {
     // Skip request-response protocol messages — SessionManager handles those
     if (msgType === 'res') return;
 
-    this.debug(`RAW \u2190 ${JSON.stringify(msg)}`);
+    this.debug(`RAW ← ${JSON.stringify(msg)}`);
 
-    // Route file-edit tool call events (old format only; VS Code can't show native diff dialogs)
+    // Route file-edit tool calls to DiffApplier
     if (msgType === 'event' && msg.event === 'chat.tool_call') {
-      const payload = msg.payload || {};
-      const toolName = payload.tool_name as string | undefined;
-      if (toolName === 'str_replace_editor' || toolName === 'write_file' || toolName === 'create_file') {
-        this.debug(`TOOL  → ${toolName} (VS Code: no diff dialog available)`);
-      }
+      const convertedPayload = { payload: msg.payload || {} };
+      DiffApplier.handleToolCall(convertedPayload);
     }
 
     const converted = this.convertServerMessageToLegacyEvent(msg);
     if (converted) {
-      this.debug(`CONV  \u2192 event_type=${converted.event_type} request_id=${converted.request_id}`);
+      const et = converted.event_type as string;
+
+      // ── Snapshot files before they are edited so rewind can restore them ──
+      if (et === 'chat.tool_call') {
+        const payload = (converted.payload as Record<string, unknown>) || {};
+        const toolName = payload.tool_name as string | undefined;
+        if (toolName === 'str_replace_editor' || toolName === 'write_file' || toolName === 'create_file') {
+          const args = (payload.tool_call as Record<string, unknown>)?.arguments as Record<string, unknown>
+            || (payload.tool_input as Record<string, unknown>)
+            || (payload.input as Record<string, unknown>)
+            || {};
+          const filePath = args.path as string | undefined;
+          if (filePath) {
+            // ensureSnapshot is called inside DiffApplier before applying
+            this.debug(`SNAP  → will snapshot ${filePath}`);
+          }
+        }
+      }
+
+      // ── On turn end, promote snapshots and show rewind bar ──
+      if (et === 'chat.final') {
+        if (DiffApplier.promoteSnapshots()) {
+          this.postToWebview({ type: 'rewindable', enabled: true });
+          this.debug('SNAP  → turn complete, rewindable');
+        }
+      }
+
+      this.debug(`CONV  → event_type=${et} request_id=${converted.request_id}`);
       this.postToWebview({ type: 'jiuwen_event', event: converted });
       this.trackTokenUsage(converted);
     } else {
-      this.debug('CONV  \u2192 dropped (not a recognised chat event)');
+      this.debug('CONV  → dropped (not a recognised chat event)');
     }
   }
 
@@ -277,7 +325,7 @@ export class ChatPanel implements vscode.WebviewViewProvider {
   private sendCurrentStatus(): void {
     const s = this.ws.getStatus();
     const sid = this.session.sessionId;
-    this.debug(`STATUS\u2192 ws=${s} session=${sid}`);
+    this.debug(`STATUS→ ws=${s} session=${sid}`);
     if (s === 'connected' && sid) {
       this.session.listModels()
         .then(({ models, activeModel }) => {
@@ -320,9 +368,9 @@ export class ChatPanel implements vscode.WebviewViewProvider {
   // ──────────────────────────────────────────
   private async listSessions(): Promise<void> {
     try {
-      this.debug('ACTION\u2192 list_sessions');
+      this.debug('ACTION→ list_sessions');
       const sessions = await this.session.listSessions();
-      this.debug(`ACTION\u2192 list_sessions returned ${sessions.length} sessions`);
+      this.debug(`ACTION→ list_sessions returned ${sessions.length} sessions`);
       this.postToWebview({ type: 'sessions', sessions });
     } catch (e) {
       this.debug(`list_sessions failed: ${e}`);
@@ -332,7 +380,7 @@ export class ChatPanel implements vscode.WebviewViewProvider {
 
   private async switchSession(sessionId: string): Promise<void> {
     try {
-      this.debug(`ACTION\u2192 switch_session ${sessionId}`);
+      this.debug(`ACTION→ switch_session ${sessionId}`);
       await this.session.switchSession(sessionId);
       this.postToWebview({
         type: 'connected',
@@ -344,14 +392,25 @@ export class ChatPanel implements vscode.WebviewViewProvider {
     }
   }
 
+  private async deleteSession(sessionId: string): Promise<void> {
+    try {
+      this.debug(`ACTION→ delete_session ${sessionId}`);
+      await this.session.deleteSession(sessionId);
+      this.postToWebview({ type: 'session_deleted', sessionId });
+    } catch (e) {
+      this.debug(`delete_session failed: ${e}`);
+      this.postToWebview({ type: 'error', message: String(e) });
+    }
+  }
+
   // ──────────────────────────────────────────
   // Skills helpers
   // ──────────────────────────────────────────
   private async listSkills(): Promise<void> {
     try {
-      this.debug('ACTION\u2192 list_skills');
+      this.debug('ACTION→ list_skills');
       const skills = await this.session.listSkills();
-      this.debug(`ACTION\u2192 list_skills returned ${skills.length} skills`);
+      this.debug(`ACTION→ list_skills returned ${skills.length} skills`);
       const skillMaps = skills.map((obj) => ({
         skill_id: (obj.skill_id as string) || '',
         name: (obj.name as string) || (obj.skill_id as string) || '',
@@ -368,13 +427,47 @@ export class ChatPanel implements vscode.WebviewViewProvider {
 
   private async toggleSkill(skillId: string, enabled: boolean): Promise<void> {
     try {
-      this.debug(`ACTION\u2192 toggle_skill ${skillId} enabled=${enabled}`);
+      this.debug(`ACTION→ toggle_skill ${skillId} enabled=${enabled}`);
       await this.session.toggleSkill(skillId, enabled);
       this.postToWebview({ type: 'skill_toggled', skillId, enabled });
     } catch (e) {
       this.debug(`toggle_skill failed: ${e}`);
       this.postToWebview({ type: 'skills_error', message: String(e) });
     }
+  }
+
+  // ──────────────────────────────────────────
+  // File open
+  // ──────────────────────────────────────────
+  private async openFile(filePath: string, line: number): Promise<void> {
+    try {
+      const uri = vscode.Uri.file(filePath);
+      const doc = await vscode.workspace.openTextDocument(uri);
+      const editor = await vscode.window.showTextDocument(doc);
+      if (line > 0) {
+        const pos = new vscode.Position(Math.max(0, line - 1), 0);
+        editor.selection = new vscode.Selection(pos, pos);
+        editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+      }
+    } catch (e) {
+      this.debug(`open_file failed: ${e}`);
+    }
+  }
+
+  // ──────────────────────────────────────────
+  // Rewind
+  // ──────────────────────────────────────────
+  private async handleRewind(): Promise<void> {
+    const snapshots = DiffApplier.getLastTurnSnapshots();
+    if (snapshots.size === 0) return;
+    this.debug(`ACTION→ rewind ${snapshots.size} file(s)`);
+    const { restored, failed } = await DiffApplier.performRewind(snapshots);
+    DiffApplier.clearLastTurnSnapshots();
+    const message = failed === 0
+      ? `Rewound ${restored} file(s)`
+      : `Rewound ${restored} file(s), ${failed} failed`;
+    this.postToWebview({ type: 'rewind_done', message, restored, failed });
+    this.debug(`REWIND→ ${message}`);
   }
 
   private debug(line: string): void {

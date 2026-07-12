@@ -19,6 +19,8 @@ class JiuwenSwarmSettings : PersistentStateComponent<JiuwenSwarmSettings.State> 
         var autoConnect: Boolean = true,
         /** When true, file edits from the agent are applied directly without a diff dialog. */
         var autoApplyEdits: Boolean = false,
+        /** When true, show an approval dialog before applying any agent file edit. */
+        var approveEdits: Boolean = false,
     )
 
     private var state = State()
@@ -52,6 +54,10 @@ class JiuwenSwarmSettings : PersistentStateComponent<JiuwenSwarmSettings.State> 
     var autoApplyEdits: Boolean
         get() = state.autoApplyEdits
         set(v) { state = state.copy(autoApplyEdits = v) }
+
+    var approveEdits: Boolean
+        get() = state.approveEdits
+        set(v) { state = state.copy(approveEdits = v) }
 
     val wsUrl: String get() = "ws://$host:$port/ws"
 

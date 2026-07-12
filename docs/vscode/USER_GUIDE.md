@@ -43,6 +43,8 @@ Messages appear here in real time:
 - **Assistant responses** — stream word-by-word with markdown and code block highlighting
 - **Tool call cards** — every file read, bash command, web search, or MCP tool is shown as a collapsible card with status, inputs, and outputs
 - **Reasoning blocks** — when the model exposes its thinking process
+- **Clickable file links** — file paths in agent responses are clickable and open at the referenced line
+- **Rewind bar** — appears after the agent edits files; click to undo all changes from that turn
 
 ### Input row
 - **Mode selector** — choose the agent mode before sending:
@@ -68,6 +70,9 @@ This drops the current WebSocket connection and reconnects, giving you a fresh s
 
 ### Switching sessions
 Open the session dropdown to see recent conversations. Click one to resume it. The full conversation history and agent context are restored.
+
+### Deleting sessions
+In the session overlay, click the **×** next to a session name. A confirmation dialog prevents accidental deletion.
 
 ---
 
@@ -97,6 +102,7 @@ Every message you send automatically includes a structured context block with:
 - The selected code (if any)
 - Warnings and errors visible in the Problems panel (up to 10)
 - Other open file paths (up to 10)
+- A 2-level directory tree of your workspace (excluding hidden and build directories)
 - Git branch name and whether there are uncommitted changes
 
 You never need to copy-paste file paths or error messages.
@@ -117,8 +123,25 @@ When the agent decides to read a file, run a command, or call a tool, a card app
 
 Each card is collapsible so you can hide it once you have read it.
 
+### Clickable file links
+When the agent mentions a file path (e.g. `src/utils.py:42`), it appears as a clickable link. Click it to open that file at the referenced line in the editor.
+
 ### Reasoning blocks
 Some models expose their internal reasoning. These appear as greyed-out collapsible sections labeled "Thinking…".
+
+---
+
+## File Edits
+
+When the agent proposes a file edit, the extension applies it directly to your workspace files. A notification toast appears confirming each applied change.
+
+### Approval workflow
+Open **Settings → Extensions → JiuwenSwarm** and enable **Approve edits**. When enabled, every proposed file edit shows a prompt with **Approve** and **Reject** buttons before it is applied. This is useful when you want full control over what changes the agent makes.
+
+### Rewind / checkpoint
+After each agent turn that modifies files, a **rewind bar** appears at the bottom of the chat panel. Click **Undo Changes** to restore all files to their state before that turn. Files that did not exist before the turn are deleted.
+
+Rewind is cleared when you send a new message or start a new session.
 
 ---
 
@@ -171,6 +194,7 @@ Open **Settings → Extensions → JiuwenSwarm** to change:
 | `jiuwenswarm.defaultMode` | `agent.plan` | Prefer `agent.fast` for quicker responses |
 | `jiuwenswarm.channelId` | `ide` | Only if your server uses a different channel |
 | `jiuwenswarm.autoConnect` | `true` | Disable if you prefer manual connection |
+| `jiuwenswarm.approveEdits` | `false` | Enable to require approval before every file edit |
 
 Settings changes require a window reload to take effect. The extension prompts you when you save a change.
 
@@ -195,6 +219,11 @@ Settings changes require a window reload to take effect. The extension prompts y
 - The server may have stopped — restart it
 - Network changed — click the status bar widget to reconnect
 - Wrong host/port — check Settings
+
+**File edits not being applied**
+- Check the notification area for error toasts
+- Enable debug logging to see tool call processing in the output panel
+- Make sure the file is inside your workspace and not read-only
 
 ---
 

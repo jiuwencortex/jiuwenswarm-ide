@@ -110,6 +110,11 @@
           "type": "boolean",
           "default": true,
           "description": "Automatically connect on startup"
+        },
+        "jiuwenswarm.approveEdits": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show approval prompt before applying agent file edits"
         }
       }
     }
