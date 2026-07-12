@@ -110,6 +110,17 @@ export class SessionManager {
     await this.request('session.delete', { session_id: sid }, sid);
   }
 
+  /**
+   * Fire-and-forget request to load paginated session history.
+   * The server streams back history.message events through the WebSocket which
+   * flow to all message listeners (including ChatPanel.onJiuwenMessage).
+   * A history.done event marks the end of the page.
+   */
+  loadHistory(sid: string, pageIdx = 1): boolean {
+    const msg = makeRequest('history.get', { session_id: sid, page_idx: pageIdx }, this.channelId);
+    return this.ws.send(msg);
+  }
+
   // ──────────────────────────────────────────
   // Internal
   // ──────────────────────────────────────────

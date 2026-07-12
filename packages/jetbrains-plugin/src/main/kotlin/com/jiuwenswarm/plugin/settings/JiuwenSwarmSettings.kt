@@ -27,6 +27,14 @@ class JiuwenSwarmSettings : PersistentStateComponent<JiuwenSwarmSettings.State> 
         var keepAliveEnabled: Boolean = true,
         /** Seconds between keep-alive ping frames (5–300). */
         var keepAliveInterval: Int = 30,
+        /** When true, inject the project directory tree into each chat message. */
+        var projectTreeEnabled: Boolean = true,
+        /** Maximum number of files listed in the injected project tree (10–2000). */
+        var projectTreeMaxFiles: Int = 200,
+        /** When true, load and display message history after switching to an existing session. */
+        var loadHistoryOnSwitch: Boolean = true,
+        /** When true, snapshot files before agent edits so the rewind feature can restore them. */
+        var rewindEnabled: Boolean = true,
     )
 
     private var state = State()
@@ -76,6 +84,22 @@ class JiuwenSwarmSettings : PersistentStateComponent<JiuwenSwarmSettings.State> 
     var keepAliveInterval: Int
         get() = state.keepAliveInterval
         set(v) { state = state.copy(keepAliveInterval = v.coerceIn(5, 300)) }
+
+    var projectTreeEnabled: Boolean
+        get() = state.projectTreeEnabled
+        set(v) { state = state.copy(projectTreeEnabled = v) }
+
+    var projectTreeMaxFiles: Int
+        get() = state.projectTreeMaxFiles
+        set(v) { state = state.copy(projectTreeMaxFiles = v.coerceIn(10, 2000)) }
+
+    var loadHistoryOnSwitch: Boolean
+        get() = state.loadHistoryOnSwitch
+        set(v) { state = state.copy(loadHistoryOnSwitch = v) }
+
+    var rewindEnabled: Boolean
+        get() = state.rewindEnabled
+        set(v) { state = state.copy(rewindEnabled = v) }
 
     val wsUrl: String get() = "ws://$host:$port/ws"
 

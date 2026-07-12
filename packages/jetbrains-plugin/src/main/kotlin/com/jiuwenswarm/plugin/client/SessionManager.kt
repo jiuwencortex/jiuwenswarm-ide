@@ -107,6 +107,27 @@ class SessionManager(
     }
 
     /**
+     * Fire-and-forget request to load paginated session history.
+     * The server streams back [history.message] events through the WebSocket which
+     * flow to all registered message listeners (including [ChatToolWindow.onJiuwenMessage]).
+     * A [history.done] event marks the end of the page.
+     */
+    fun loadHistory(sid: String, pageIdx: Int = 1): Boolean {
+        val id = UUID.randomUUID().toString()
+        val msg = buildJsonObject {
+            addProperty("id", id)
+            addProperty("type", "req")
+            addProperty("channel_id", channelId)
+            addProperty("method", "history.get")
+            add("params", gson.toJsonTree(
+                mapOf("session_id" to sid, "page_idx" to pageIdx)
+            ).asJsonObject)
+            addProperty("timestamp", System.currentTimeMillis() / 1000.0)
+        }
+        return ws.send(msg)
+    }
+
+    /**
      * Fire-and-forget chat message. Streaming events arrive via WsClient message listener.
      * If [ideContext] is non-null it is prepended to [content] as a structured block so the
      * agent can see the current file, selection, and diagnostics without the user having to

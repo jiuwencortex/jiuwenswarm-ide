@@ -23,8 +23,11 @@ export function collectContext(): string | undefined {
   // Other open files (excluding the active one)
   const otherOpenFiles = filePath ? collectOtherOpenFiles(filePath) : [];
 
-  // Project tree (2-level directory listing)
-  const projectTree = collectProjectTree();
+  // Project tree (2-level directory listing, respects settings)
+  const cfg = vscode.workspace.getConfiguration('jiuwenswarm');
+  const projectTreeEnabled = cfg.get<boolean>('projectTree.enabled', true);
+  const projectTreeMaxFiles = cfg.get<number>('projectTree.maxFiles', 200);
+  const projectTree = projectTreeEnabled ? collectProjectTree(projectTreeMaxFiles) : undefined;
 
   // Git context
   const gitInfo = filePath ? collectGitContext(filePath) : undefined;
@@ -103,19 +106,26 @@ const SKIP_DIRS = new Set([
   'target', '__pycache__', '.venv', 'venv', '.tox', 'coverage', '.cache',
 ]);
 
-function collectProjectTree(): string | undefined {
+function collectProjectTree(maxFiles = 200): string | undefined {
   const folders = vscode.workspace.workspaceFolders;
   if (!folders || folders.length === 0) return undefined;
   const root = folders[0].uri.fsPath;
   try {
-    const tree = buildDirTree(root, 0);
+    const counter = { count: 0 };
+    const tree = buildDirTree(root, 0, maxFiles, counter);
     return tree || undefined;
   } catch {
     return undefined;
   }
 }
 
-function buildDirTree(dir: string, depth: number): string | undefined {
+function buildDirTree(
+  dir: string,
+  depth: number,
+  maxFiles: number,
+  counter: { count: number },
+): string | undefined {
+  if (counter.count >= maxFiles) return undefined;
   const entries = fs.readdirSync(dir, { withFileTypes: true })
     .filter((e) => !SKIP_DIRS.has(e.name) && !e.name.startsWith('.'))
     .sort((a, b) => {
@@ -127,15 +137,20 @@ function buildDirTree(dir: string, depth: number): string | undefined {
 
   const lines: string[] = [];
   for (const e of entries) {
+    if (counter.count >= maxFiles) {
+      lines.push(`${'  '.repeat(depth)}… (truncated at ${maxFiles} files)`);
+      break;
+    }
     const indent = '  '.repeat(depth);
     if (e.isDirectory()) {
       lines.push(`${indent}${e.name}/`);
       if (depth < 1) {
-        const sub = buildDirTree(path.join(dir, e.name), depth + 1);
+        const sub = buildDirTree(path.join(dir, e.name), depth + 1, maxFiles, counter);
         if (sub) lines.push(sub);
       }
     } else {
       lines.push(`${indent}${e.name}`);
+      counter.count++;
     }
   }
   return lines.join('\n');

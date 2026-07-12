@@ -1,6 +1,6 @@
 <idea-plugin>
     <id>com.jiuwenswarm.ide-plugin</id>
-    <name>JiuwenSwarm</name>
+    <name>JiuwenSwarm — AI Code Agent</name>
     <vendor email="dev@openjiuwen.com" url="https://github.com/openjiuwen">OpenJiuwen</vendor>
 
     <description><![CDATA[

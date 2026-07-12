@@ -8,6 +8,7 @@ import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
+import com.jiuwenswarm.plugin.settings.JiuwenSwarmSettings
 
 /**
  * Collects IDE context (active file, language, selection, diagnostics, open tabs, git)
@@ -23,12 +24,15 @@ object ContextCollector {
         // ── Phase 1: gather all IntelliJ-API data under ReadAction ───────��──
         val ideData = ReadAction.compute<IdeData?, Throwable> { readIdeData(project) }
         // ── Phase 2: project tree (VirtualFile traversal — ReadAction) ──────
-        val projectTree = ReadAction.compute<String?, Throwable> {
-            project.basePath
-                ?.let { LocalFileSystem.getInstance().findFileByPath(it) }
-                ?.let { buildProjectTree(it, 0) }
-                ?.takeIf { it.isNotBlank() }
-        }
+        val settings = JiuwenSwarmSettings.instance()
+        val projectTree = if (settings.projectTreeEnabled) {
+            ReadAction.compute<String?, Throwable> {
+                project.basePath
+                    ?.let { LocalFileSystem.getInstance().findFileByPath(it) }
+                    ?.let { buildProjectTree(it, 0, settings.projectTreeMaxFiles) }
+                    ?.takeIf { it.isNotBlank() }
+            }
+        } else null
         // ── Phase 3: git (subprocess — must run outside ReadAction) ─────────
         val gitInfo = GitContextProvider.collect(project)
 
@@ -91,7 +95,18 @@ object ContextCollector {
         "target", "__pycache__", ".venv", "venv", ".tox", "coverage", ".cache"
     )
 
-    private fun buildProjectTree(dir: VirtualFile, depth: Int): String {
+    private fun buildProjectTree(dir: VirtualFile, depth: Int, maxFiles: Int = 200): String {
+        val counter = intArrayOf(0)
+        return buildProjectTreeInternal(dir, depth, maxFiles, counter).trimEnd()
+    }
+
+    private fun buildProjectTreeInternal(
+        dir: VirtualFile,
+        depth: Int,
+        maxFiles: Int,
+        counter: IntArray,
+    ): String {
+        if (counter[0] >= maxFiles) return ""
         val children = dir.children
             ?.filter { child ->
                 !SKIP_DIRS.contains(child.name) && !child.name.startsWith(".")
@@ -100,15 +115,20 @@ object ContextCollector {
             ?: return ""
         return buildString {
             for (child in children) {
+                if (counter[0] >= maxFiles) {
+                    appendLine("  ".repeat(depth) + "… (truncated at $maxFiles files)")
+                    break
+                }
                 val indent = "  ".repeat(depth)
                 if (child.isDirectory) {
                     appendLine("$indent${child.name}/")
-                    if (depth < 1) append(buildProjectTree(child, depth + 1))
+                    if (depth < 1) append(buildProjectTreeInternal(child, depth + 1, maxFiles, counter))
                 } else {
                     appendLine("$indent${child.name}")
+                    counter[0]++
                 }
             }
-        }.trimEnd()
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────

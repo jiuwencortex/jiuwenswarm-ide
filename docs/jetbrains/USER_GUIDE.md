@@ -14,7 +14,13 @@ Open **Settings → Tools → JiuwenSwarm**:
 | Server port | `19000` | Port the server is listening on — connects to `ws://host:port/ws` |
 | Channel ID | `ide` | Identifies this client in server logs and TraceHound traces |
 | Connect automatically on startup | on | Opens the WebSocket connection when the IDE starts |
+| **Default mode** | `agent.plan` | Pre-selects the agent mode (Planning / Performance / Cluster) used when a new session is created |
 | Auto-apply file edits (skip diff dialog) | off | When on, agent file edits are written immediately without a review window |
+| Run bash / shell commands in IDE terminal | on | Sends agent shell commands to a dedicated terminal tab; disable to run them silently |
+| **Load history when switching sessions** | on | Automatically fetches and displays past messages when you switch to an existing session |
+| **Enable checkpoint / rewind** | on | Enables file snapshots after each agent turn and shows the rewind bar; disable to reduce memory usage |
+| **Include project tree in context** | on | Appends a 2-level directory listing of the project root to every outgoing message |
+| **Project tree max files** | `200` | Maximum number of file entries included in the project tree (range: 10–2000) |
 
 Settings are stored per-IDE-installation in `jiuwenswarm.xml` inside the IDE config directory and persist across restarts.
 
@@ -103,6 +109,15 @@ Every message you send automatically has a structured context block prepended. T
 | Git status | `git` subprocess | `Git: branch=feature/auth, 3 uncommitted changes` |
 
 The block is assembled at send time. If there is nothing useful (no editor open, no git repo, no selection), the message is sent without a context block.
+
+### Controlling what is injected
+
+Open **Settings → Tools → JiuwenSwarm** to adjust context injection:
+
+| Setting | Effect |
+|---------|--------|
+| **Include project tree in context** | Toggle the directory listing on or off |
+| **Project tree max files** | Limit the number of entries listed (10–2000); useful for large mono-repos where the full listing would be too verbose |
 
 ### Example injected block
 
@@ -300,6 +315,8 @@ After every agent turn that edits one or more files, a rewind bar appears betwee
 ⟲ Agent edited files this turn    [⟲ Undo changes]
 ```
 
+> **Note:** Rewind can be disabled entirely via **Settings → Tools → JiuwenSwarm → Enable checkpoint / rewind**. When disabled, no file snapshots are taken and the rewind bar never appears. This is useful if you want to reduce memory usage during long agent runs or if you rely solely on `Ctrl+Z` / `⌘Z` for undo.
+
 ### How it works
 
 Before the agent's first edit to a file in a given turn the plugin snapshots the current file content. At the end of the turn (`chat.final`) the snapshots are locked in and the rewind bar becomes active.
@@ -344,6 +361,12 @@ Each session item displays:
 ### Switching sessions
 
 Click a session item to switch. The overlay closes, the header title updates, and new messages are routed to the chosen session.
+
+#### Session history
+
+When **Load history when switching sessions** is enabled (the default), the plugin automatically fetches the session's past messages after switching. A **"Loading history…"** indicator appears in the message list while the history streams in over the WebSocket. Once loading is complete the indicator disappears and the full conversation is visible.
+
+To disable this behaviour — for example, if you only want to continue the conversation without replaying old messages — turn off **Load history when switching sessions** in **Settings → Tools → JiuwenSwarm**.
 
 ### Creating a new session
 
@@ -463,8 +486,10 @@ This is most useful when something is not working as expected and you need to se
 | Session list stays on "Loading…" | Server timeout (5 s) or method not supported | Click **↺ Retry**; check server logs for `session.list` errors |
 | Skills list shows an error | Server does not support `skills.list` | Expected on older server versions; upgrade the server to enable the skills panel |
 | IDE log filled with `[JiuwenSwarmDebug]` lines | Debug mode was left on | Open the panel and click **⚙ → Debug log** to toggle it off |
-| Rewind bar does not appear after agent edits a file | Auto-apply may be off so edits were not applied, or the server did not send `chat.final` | Enable the Debug log to check for `SNAP →` lines; verify the turn completed normally |
+| Rewind bar does not appear after agent edits a file | Auto-apply may be off so edits were not applied, `rewindEnabled` is off, or the server did not send `chat.final` | Check **Enable checkpoint / rewind** in settings; enable the Debug log to check for `SNAP →` lines; verify the turn completed normally |
 | Rewind restores 0 files | Snapshots were cleared by a subsequent message before rewind was clicked | The rewind window only lasts for the most recently completed turn |
+| Session history does not appear after switching sessions | **Load history when switching sessions** is off, or the server does not support `history.get` | Verify the setting is enabled in **Settings → Tools → JiuwenSwarm**; enable the Debug log and check for `history.get` errors; upgrade the server if needed |
+| "Loading history…" indicator never disappears | Server began streaming history but did not send `history.done` | Reconnect via the status bar widget; check server logs for the affected session |
 | Session ✕ button is not visible | The session is the currently active one | Active sessions cannot be deleted; switch to another session first |
 | "Project structure" not appearing in context | No project root detected (`project.basePath` is null) | This can happen in the default project or when no project folder is open |
 

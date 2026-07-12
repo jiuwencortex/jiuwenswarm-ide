@@ -272,7 +272,12 @@ class ChatPanel(
                     ApplicationManager.getApplication().executeOnPooledThread {
                         try {
                             service.session.switchSession(sid, "team")
+                            val loadHistory = JiuwenSwarmSettings.instance().loadHistoryOnSwitch
+                            dispatchToWebview(mapOf("type" to "history_loading", "loading" to loadHistory))
                             sendCurrentStatus()
+                            if (loadHistory) {
+                                service.session.loadHistory(sid)
+                            }
                         } catch (e: Exception) {
                             dispatchToWebview(mapOf("type" to "error", "message" to e.message))
                         }
@@ -431,8 +436,9 @@ class ChatPanel(
             if (et == "chat.tool_call") {
                 val payload = converted.getAsJsonObject("payload") ?: JsonObject()
                 val toolName = payload.get("tool_name")?.asString ?: ""
-                // File-edit snapshots
-                if (toolName in setOf("str_replace_editor", "write_file", "create_file")) {
+                // File-edit snapshots (only when rewind is enabled in settings)
+                if (JiuwenSwarmSettings.instance().rewindEnabled &&
+                    toolName in setOf("str_replace_editor", "write_file", "create_file")) {
                     val args = payload.getAsJsonObject("tool_call")?.getAsJsonObject("arguments")
                         ?: payload.getAsJsonObject("tool_input")
                         ?: payload.getAsJsonObject("input")

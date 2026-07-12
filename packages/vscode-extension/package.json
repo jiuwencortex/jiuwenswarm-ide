@@ -1,7 +1,7 @@
 {
   "name": "jiuwenswarm",
-  "displayName": "JiuwenSwarm",
-  "description": "Autonomous multi-agent AI coding assistant with streaming chat, tool-call transparency, session management, and code selection sharing.",
+  "displayName": "JiuwenSwarm — AI Code Agent",
+  "description": "Autonomous multi-agent AI coding assistant. Locally-running swarm of specialized agents handles code edits, shell commands, web search, and MCP tools — with streaming chat, full tool-call transparency, session history, and checkpoint rewind.",
   "version": "0.1.0",
   "publisher": "openjiuwen",
   "repository": {
@@ -141,6 +141,28 @@
           "minimum": 5,
           "maximum": 300,
           "description": "Seconds between keep-alive ping frames (5–300)"
+        },
+        "jiuwenswarm.loadHistoryOnSwitch": {
+          "type": "boolean",
+          "default": true,
+          "description": "Load and display message history when switching to an existing session"
+        },
+        "jiuwenswarm.rewindEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Snapshot files before agent edits so the checkpoint / rewind feature can restore them"
+        },
+        "jiuwenswarm.projectTree.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Inject the project directory tree into each chat message for richer agent context"
+        },
+        "jiuwenswarm.projectTree.maxFiles": {
+          "type": "number",
+          "default": 200,
+          "minimum": 10,
+          "maximum": 2000,
+          "description": "Maximum number of files listed in the injected project tree (10–2000)"
         }
       }
     }

@@ -622,6 +622,27 @@
   }
   .tool-header.open + .tool-body { display: block; }
   .tool-body.result { color: var(--text); border-top: 1px solid var(--tool-border); }
+  /* ── History loading indicator ── */
+  #history-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 32px 16px;
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+  #history-loading::before {
+    content: '';
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--text-muted);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    display: inline-block;
+    flex-shrink: 0;
+  }
 
   /* Usage metadata */
   .usage-line {
@@ -997,7 +1018,9 @@ let state = {
   themeMode: 'auto',   // 'auto' | 'dark' | 'light'
   attachments: [],     // { filename, mimeType, base64Data, previewUrl }
   rewindable: false,   // true when last turn edited files and rewind is available
+  historyLoading: false, // true while session history is being loaded after a switch
 };
+var _historyPendingAssistant = null; // assistant turn being assembled from history records
 
 // ─────────────────────────────────────────────
 // Host message handler
@@ -1075,6 +1098,9 @@ function handleHostMessage(msg) {
         scrollToBottom();
       }
       break;
+    case 'history_loading':
+      state.historyLoading = !!msg.loading;
+      break;
   }
 }
 
@@ -1097,6 +1123,12 @@ function setConnected(yes, sessionId, title) {
     if (isNewSession) {
       clearMessages();
       clearAttachments();
+      if (state.historyLoading) {
+        var hLoadEl = document.createElement('div');
+        hLoadEl.id = 'history-loading';
+        hLoadEl.textContent = 'Loading history\u2026';
+        document.getElementById('messages').appendChild(hLoadEl);
+      }
     }
     if (!state.streaming) {
       input.disabled = false;
@@ -1637,6 +1669,13 @@ function handleJiuwenEvent(evt) {
     if (state.streaming) {
       finalizeTurn(rid, payload);
     }
+  } else if (et === 'history.message') {
+    renderHistoryMessage(payload);
+  } else if (et === 'history.done') {
+    var hDoneEl = document.getElementById('history-loading');
+    if (hDoneEl) hDoneEl.remove();
+    _historyPendingAssistant = null;
+    state.historyLoading = false;
   }
 }
 
@@ -1758,6 +1797,74 @@ function appendToolResult(rid, payload) {
   resultEl.textContent = truncate(String(result), 500);
   pt.lastToolCard.appendChild(resultEl);
   scrollToBottom();
+}
+
+// ─────────────────────────────────────────────
+// History rendering (session restore)
+// ─────────────────────────────────────────────
+function renderHistoryMessage(payload) {
+  var role = payload.role;
+  var content = payload.content || '';
+  var innerType = payload.event_type;
+  var evtPayload = payload.event_payload || {};
+  var msgs = document.getElementById('messages');
+
+  // Remove loading indicator on first real message
+  var loadingEl = document.getElementById('history-loading');
+  if (loadingEl) loadingEl.remove();
+
+  if (role === 'user') {
+    _historyPendingAssistant = null;
+    var el = document.createElement('div');
+    el.className = 'msg';
+    el.innerHTML =
+      '<div class="msg-header user">You</div>' +
+      '<div class="msg-body user">' + escapeHtml(content) + '</div>';
+    msgs.appendChild(el);
+    scrollToBottom();
+  } else if (role === 'assistant') {
+    if (!_historyPendingAssistant) {
+      var aEl = document.createElement('div');
+      aEl.className = 'msg';
+      var hdrEl = document.createElement('div');
+      hdrEl.className = 'msg-header assistant';
+      hdrEl.textContent = 'JiuwenSwarm';
+      aEl.appendChild(hdrEl);
+      var bdyEl = document.createElement('div');
+      bdyEl.className = 'msg-body assistant';
+      aEl.appendChild(bdyEl);
+      msgs.appendChild(aEl);
+      _historyPendingAssistant = { containerEl: aEl, bodyEl: bdyEl };
+    }
+    if (innerType === 'chat.tool_call') {
+      var toolName = evtPayload.tool_name || payload.tool_name || 'tool';
+      var toolInput = evtPayload.tool_input || evtPayload.input || evtPayload.arguments || {};
+      var card = document.createElement('div');
+      card.className = 'tool-card';
+      var hdr = document.createElement('div');
+      hdr.className = 'tool-header';
+      hdr.innerHTML =
+        '<span style="opacity:0.6">\u2699</span>' +
+        '<span class="tool-name">' + escapeHtml(String(toolName)) + '</span>' +
+        '<span class="tool-status"><span style="color:#4ec9b0">\u2713 done</span></span>';
+      hdr.onclick = function() { hdr.classList.toggle('open'); };
+      var bdy = document.createElement('div');
+      bdy.className = 'tool-body';
+      bdy.textContent = (typeof formatToolInput === 'function')
+        ? formatToolInput(String(toolName), toolInput)
+        : JSON.stringify(toolInput, null, 2);
+      card.appendChild(hdr);
+      card.appendChild(bdy);
+      _historyPendingAssistant.bodyEl.appendChild(card);
+    } else if (!innerType || innerType === 'chat.final') {
+      if (content.trim()) {
+        var textEl = document.createElement('div');
+        textEl.innerHTML = renderMarkdown(content);
+        _historyPendingAssistant.bodyEl.appendChild(textEl);
+      }
+    }
+    scrollToBottom();
+  }
 }
 
 function updateUsage(rid, payload) {
@@ -1895,6 +2002,7 @@ function clearMessages() {
   state.pendingTurns = {};
   state.streaming = false;
   state.rewindable = false;
+  _historyPendingAssistant = null;
   document.getElementById('input').disabled = false;
   document.getElementById('send-btn').disabled = false;
   document.getElementById('token-counter').textContent = '';

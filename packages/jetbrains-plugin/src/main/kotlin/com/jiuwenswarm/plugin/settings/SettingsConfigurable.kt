@@ -5,6 +5,7 @@ import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.FormBuilder
+import javax.swing.JComboBox
 import javax.swing.JComponent
 import javax.swing.JPanel
 import javax.swing.JSpinner
@@ -14,10 +15,24 @@ class SettingsConfigurable : Configurable {
 
     private val settings = JiuwenSwarmSettings.instance()
 
+    // ── Connection ──
     private val hostField = JBTextField(settings.host, 20)
     private val portSpinner = JSpinner(SpinnerNumberModel(settings.port, 1, 65535, 1))
     private val channelIdField = JBTextField(settings.channelId, 10)
     private val autoConnectBox = JBCheckBox("Connect automatically on IDE startup", settings.autoConnect)
+    private val keepAliveBox = JBCheckBox("Send keep-alive pings to server", settings.keepAliveEnabled)
+    private val keepAliveIntervalSpinner = JSpinner(SpinnerNumberModel(settings.keepAliveInterval, 5, 300, 5))
+
+    // ── Chat behaviour ──
+    private val defaultModeCombo = JComboBox(arrayOf("agent.plan", "agent.fast", "team")).also {
+        it.selectedItem = settings.defaultMode
+    }
+    private val loadHistoryOnSwitchBox = JBCheckBox(
+        "Load message history when switching to an existing session",
+        settings.loadHistoryOnSwitch,
+    )
+
+    // ── File edits ──
     private val approveEditsBox = JBCheckBox(
         "Require approval before applying agent file edits",
         settings.approveEdits,
@@ -30,12 +45,18 @@ class SettingsConfigurable : Configurable {
         "Run bash / shell commands in IDE terminal",
         settings.runCommandsInTerminal,
     )
-    private val keepAliveBox = JBCheckBox(
-        "Send keep-alive pings to server",
-        settings.keepAliveEnabled,
+    private val rewindEnabledBox = JBCheckBox(
+        "Enable checkpoint / rewind (snapshot files before agent edits)",
+        settings.rewindEnabled,
     )
-    private val keepAliveIntervalSpinner = JSpinner(
-        SpinnerNumberModel(settings.keepAliveInterval, 5, 300, 5)
+
+    // ── Context injection ──
+    private val projectTreeEnabledBox = JBCheckBox(
+        "Inject project directory tree into each message",
+        settings.projectTreeEnabled,
+    )
+    private val projectTreeMaxFilesSpinner = JSpinner(
+        SpinnerNumberModel(settings.projectTreeMaxFiles, 10, 2000, 50)
     )
 
     private var panel: JPanel? = null
@@ -44,15 +65,28 @@ class SettingsConfigurable : Configurable {
 
     override fun createComponent(): JComponent {
         panel = FormBuilder.createFormBuilder()
+            // Connection
+            .addSeparator()
             .addLabeledComponent(JBLabel("Server host:"), hostField, 1, false)
             .addLabeledComponent(JBLabel("Server port:"), portSpinner, 1, false)
             .addLabeledComponent(JBLabel("Channel ID:"), channelIdField, 1, false)
             .addComponent(autoConnectBox, 1)
+            .addComponent(keepAliveBox, 1)
+            .addLabeledComponent(JBLabel("Keep-alive interval (seconds):"), keepAliveIntervalSpinner, 1, false)
+            // Chat behaviour
+            .addSeparator()
+            .addLabeledComponent(JBLabel("Default agent mode:"), defaultModeCombo, 1, false)
+            .addComponent(loadHistoryOnSwitchBox, 1)
+            // File edits
+            .addSeparator()
             .addComponent(approveEditsBox, 1)
             .addComponent(autoApplyEditsBox, 1)
             .addComponent(runInTerminalBox, 1)
-            .addComponent(keepAliveBox, 1)
-            .addLabeledComponent(JBLabel("Keep-alive interval (seconds):"), keepAliveIntervalSpinner, 1, false)
+            .addComponent(rewindEnabledBox, 1)
+            // Context injection
+            .addSeparator()
+            .addComponent(projectTreeEnabledBox, 1)
+            .addLabeledComponent(JBLabel("Project tree max files:"), projectTreeMaxFilesSpinner, 1, false)
             .addComponentFillVertically(JPanel(), 0)
             .panel
         return panel!!
@@ -63,22 +97,32 @@ class SettingsConfigurable : Configurable {
         (portSpinner.value as Int) != settings.port ||
         channelIdField.text != settings.channelId ||
         autoConnectBox.isSelected != settings.autoConnect ||
+        keepAliveBox.isSelected != settings.keepAliveEnabled ||
+        (keepAliveIntervalSpinner.value as Int) != settings.keepAliveInterval ||
+        defaultModeCombo.selectedItem as String != settings.defaultMode ||
+        loadHistoryOnSwitchBox.isSelected != settings.loadHistoryOnSwitch ||
         approveEditsBox.isSelected != settings.approveEdits ||
         autoApplyEditsBox.isSelected != settings.autoApplyEdits ||
         runInTerminalBox.isSelected != settings.runCommandsInTerminal ||
-        keepAliveBox.isSelected != settings.keepAliveEnabled ||
-        (keepAliveIntervalSpinner.value as Int) != settings.keepAliveInterval
+        rewindEnabledBox.isSelected != settings.rewindEnabled ||
+        projectTreeEnabledBox.isSelected != settings.projectTreeEnabled ||
+        (projectTreeMaxFilesSpinner.value as Int) != settings.projectTreeMaxFiles
 
     override fun apply() {
         settings.host = hostField.text.trim()
         settings.port = portSpinner.value as Int
         settings.channelId = channelIdField.text.trim()
         settings.autoConnect = autoConnectBox.isSelected
+        settings.keepAliveEnabled = keepAliveBox.isSelected
+        settings.keepAliveInterval = (keepAliveIntervalSpinner.value as Int).coerceIn(5, 300)
+        settings.defaultMode = defaultModeCombo.selectedItem as String
+        settings.loadHistoryOnSwitch = loadHistoryOnSwitchBox.isSelected
         settings.approveEdits = approveEditsBox.isSelected
         settings.autoApplyEdits = autoApplyEditsBox.isSelected
         settings.runCommandsInTerminal = runInTerminalBox.isSelected
-        settings.keepAliveEnabled = keepAliveBox.isSelected
-        settings.keepAliveInterval = (keepAliveIntervalSpinner.value as Int).coerceIn(5, 300)
+        settings.rewindEnabled = rewindEnabledBox.isSelected
+        settings.projectTreeEnabled = projectTreeEnabledBox.isSelected
+        settings.projectTreeMaxFiles = (projectTreeMaxFilesSpinner.value as Int).coerceIn(10, 2000)
     }
 
     override fun reset() {
@@ -86,11 +130,16 @@ class SettingsConfigurable : Configurable {
         portSpinner.value = settings.port
         channelIdField.text = settings.channelId
         autoConnectBox.isSelected = settings.autoConnect
+        keepAliveBox.isSelected = settings.keepAliveEnabled
+        keepAliveIntervalSpinner.value = settings.keepAliveInterval
+        defaultModeCombo.selectedItem = settings.defaultMode
+        loadHistoryOnSwitchBox.isSelected = settings.loadHistoryOnSwitch
         approveEditsBox.isSelected = settings.approveEdits
         autoApplyEditsBox.isSelected = settings.autoApplyEdits
         runInTerminalBox.isSelected = settings.runCommandsInTerminal
-        keepAliveBox.isSelected = settings.keepAliveEnabled
-        keepAliveIntervalSpinner.value = settings.keepAliveInterval
+        rewindEnabledBox.isSelected = settings.rewindEnabled
+        projectTreeEnabledBox.isSelected = settings.projectTreeEnabled
+        projectTreeMaxFilesSpinner.value = settings.projectTreeMaxFiles
     }
 
     override fun disposeUIResources() {

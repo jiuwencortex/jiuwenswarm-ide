@@ -220,10 +220,12 @@ export class ChatPanel implements vscode.WebviewViewProvider {
         const filePath = args.path as string | undefined;
 
         if (filePath) {
-          DiffApplier.ensureSnapshot(filePath);
-          this.debug(`SNAP  → snapshotted ${filePath}`);
-
           const cfg = vscode.workspace.getConfiguration('jiuwenswarm');
+          if (cfg.get<boolean>('rewindEnabled', true)) {
+            DiffApplier.ensureSnapshot(filePath);
+            this.debug(`SNAP  → snapshotted ${filePath}`);
+          }
+
           if (cfg.get<boolean>('useDiffViewer', false)) {
             // Show native diff before applying
             const proposed = computeProposedContent({
@@ -433,11 +435,17 @@ export class ChatPanel implements vscode.WebviewViewProvider {
     try {
       this.debug(`ACTION→ switch_session ${sessionId} mode=${mode || 'default'}`);
       await this.session.switchSession(sessionId, mode);
+      const cfg = vscode.workspace.getConfiguration('jiuwenswarm');
+      const loadHistory = cfg.get<boolean>('loadHistoryOnSwitch', true);
+      this.postToWebview({ type: 'history_loading', loading: loadHistory });
       this.postToWebview({
         type: 'connected',
         sessionId: this.session.sessionId!,
         sessionTitle: this.session.sessionTitle,
       });
+      if (loadHistory) {
+        this.session.loadHistory(sessionId);
+      }
     } catch (e) {
       this.postToWebview({ type: 'error', message: String(e) });
     }
