@@ -56,8 +56,10 @@ export class SessionManager {
   }
 
   /** Switch to an existing session */
-  async switchSession(sid: string): Promise<void> {
-    const payload = await this.request('session.switch', { session_id: sid }, sid);
+  async switchSession(sid: string, mode?: string): Promise<void> {
+    const params: Record<string, unknown> = { session_id: sid };
+    if (mode) params.mode = mode;
+    const payload = await this.request('session.switch', params, sid);
     this.setSessionId(sid);
     this._sessionTitle = (payload.title as string) || sid;
   }

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data: blob:;">
 <title>JiuwenSwarm</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -242,6 +242,77 @@
   /* When overlay is visible, show it and hide #messages */
   #session-overlay.visible { display: flex; }
   #messages.sessions-open { display: none !important; }
+
+  /* ── Skills overlay ── */
+  #skills-overlay {
+    display: none;
+    flex: 1;
+    min-height: 0;
+    background: var(--bg2);
+    border-top: 1px solid var(--border);
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #skills-overlay.visible { display: flex; }
+  #messages.skills-open { display: none !important; }
+  #skills-overlay-header {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg3);
+    flex-shrink: 0;
+    gap: 8px;
+  }
+  #skills-overlay-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    flex: 1;
+  }
+  #skills-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  #skills-list::-webkit-scrollbar { width: 6px; }
+  #skills-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  .skill-item {
+    padding: 8px 10px;
+    border-radius: var(--radius);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border: 1px solid transparent;
+    background: var(--bg3);
+    transition: border-color 0.1s;
+  }
+  .skill-item:hover { border-color: var(--border); }
+  .skill-info { flex: 1; min-width: 0; }
+  .skill-name { font-size: 12px; font-weight: 600; color: var(--text); }
+  .skill-desc { font-size: 11px; color: var(--text-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .skill-trigger { font-size: 10px; color: var(--accent); font-family: monospace; margin-top: 2px; }
+  .skill-toggle-btn {
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: background 0.1s, color 0.1s;
+  }
+  .skill-toggle-btn.enabled {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  .skill-toggle-btn:hover { opacity: 0.85; }
   #session-overlay-header {
     display: flex;
     align-items: center;
@@ -257,7 +328,7 @@
     color: var(--text);
     flex: 1;
   }
-  #session-overlay-close {
+  #session-overlay-close, #skills-overlay-close {
     background: none;
     border: none;
     color: var(--text-muted);
@@ -267,7 +338,7 @@
     border-radius: var(--radius);
     line-height: 1;
   }
-  #session-overlay-close:hover { color: var(--text); background: var(--bg); }
+  #session-overlay-close:hover, #skills-overlay-close:hover { color: var(--text); background: var(--bg); }
 
   /* ── Modal dialog ── */
   #modal-overlay {
@@ -451,6 +522,20 @@
     padding: 1px 4px;
     border-radius: 3px;
     color: #ce9178;
+  }
+  /* ── Clickable file links in agent messages ── */
+  a.file-link {
+    color: var(--accent);
+    text-decoration: none;
+    border-bottom: 1px dotted var(--accent);
+    cursor: pointer;
+  }
+  a.file-link:hover { border-bottom-style: solid; }
+  a.file-link > code {
+    color: var(--accent);
+    background: none;
+    padding: 0;
+    border-radius: 0;
   }
   .msg-body pre {
     background: var(--code-bg);
@@ -704,6 +789,58 @@
   /* Scrollbar for textareas */
   #input::-webkit-scrollbar { width: 4px; }
   #input::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* ── Session delete button ── */
+  .session-item-top {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+  }
+  .session-item-top .session-item-title {
+    flex: 1;
+    min-width: 0;
+  }
+  .session-delete-btn {
+    flex-shrink: 0;
+    background: none;
+    border: 1px solid transparent;
+    color: var(--text-dim);
+    font-size: 11px;
+    padding: 1px 5px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    line-height: 1.4;
+    transition: color 0.1s, border-color 0.1s, background 0.1s;
+  }
+  .session-delete-btn:hover { color: var(--error-text); border-color: var(--error-text); }
+  .session-delete-btn.confirm { color: var(--error-text); border-color: var(--error-text); background: rgba(220,50,50,0.1); }
+
+  /* ── Rewind bar (shown after agent edits files) ── */
+  #rewind-bar {
+    display: none;
+    padding: 5px 10px;
+    border-top: 1px solid var(--border);
+    background: var(--bg2);
+    gap: 8px;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  #rewind-bar.visible { display: flex; }
+  #rewind-label { font-size: 11px; color: var(--text-dim); flex: 1; }
+  #rewind-btn {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  #rewind-btn:hover:not(:disabled) { border-color: var(--text-muted); color: var(--text); }
+  #rewind-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>
 </head>
 <body>
@@ -716,6 +853,7 @@
     <button id="btn-settings" class="header-btn" onclick="toggleSettingsMenu()" title="Settings">⚙</button>
     <div id="settings-menu" class="dropdown-menu">
       <div class="dropdown-item" onclick="showSessionsFromMenu()">📁 Sessions</div>
+      <div class="dropdown-item" onclick="showSkillsFromMenu()">🔧 Skills</div>
       <div class="dropdown-divider"></div>
       <div class="dropdown-section-label">Theme</div>
       <div class="dropdown-item" id="theme-item-auto" onclick="setThemeMode('auto')"><span class="emoji-fix">◐</span> Auto</div>
@@ -739,6 +877,16 @@
   <div id="session-list"></div>
 </div>
 
+<!-- Skills overlay — covers the panel when open -->
+<div id="skills-overlay">
+  <div id="skills-overlay-header">
+    <span id="skills-overlay-title">Skills</span>
+    <button class="header-btn" onclick="retrySkills()" title="Refresh">↺</button>
+    <button id="skills-overlay-close" onclick="toggleSkills()" title="Close">✕</button>
+  </div>
+  <div id="skills-list"></div>
+</div>
+
 <!-- Mode-change confirmation modal -->
 <div id="modal-overlay" onclick="if(event.target===this) closeModal()">
   <div id="modal-box">
@@ -757,6 +905,12 @@
     <div>Start a conversation</div>
     <div style="font-size:11px;opacity:0.6">Connecting to JiuwenSwarm…</div>
   </div>
+</div>
+
+<!-- Rewind bar — shown after a turn that edited files -->
+<div id="rewind-bar">
+  <span id="rewind-label">Agent edited files this turn</span>
+  <button id="rewind-btn" onclick="requestRewind()">&#x27F2; Undo changes</button>
 </div>
 
 <!-- Debug console — shown above input when debug mode is on -->
@@ -833,6 +987,8 @@ let state = {
   sessionTitle: 'JiuwenSwarm',
   sessions: [],
   showSessions: false,
+  showSkills: false,
+  skills: [],
   showDebug: false,
   streaming: false,
   turns: [],
@@ -840,6 +996,7 @@ let state = {
   mode: 'agent.plan',
   themeMode: 'auto',   // 'auto' | 'dark' | 'light'
   attachments: [],     // { filename, mimeType, base64Data, previewUrl }
+  rewindable: false,   // true when last turn edited files and rewind is available
 };
 
 // ─────────────────────────────────────────────
@@ -863,6 +1020,15 @@ function handleHostMessage(msg) {
     case 'sessions_error':
       showSessionsError(msg.message);
       break;
+    case 'skills':
+      updateSkills(msg.skills);
+      break;
+    case 'skills_error':
+      showSkillsError(msg.message);
+      break;
+    case 'skill_toggled':
+      onSkillToggled(msg.skillId, msg.enabled);
+      break;
     case 'jiuwen_event':
       handleJiuwenEvent(msg.event);
       break;
@@ -878,6 +1044,35 @@ function handleHostMessage(msg) {
         inp.value = msg.content;
         inp.dispatchEvent(new Event('input'));
         inp.focus();
+      }
+      break;
+    case 'session_deleted':
+      state.sessions = state.sessions.filter(function(s) {
+        return s.session_id !== msg.sessionId;
+      });
+      renderSessionList();
+      break;
+    case 'rewindable':
+      state.rewindable = msg.enabled;
+      var rewindBar = document.getElementById('rewind-bar');
+      var rewindBtn = document.getElementById('rewind-btn');
+      if (msg.enabled) {
+        rewindBar.classList.add('visible');
+        rewindBtn.disabled = false;
+        rewindBtn.textContent = '\u27F2 Undo changes';
+      } else {
+        rewindBar.classList.remove('visible');
+      }
+      break;
+    case 'rewind_done':
+      document.getElementById('rewind-bar').classList.remove('visible');
+      state.rewindable = false;
+      if (msg.message) {
+        var noticeEl = document.createElement('div');
+        noticeEl.className = 'usage-line';
+        noticeEl.textContent = '\u27F2 ' + msg.message;
+        document.getElementById('messages').appendChild(noticeEl);
+        scrollToBottom();
       }
       break;
   }
@@ -901,8 +1096,7 @@ function setConnected(yes, sessionId, title) {
     document.getElementById('header-title').textContent = state.sessionTitle;
     if (isNewSession) {
       clearMessages();
-      state.attachments = [];
-      renderAttachments();
+      clearAttachments();
     }
     if (!state.streaming) {
       input.disabled = false;
@@ -963,12 +1157,14 @@ function handleImageInput(files) {
       console.warn('[webview] Image too large:', file.name, file.size);
       return;
     }
+    // Create a blob URL immediately for preview (avoids embedding large base64 in DOM)
+    var previewUrl = URL.createObjectURL(file);
     readFileAsBase64(file, function(base64) {
       state.attachments.push({
         filename: file.name,
         mimeType: file.type,
         base64Data: base64,
-        previewUrl: 'data:' + file.type + ';base64,' + base64
+        previewUrl: previewUrl
       });
       renderAttachments();
     });
@@ -1015,7 +1211,20 @@ function renderAttachments() {
 }
 
 function removeAttachment(index) {
-  state.attachments.splice(index, 1);
+  var att = state.attachments.splice(index, 1)[0];
+  if (att && att.previewUrl && att.previewUrl.startsWith('blob:')) {
+    URL.revokeObjectURL(att.previewUrl);
+  }
+  renderAttachments();
+}
+
+function clearAttachments() {
+  state.attachments.forEach(function(att) {
+    if (att.previewUrl && att.previewUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(att.previewUrl);
+    }
+  });
+  state.attachments = [];
   renderAttachments();
 }
 
@@ -1039,9 +1248,39 @@ function renderSessionList() {
     const item = document.createElement('div');
     item.className = 'session-item' + (isActive ? ' active' : '');
 
+    // Top row: title + optional delete button
+    const topRow = document.createElement('div');
+    topRow.className = 'session-item-top';
+
     const titleEl = document.createElement('div');
     titleEl.className = 'session-item-title';
     titleEl.textContent = s.title || s.session_id;
+    topRow.appendChild(titleEl);
+
+    if (!isActive) {
+      const delBtn = document.createElement('button');
+      delBtn.className = 'session-delete-btn';
+      delBtn.textContent = '\u2715';
+      delBtn.title = 'Delete session';
+      delBtn.onclick = function(e) {
+        e.stopPropagation();
+        if (delBtn.classList.contains('confirm')) {
+          send({ type: 'delete_session', sessionId: s.session_id });
+          delBtn.textContent = '\u2026';
+          delBtn.disabled = true;
+        } else {
+          delBtn.classList.add('confirm');
+          delBtn.title = 'Click again to confirm';
+          setTimeout(function() {
+            if (delBtn.classList) {
+              delBtn.classList.remove('confirm');
+              delBtn.title = 'Delete session';
+            }
+          }, 2000);
+        }
+      };
+      topRow.appendChild(delBtn);
+    }
 
     const metaEl = document.createElement('div');
     metaEl.className = 'session-item-meta';
@@ -1050,7 +1289,7 @@ function renderSessionList() {
     if (s.last_message_at) metaParts.push(relativeTime(s.last_message_at));
     metaEl.textContent = metaParts.join(' · ');
 
-    item.appendChild(titleEl);
+    item.appendChild(topRow);
     item.appendChild(metaEl);
     item.title = s.session_id;
     item.onclick = function() {
@@ -1068,6 +1307,12 @@ function toggleSessions() {
   const overlay  = document.getElementById('session-overlay');
   const messages = document.getElementById('messages');
   if (state.showSessions) {
+    // Close skills overlay if open
+    if (state.showSkills) {
+      document.getElementById('skills-overlay').classList.remove('visible');
+      messages.classList.remove('skills-open');
+      state.showSkills = false;
+    }
     overlay.classList.add('visible');
     messages.classList.add('sessions-open');   // hide messages; overlay takes flex:1 slot
     retrySessions();
@@ -1094,6 +1339,97 @@ function retrySessions() {
   document.getElementById('session-list').innerHTML =
     '<div style="padding:16px;color:var(--text-dim);font-size:12px;text-align:center;">Loading…</div>';
   send({ type: 'list_sessions' });
+}
+
+// ─────────────────────────────────────────────
+// Skills
+// ─────────────────────────────────────────────
+function toggleSkills() {
+  state.showSkills = !state.showSkills;
+  const overlay  = document.getElementById('skills-overlay');
+  const messages = document.getElementById('messages');
+  if (state.showSkills) {
+    // Close sessions overlay if open
+    if (state.showSessions) toggleSessions();
+    overlay.classList.add('visible');
+    messages.classList.add('skills-open');
+    retrySkills();
+  } else {
+    overlay.classList.remove('visible');
+    messages.classList.remove('skills-open');
+  }
+}
+
+function showSkillsFromMenu() {
+  document.getElementById('settings-menu').classList.remove('visible');
+  if (!state.showSkills) toggleSkills();
+}
+
+function retrySkills() {
+  document.getElementById('skills-list').innerHTML =
+    '<div style="padding:16px;color:var(--text-dim);font-size:12px;text-align:center;">Loading…</div>';
+  send({ type: 'list_skills' });
+}
+
+function updateSkills(skills) {
+  if (!state.showSkills) return;
+  state.skills = skills || [];
+  var el = document.getElementById('skills-list');
+  if (!el) return;
+  if (!state.skills.length) {
+    el.innerHTML = '<div style="padding:16px;color:var(--text-dim);font-size:12px;text-align:center;">No skills found.</div>';
+    return;
+  }
+  el.innerHTML = '';
+  state.skills.forEach(function(skill) {
+    var item = document.createElement('div');
+    item.className = 'skill-item';
+    var enabled = skill.enabled !== false;
+    item.innerHTML =
+      '<div class="skill-info">' +
+        '<div class="skill-name">' + escapeHtml(skill.name || skill.skill_id) + '</div>' +
+        (skill.description ? '<div class="skill-desc">' + escapeHtml(skill.description) + '</div>' : '') +
+        (skill.trigger    ? '<div class="skill-trigger">' + escapeHtml(skill.trigger)    + '</div>' : '') +
+      '</div>' +
+      '<button class="skill-toggle-btn' + (enabled ? ' enabled' : '') + '" ' +
+        'onclick="toggleSkill(' + JSON.stringify(skill.skill_id) + ',' + !enabled + ')" ' +
+        'title="' + (enabled ? 'Disable' : 'Enable') + '">' +
+        (enabled ? 'ON' : 'OFF') +
+      '</button>';
+    el.appendChild(item);
+  });
+}
+
+function showSkillsError(message) {
+  var msg = escapeHtml(message || 'Failed to load skills');
+  document.getElementById('skills-list').innerHTML =
+    '<div style="padding:16px;display:flex;flex-direction:column;gap:10px;">' +
+      '<div style="color:var(--error-text);font-size:12px;">⚠ ' + msg + '</div>' +
+      '<button onclick="retrySkills()" style="' +
+        'background:var(--bg3);border:1px solid var(--border);color:var(--text-muted);' +
+        'border-radius:var(--radius);padding:4px 10px;font-size:11px;cursor:pointer;' +
+        'align-self:flex-start;"' +
+      '>↺ Retry</button>' +
+    '</div>';
+}
+
+function toggleSkill(skillId, enable) {
+  // Optimistic update: reflect change immediately before server confirms
+  var idx = state.skills.findIndex(function(s) { return s.skill_id === skillId; });
+  if (idx >= 0) {
+    state.skills[idx] = Object.assign({}, state.skills[idx], { enabled: enable });
+    updateSkills(state.skills);
+  }
+  send({ type: 'toggle_skill', skillId: skillId, enabled: enable });
+}
+
+function onSkillToggled(skillId, enabled) {
+  // Update in-memory state and re-render
+  var idx = state.skills.findIndex(function(s) { return s.skill_id === skillId; });
+  if (idx >= 0) {
+    state.skills[idx] = Object.assign({}, state.skills[idx], { enabled: enabled });
+    updateSkills(state.skills);
+  }
 }
 
 function relativeTime(ts) {
@@ -1516,8 +1852,7 @@ function submitMessage() {
         base64Data: att.base64Data,
       };
     });
-    state.attachments = [];
-    renderAttachments();
+    clearAttachments();
   }
   send(msg);
 
@@ -1535,6 +1870,18 @@ function setStreaming(yes) {
 }
 
 // ─────────────────────────────────────────────
+// Rewind
+// ─────────────────────────────────────────────
+function requestRewind() {
+  var btn = document.getElementById('rewind-btn');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '\u2026';
+  }
+  send({ type: 'rewind' });
+}
+
+// ─────────────────────────────────────────────
 // Utils
 // ─────────────────────────────────────────────
 function hideEmptyState() {
@@ -1547,9 +1894,12 @@ function clearMessages() {
   msgs.innerHTML = '';
   state.pendingTurns = {};
   state.streaming = false;
+  state.rewindable = false;
   document.getElementById('input').disabled = false;
   document.getElementById('send-btn').disabled = false;
   document.getElementById('token-counter').textContent = '';
+  var rewindBar = document.getElementById('rewind-bar');
+  if (rewindBar) rewindBar.classList.remove('visible');
 }
 
 function showError(msg) {
@@ -1636,12 +1986,35 @@ function renderMarkdown(text) {
   return out.trimEnd();
 }
 
+function openFileLink(el) {
+  var path = el.getAttribute('data-path');
+  var line = parseInt(el.getAttribute('data-line'), 10) || 0;
+  send({ type: 'open_file', path: path, line: line });
+}
+
 function renderInline(line) {
   line = line.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
   line = line.replace(/\*([^*]+)\*/g, '<em>$1</em>');
   line = line.replace(/_([^_]+)_/g, '<em>$1</em>');
+  // Pattern 1: backtick-wrapped file paths — run before generic backtick handler
+  line = line.replace(/`((?:(?:\.{1,2}\/)?(?:[\w\-]+\/)+)?[\w.\-]+\.\w{2,6}(?::\d+)?)`/g, function(_, raw) {
+    var m = raw.match(/^(.*?):(\d+)$/);
+    var filePath = m ? m[1] : raw;
+    var lineNum = m ? m[2] : '0';
+    var hasSlash = filePath.indexOf('/') !== -1;
+    var hasLine = !!m;
+    if (!hasSlash && !hasLine) return '<code>' + escapeHtml(raw) + '</code>';
+    return '<a class="file-link" data-path="' + escapeHtml(filePath) + '" data-line="' + lineNum
+         + '" onclick="openFileLink(this)"><code>' + escapeHtml(raw) + '</code></a>';
+  });
+  // Generic backtick handler for remaining non-file spans
   line = line.replace(/`([^`]+)`/g, function(_, c) {
     return '<code>' + escapeHtml(c) + '</code>';
+  });
+  // Pattern 2: bare path/to/file.ext:N outside backticks and existing HTML
+  line = line.replace(/(?<![<>"'`\w\/])((?:\.{1,2}\/)?(?:[\w\-]+\/)+[\w.\-]+\.\w{2,6}):(\d+)(?!\w)/g, function(_, filePath, lineNum) {
+    return '<a class="file-link" data-path="' + escapeHtml(filePath) + '" data-line="' + lineNum
+         + '" onclick="openFileLink(this)">' + escapeHtml(filePath) + ':' + lineNum + '</a>';
   });
   return line;
 }

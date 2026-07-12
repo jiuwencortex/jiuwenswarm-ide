@@ -98,8 +98,10 @@ class SessionManager(
         request("session.delete", mapOf("session_id" to sid))
     }
 
-    fun switchSession(sid: String) {
-        val payload = request("session.switch", mapOf("session_id" to sid), sid)
+    fun switchSession(sid: String, mode: String? = null) {
+        val params = mutableMapOf("session_id" to sid)
+        if (mode != null) params["mode"] = mode
+        val payload = request("session.switch", params, sid)
         setSessionId(sid)
         sessionTitle = payload.get("title")?.asString ?: sid
     }

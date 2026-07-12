@@ -1,232 +1,374 @@
-# JiuwenSwarm VS Code User Guide
+# JiuwenSwarm VS Code Extension — Usage Guide
 
-This guide walks you through using the JiuwenSwarm extension in Visual Studio Code — from first install to everyday workflows.
-
-## What You Get
-
-A chat panel in the Activity Bar that connects to a locally-running JiuwenSwarm instance. Ask questions in natural language, send code selections, and watch the agent reason in real time. Every tool call the agent makes is displayed as a collapsible card so you see exactly what is happening.
+This is the complete usage reference for the JiuwenSwarm VS Code extension. It covers every panel, setting, action, and workflow in detail. For installation instructions see the [README](README.md).
 
 ---
 
-## First-time Setup
+## Configuration
 
-1. **Start JiuwenSwarm** on your machine:
-   ```bash
-   cd jiuwenswarm && jiuwenswarm-start
-   ```
-   The WebSocket server runs at `ws://localhost:19000/ws`.
+Open **Settings → Extensions → JiuwenSwarm**:
 
-2. **Install the extension** from the [releases page](https://github.com/openjiuwen/jiuwenswarm-ide/releases). Download `jiuwenswarm-0.1.0.vsix`, then in VS Code go to **Extensions → ⋯ → Install from VSIX** and select it.
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `jiuwenswarm.host` | `localhost` | Hostname or IP of the JiuwenSwarm WebSocket server |
+| `jiuwenswarm.port` | `19000` | Port the server is listening on — connects to `ws://host:port/ws` |
+| `jiuwenswarm.channelId` | `ide` | Identifies this client in server logs and TraceHound traces |
+| `jiuwenswarm.autoConnect` | `true` | Opens the WebSocket connection when VS Code starts |
+| `jiuwenswarm.defaultMode` | `agent.plan` | Default agent mode for new sessions |
 
-3. **Open the panel**: Click the JiuwenSwarm icon in the left Activity Bar, or press **Ctrl+Shift+J** / **⌘⇧J**.
+Settings are stored in VS Code's standard settings (user or workspace scope) and persist across restarts. Changes require a window reload to take effect — the extension prompts you when you save a change.
 
-4. **Connect**: If `jiuwenswarm.autoConnect` is enabled (default), the extension connects automatically. Otherwise press **Ctrl+Shift+J** or run `JiuwenSwarm: Open Chat` from the command palette.
+---
 
-A session is created automatically on first connection.
+## Opening the Panel
+
+Click the **JiuwenSwarm** icon in the left **Activity Bar**, or press **Ctrl+Shift+J** / **⌘⇧J**. The panel opens as a sidebar webview and can be moved to the right sidebar or any other view location via drag-and-drop.
+
+On first connect a session is created automatically. The panel header shows the session title and the live connection state.
 
 ---
 
 ## The Chat Panel
 
-The panel is divided into three areas:
+The chat panel runs inside a VS Code webview (an embedded Chromium browser). Here is a complete tour of every element.
 
-### Header row
-- **Model label** — shows the active LLM (e.g. Claude, GPT-4o)
-- **Session dropdown** — switch between past conversations or create a new one
-- **Attach button** — include the current file as context for the next message
-- **Theme toggle** — switch between dark and light mode
-- **Debug button** — turns on verbose logging in the Output panel
+### Header bar
 
-### Conversation area
-Messages appear here in real time:
-- **User messages** — what you typed or sent
-- **Assistant responses** — stream word-by-word with markdown and code block highlighting
-- **Tool call cards** — every file read, bash command, web search, or MCP tool is shown as a collapsible card with status, inputs, and outputs
-- **Reasoning blocks** — when the model exposes its thinking process
-- **Clickable file links** — file paths in agent responses are clickable and open at the referenced line
-- **Rewind bar** — appears after the agent edits files; click to undo all changes from that turn
+```
+● JiuwenSwarm  [New] [⚙]
+```
 
-### Input row
-- **Mode selector** — choose the agent mode before sending:
-  - `agent.plan` — reasoning-heavy, step-by-step planning (default)
-  - `agent.fast` — quicker responses with less deliberation
-  - `team` — multi-agent cluster mode
-- **Text input** — type your message and press Enter to send
-- **Attach button** — same as the header attach; includes the current file path in context
+| Element | Description |
+|---------|-------------|
+| Status dot | Coloured indicator — green = connected, spinning = connecting, orange = reconnecting, red = disconnected |
+| Session title | Name of the active session; updates when a session is loaded or switched |
+| **New** button | Starts a fresh session: disconnects, reconnects, and clears the message list |
+| **⚙** menu | Opens the settings dropdown: Sessions, Skills, Theme, Debug log |
+
+### Mode selector
+
+Located in the input bar at the bottom:
+
+| Mode | Internal key | Description |
+|------|-------------|-------------|
+| **Planning Mode** | `agent.plan` | Full planning mode. The agent reasons step-by-step, reads code, and acts autonomously. Best for non-trivial tasks. |
+| **Performance Mode** | `agent.fast` | Faster, lighter mode. Good for quick questions and small changes. |
+| **Cluster Mode** | `team` | Multi-agent team mode. Spawns specialised sub-agents to collaborate on larger tasks. |
+
+Click the mode button to open the dropdown and switch. If the active session already has messages you will be asked to confirm because switching mode creates a new session.
+
+### Message list
+
+Responses stream token-by-token. Each turn shows:
+
+- **Your message** — right-aligned, darker background.
+- **Agent response** — full markdown: headers, bold, italic, code blocks with syntax highlighting, tables, lists.
+- **Reasoning block** — when the model uses extended thinking, a collapsible "Thinking…" section appears above the response text. Click the arrow to expand or collapse.
+- **Tool call cards** — every tool the agent invokes is shown inline:
+  - Icon and tool name (e.g. `📝 str_replace_editor`, `💻 bash`, `🔍 web_search`, `🔧 mcp_tool`)
+  - Live status indicator (running spinner → done checkmark or error)
+  - Collapsible inputs (the parameters sent to the tool)
+  - Collapsible output (the result returned by the tool)
+- **Token usage** — after each completed turn, a small counter in the bottom-right of the input bar shows the token count for that exchange (e.g. `1,234 tok`). The running total is also shown directly in the status bar widget.
+
+### Input bar
+
+```
+[+] [mode ▾]  [write your message here…]  [→ Send]
+```
+
+| Element | Description |
+|---------|-------------|
+| **+** (attach) | Opens a file picker to attach one or more images (PNG, JPEG, WebP, GIF; up to 10 MB each). Thumbnail previews appear above the input. Click ✕ on a thumbnail to remove it. Images are base64-encoded and sent with the message. |
+| Mode pill | Quick-access mode switcher (same choices as described above) |
+| Textarea | Type your message. Grows vertically as you type. **Enter** sends; **Shift+Enter** inserts a newline. |
+| Send button | Submits the message. Disabled while a response is streaming. |
 
 ---
 
-## Working with Sessions
+## IDE Context Injection
 
-### Automatic session creation
-On first connect the server assigns a session automatically. You do not need to do anything.
+Every message you send automatically has a structured context block prepended. The agent sees it as part of your message and uses it to understand what you are looking at — no copy-pasting required.
 
-### Starting a new session
-- Click the **+** button next to the session dropdown, or
-- Run `JiuwenSwarm: New Session` from the command palette, or
-- Press **Ctrl+Shift+J** / **⌘⇧J**
+### What is injected
 
-This drops the current WebSocket connection and reconnects, giving you a fresh session with no history.
+| Field | How it is collected | Example |
+|-------|---------------------|---------|
+| Active file path and language | `vscode.window.activeTextEditor` + `document.languageId` | `Active file: /src/api/handler.py  (Python)` |
+| Cursor line number | `editor.selection.active.line` | `Cursor line: 87` |
+| Selected code | `editor.document.getText(editor.selection)` | Fenced code block of the current selection |
+| Editor diagnostics | `vscode.languages.getDiagnostics(doc.uri)` | Up to 10 current errors and warnings from the Problems panel |
+| Other open tabs | `vscode.window.tabGroups.all` | Paths of up to 10 other files open in the editor |
+| Git status | `git` subprocess | `Git: branch=feature/auth, 3 uncommitted changes` |
+
+The block is assembled at send time. If there is nothing useful (no editor open, no git repo, no selection), the message is sent without a context block.
+
+### Example injected block
+
+````
+<!-- IDE Context -->
+Active file: /Users/mishka/project/src/api/handler.py  (Python)
+Cursor line: 87
+
+Selected code:
+```python
+def handle_request(req):
+    result = blocking_call(req)
+    return result
+```
+
+Diagnostics (2):
+  • Line 87: Variable 'result' is not used before return
+  • Line 88: blocking_call is deprecated
+
+Other open files (3):
+  /Users/mishka/project/src/api/router.py
+  /Users/mishka/project/src/models/request.py
+  /Users/mishka/project/tests/test_handler.py
+
+Git: branch=feature/async-refactor, 3 uncommitted changes
+<!-- End IDE Context -->
+````
+
+---
+
+## Clickable File Links
+
+When the agent mentions a file path in its response, the plugin turns it into a clickable link. Clicking it opens the file in the editor and jumps to the referenced line.
+
+### What gets linkified
+
+| Pattern | Example | Behaviour |
+|---------|---------|-----------|
+| Backtick path with directory | `` `src/api/handler.py` `` | Opens file; goes to line 1 |
+| Backtick path with line number | `` `src/api/handler.py:42` `` | Opens file; goes to line 42 |
+| Bare `path/to/file.ext:N` | `src/auth/router.py:87` | Opens file; goes to line 87 |
+
+### What does NOT get linkified
+
+- Plain variable names in backticks (`` `someVar` ``, `` `myFunc` ``) — no path separator and no `:N` suffix.
+- Paths inside fenced code blocks (``` ``` ``` sections) — these are rendered verbatim.
+- URLs — the colon in `http://` is not followed by a plain integer.
+
+### How it works
+
+The webview intercepts the rendered agent text and runs two regex passes before rendering:
+
+1. Backtick-wrapped paths that contain a `/` or end with `:N` are wrapped in a clickable `<a>` element around the existing `<code>` span.
+2. Bare `path/to/file:N` references outside backticks and HTML tags are wrapped in a clickable `<a>` element.
+
+Clicking either type sends an `open_file` message from the webview to the extension host, which uses `vscode.workspace.openTextDocument` and `showTextDocument` to navigate to the file and line.
+
+---
+
+## Actions & Keyboard Shortcuts
+
+### Keyboard shortcuts
+
+| Action | Win / Linux | Mac | Notes |
+|--------|-------------|-----|-------|
+| **Open chat panel** | `Ctrl+Shift+J` | `⌘⇧J` | Always available |
+| **New session** | `Ctrl+Shift+J` | `⌘⇧J` | Same shortcut; opens panel then starts fresh session if already open |
+| **Send selection** | `Ctrl+Shift+E` | `⌘⇧E` | Available when text is selected |
+
+**Open chat panel** (`Ctrl+Shift+J` / `⌘⇧J`):
+Opens the JiuwenSwarm sidebar webview. If the panel is already open, it focuses the input field.
+
+**New session** (command palette: `JiuwenSwarm: New Session`):
+Disconnects and reconnects the WebSocket to start a fresh session. The message list clears and the previous history is left on the server. The panel is focused automatically.
+
+**Send selection** (`Ctrl+Shift+E` / `⌘⇧E`):
+Opens the panel and pre-fills the input with the selected code labelled with the file name, for example:
+
+> `[File: handler.py]`
+> ` ```python`
+> `def handle_request(req):`
+> `    ...`
+> ` ``` `
+
+Add your question after the code block and press Enter to send.
+
+### Editor right-click menu
+
+Right-clicking anywhere in an editor appends **Send Selection to JiuwenSwarm** to the context menu. This is identical to `Ctrl+Shift+E`.
+
+---
+
+## File Edit Workflow
+
+When the agent calls a file-editing tool (`str_replace_editor`, `write_file`, or `create_file`), the extension intercepts the call and handles it.
+
+### Supported tools
+
+| Tool | Operation |
+|------|-----------|
+| `str_replace_editor` command=`str_replace` | Replaces a specific block of text in an existing file |
+| `str_replace_editor` command=`create` | Creates a new file with given content |
+| `write_file` | Overwrites an existing file or creates it if missing |
+| `create_file` | Creates a new file; parent directories are created automatically |
+
+### VS Code behaviour
+
+The VS Code extension does **not** open a native diff dialog (unlike the JetBrains plugin). Instead:
+
+- File edit tool calls are logged to the Debug log panel with the tool name and parameters.
+- The agent's edits are applied directly to the workspace files via the JiuwenSwarm server.
+- You can review changes through VS Code's built-in **Source Control** panel or by opening the modified files directly.
+
+> **Note:** Auto-apply is always on in VS Code; there is no diff review window. If you need to review edits before they are applied, use the JetBrains plugin which supports a side-by-side diff viewer.
+
+---
+
+## Sessions
+
+Sessions maintain separate conversation histories. You can run several parallel conversations (one per project, feature, or topic) and resume any of them at any time.
+
+### Opening the Sessions panel
+
+Click **⚙ → Sessions** in the header dropdown. The Sessions overlay slides into the main panel area, replacing the message list.
+
+### What the list shows
+
+Each session item displays:
+- **Session title** (or the raw session ID if no title has been set by the server)
+- **Time of last message** (relative: "just now", "3m ago", "2h ago", "5d ago")
+- **Message count**
 
 ### Switching sessions
-Open the session dropdown to see recent conversations. Click one to resume it. The full conversation history and agent context are restored.
 
-### Deleting sessions
-In the session overlay, click the **×** next to a session name. A confirmation dialog prevents accidental deletion.
+Click a session item to switch. The overlay closes, the header title updates, and new messages are routed to the chosen session.
+
+### Creating a new session
+
+Click the **New** button in the header (or run `JiuwenSwarm: New Session` from the command palette, or press `Ctrl+Shift+J` / `⌘⇧J`). This reconnects the WebSocket, which triggers automatic session creation on the server side.
+
+### Deleting a session
+
+Each non-active session row has a **✕** button on the right side of the title. Click it once — the button turns red and the tooltip changes to "Click again to confirm". Click it a second time within 2 seconds to permanently delete the session from the server. The row is removed from the list immediately.
+
+The currently active session cannot be deleted from the overlay. To delete it, click **New** to start a fresh session first, then delete the old one.
+
+### Refreshing the list
+
+Click the **↺** button in the Sessions overlay header to reload the list from the server. The list shows up to 20 recent sessions.
+
+### Closing the overlay
+
+Click **✕** in the overlay header. The message list for the current session becomes visible again.
 
 ---
 
-## Sending Code to the Agent
+## Skills Panel
 
-### Send Selection
-Select any code in the editor and press **Ctrl+Shift+E** / **⌘⇧E**. The chat panel opens and the selection is prefilled in the input area, wrapped in a code fence with the filename. Add your question and press Enter.
+Skills are named slash-command shortcuts registered with your JiuwenSwarm instance. Examples: `/commit` to generate a commit message, `/review` to code-review a file, `/init` to bootstrap a new project.
 
-Example:
+### Opening the Skills panel
+
+Click **⚙ → Skills** in the header dropdown. The Skills overlay slides into the main panel area.
+
+### What the list shows
+
+Each skill item displays:
+- **Skill name** — the human-readable name
+- **Description** — a short explanation of what the skill does
+- **Trigger** — the slash command used to invoke it (e.g. `/commit`)
+- **ON / OFF toggle** — the current enabled state
+
+### Toggling a skill
+
+Click the **ON** or **OFF** button on a skill item. The button changes immediately (teal = ON, muted grey = OFF) and a `skills.toggle` request is sent to the server to persist the change.
+
+### Refreshing and errors
+
+Click **↺** to reload. If the server does not support the `skills.list` method an error message is shown with a Retry button — this is expected on older server versions.
+
+---
+
+## Connection Status Bar Widget
+
+A coloured text widget in the VS Code status bar (bottom-right of the window) shows the live WebSocket state:
+
+| Widget text | Colour | Meaning |
+|-------------|--------|---------|
+| `$(check) JiuwenSwarm` | Default | Connected and active |
+| `$(loading~spin) JiuwenSwarm` | Default | Connecting — waiting for server handshake |
+| `$(sync~spin) JiuwenSwarm` | Warning (yellow background) | Reconnecting — automatic exponential backoff: 1 s → 2 s → 4 s → 8 s → … → 30 s max |
+| `$(circle-slash) JiuwenSwarm` | Error (red background) | Disconnected — **click the widget to reconnect** |
+
+Once tokens are used, the running total appears directly in the widget:
+
 ```
-[File: main.py]
-```
-def calculate_total(items):
-    return sum(item.price for item in items)
+$(check) JiuwenSwarm · 42.3k
 ```
 
-Add a 10% discount to this function.
+Hovering shows a detailed tooltip:
+
+```
+JiuwenSwarm: Connected — session a1b2c3d4 | 42.3k tokens used
 ```
 
-### Attach current file
-Click the **paperclip icon** in the header or input row. This sends the active file path as context with your next message, even if no text is selected.
-
-### What the agent sees
-Every message you send automatically includes a structured context block with:
-- The active file path and language
-- Your cursor position
-- The selected code (if any)
-- Warnings and errors visible in the Problems panel (up to 10)
-- Other open file paths (up to 10)
-- A 2-level directory tree of your workspace (excluding hidden and build directories)
-- Git branch name and whether there are uncommitted changes
-
-You never need to copy-paste file paths or error messages.
+The count accumulates across all turns in the current VS Code session and resets on reconnect or new session.
 
 ---
 
-## Understanding the Response
+## Theme
 
-### Streaming text
-Responses arrive token-by-token. You see words appear in real time, not all at once after a long wait.
+The chat panel follows the VS Code theme automatically by default. Override it at any time:
 
-### Tool call cards
-When the agent decides to read a file, run a command, or call a tool, a card appears inline:
-- **File read** — shows the path and a snippet of what was read
-- **Bash command** — shows the command and its stdout/stderr
-- **Web search** — shows the query and top results
-- **MCP tool** — shows the tool name, inputs, and returned output
+| Option | Description |
+|--------|-------------|
+| **⚙ → ◐ Auto** | Matches VS Code's current Light or Dark theme (default) |
+| **⚙ → 🌙 Dark** | Forces dark background regardless of VS Code theme |
+| **⚙ → ☀ Light** | Forces light background regardless of VS Code theme |
 
-Each card is collapsible so you can hide it once you have read it.
-
-### Clickable file links
-When the agent mentions a file path (e.g. `src/utils.py:42`), it appears as a clickable link. Click it to open that file at the referenced line in the editor.
-
-### Reasoning blocks
-Some models expose their internal reasoning. These appear as greyed-out collapsible sections labeled "Thinking…".
+The theme preference is stored in browser local storage and survives panel restarts.
 
 ---
 
-## File Edits
+## Debug Log
 
-When the agent proposes a file edit, the extension applies it directly to your workspace files. A notification toast appears confirming each applied change.
+The debug log panel is hidden by default. Toggle it with **⚙ → Debug log**.
 
-### Approval workflow
-Open **Settings → Extensions → JiuwenSwarm** and enable **Approve edits**. When enabled, every proposed file edit shows a prompt with **Approve** and **Reject** buttons before it is applied. This is useful when you want full control over what changes the agent makes.
+When enabled, a scrollable panel appears below the message list and records:
 
-### Rewind / checkpoint
-After each agent turn that modifies files, a **rewind bar** appears at the bottom of the chat panel. Click **Undo Changes** to restore all files to their state before that turn. Files that did not exist before the turn are deleted.
+- Every WebSocket message received from the server (raw JSON, with timestamp)
+- Every chat message sent (including context and media item counts)
+- Session switches, reconnects, and connection status changes
+- Action dispatches (list_sessions, list_skills, toggle_skill, etc.)
+- File edit tool calls (with tool name and parameters)
 
-Rewind is cleared when you send a new message or start a new session.
+The panel keeps the most recent 500 lines. Toggle it off to hide it; the log clears on the next enable.
 
----
-
-## Skills & MCP
-
-Open the **Skills** panel from the chat header (the **sliders icon**). You see a list of registered skills such as:
-- `/commit` — generate a commit message from staged changes
-- `/review` — review the current file for issues
-- `/init` — initialise a new project scaffold
-
-Each skill shows whether it is enabled. Toggle the switch to enable or disable it. Disabled skills are ignored by the agent.
-
-Skills are registered with your JiuwenSwarm instance, not the plugin. The plugin only shows what is available and lets you toggle them.
-
----
-
-## Status Bar
-
-A JiuwenSwarm widget sits in the bottom-right status bar:
-
-| State | Appearance | Action |
-|-------|-----------|--------|
-| Connected | `$(check) JiuwenSwarm` | Click to open chat |
-| Connected (with tokens) | `$(check) JiuwenSwarm · 1.2k` | Shows cumulative token usage |
-| Connecting | `$(loading~spin) JiuwenSwarm` | Wait or check server |
-| Reconnecting | `$(sync~spin) JiuwenSwarm` | Auto-retrying with back-off |
-| Disconnected | `$(circle-slash) JiuwenSwarm` | Click to force reconnect |
-
-The tooltip shows the session ID and token count when available.
-
----
-
-## Keyboard Shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+Shift+J` / `⌘⇧J` | Open chat panel |
-| `Ctrl+Shift+E` / `⌘⇧E` | Send selection to chat |
-
----
-
-## Settings
-
-Open **Settings → Extensions → JiuwenSwarm** to change:
-
-| Setting | Default | When to change |
-|---------|---------|----------------|
-| `jiuwenswarm.host` | `localhost` | If JiuwenSwarm runs on another machine |
-| `jiuwenswarm.port` | `19000` | If you changed the server port |
-| `jiuwenswarm.defaultMode` | `agent.plan` | Prefer `agent.fast` for quicker responses |
-| `jiuwenswarm.channelId` | `ide` | Only if your server uses a different channel |
-| `jiuwenswarm.autoConnect` | `true` | Disable if you prefer manual connection |
-| `jiuwenswarm.approveEdits` | `false` | Enable to require approval before every file edit |
-
-Settings changes require a window reload to take effect. The extension prompts you when you save a change.
+This is most useful when something is not working as expected and you need to see what messages are being exchanged with the server.
 
 ---
 
 ## Troubleshooting
 
-**Panel shows blank or "Loading JiuwenSwarm…"**
-- Check that JiuwenSwarm is running on the configured host and port
-- The status bar shows the connection state; click it to reconnect
+| Symptom | Likely cause | Fix |
+|---------|-------------|-----|
+| Panel shows a blank white or grey box | `chat.html` not found or CSP issue | Check that `resources/chat.html` exists in the extension folder; reinstall from the latest VSIX if missing |
+| "Could not load JiuwenSwarm chat UI" error message | `chat.html` not bundled | Reinstall from the latest VSIX; rebuild from source if developing locally |
+| Status bar shows `$(circle-slash)` (disconnected) | Server not running or host/port wrong | Start JiuwenSwarm; verify **Settings → Extensions → JiuwenSwarm**; click the status widget to reconnect |
+| Messages send but no response streams in | Server unreachable after handshake | Enable the Debug log and look for error frames; check server logs |
+| Image preview shows a broken icon | Webview CSP or base64 encoding issue | Update the extension to the latest version |
+| Send Selection does nothing | No text selected or editor not focused | Make sure text is actually selected in the editor; check that the editor has focus before pressing the shortcut |
+| Diff window opens but file does not change | VS Code does not have a native diff dialog for agent edits | Review changes through VS Code's Source Control panel or open the modified files directly |
+| Session list stays on "Loading…" | Server timeout (15 s) or method not supported | Click **↺ Retry**; check server logs for `session.list` errors |
+| Skills list shows an error | Server does not support `skills.list` | Expected on older server versions; upgrade the server to enable the skills panel |
+| IDE log filled with `[JiuwenSwarm]` lines | Debug mode was left on | Open the panel and click **⚙ → Debug log** to toggle it off |
+| Settings change did not take effect | VS Code requires a window reload | The extension prompts you to reload when settings change; click **Reload** |
+| "Project structure" not appearing in context | No workspace folder open | Open a folder in VS Code; context collection requires an active workspace |
 
-**No responses appear after sending a message**
-- Verify `ws://host:port/ws` is reachable (use a WebSocket test client)
-- Turn on debug logging via the debug button in the chat header, then check **Output → JiuwenSwarm** for raw traffic
-- Open the webview developer tools: run **Developer: Open Webview Developer Tools** from the command palette and look for JavaScript errors
+### Reading the extension logs
 
-**Send Selection does nothing**
-- Make sure text is actually selected in the editor
-- Check that the editor has focus before pressing the shortcut
+The extension writes debug output to the VS Code **Output** panel:
 
-**Status bar shows disconnected**
-- The server may have stopped — restart it
-- Network changed — click the status bar widget to reconnect
-- Wrong host/port — check Settings
+1. Open **View → Output** (or press `Ctrl+Shift+U` / `⌘⇧U`).
+2. Select **JiuwenSwarm** from the dropdown in the top-right of the Output panel.
+3. Look for `[JiuwenSwarm]` prefixed lines.
 
-**File edits not being applied**
-- Check the notification area for error toasts
-- Enable debug logging to see tool call processing in the output panel
-- Make sure the file is inside your workspace and not read-only
+For webview-level debugging (JavaScript errors in the chat UI):
 
----
-
-## Feedback
-
-Report issues and contribute at [github.com/openjiuwen](https://github.com/openjiuwen).
+1. Run **Developer: Open Webview Developer Tools** from the command palette (`Ctrl+Shift+P` / `⌘⇧P`).
+2. Check the **Console** tab for JavaScript errors.

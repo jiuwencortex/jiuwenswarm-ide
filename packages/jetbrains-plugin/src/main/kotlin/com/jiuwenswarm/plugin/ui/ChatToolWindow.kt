@@ -225,10 +225,12 @@ class ChatPanel(
                 }
                 "switch_session" -> {
                     val sid = msg.get("sessionId")?.asString ?: return
-                    debug("ACTION→ switch_session $sid")
+                    val mode = msg.get("mode")?.asString
+                            ?: JiuwenSwarmSettings.instance().defaultMode
+                    debug("ACTION→ switch_session $sid mode=$mode")
                     ApplicationManager.getApplication().executeOnPooledThread {
                         try {
-                            service.session.switchSession(sid)
+                            service.session.switchSession(sid, mode)
                             sendCurrentStatus()
                         } catch (e: Exception) {
                             dispatchToWebview(mapOf("type" to "error", "message" to e.message))

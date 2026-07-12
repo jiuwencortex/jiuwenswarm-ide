@@ -134,7 +134,11 @@ export class ChatPanel implements vscode.WebviewViewProvider {
 
       case 'switch_session': {
         const sid = msg.sessionId as string;
-        if (sid) this.switchSession(sid);
+        if (sid) {
+          const cfg = vscode.workspace.getConfiguration('jiuwenswarm');
+          const mode = cfg.get<string>('defaultMode', 'agent.plan');
+          this.switchSession(sid, mode);
+        }
         break;
       }
 
@@ -378,10 +382,10 @@ export class ChatPanel implements vscode.WebviewViewProvider {
     }
   }
 
-  private async switchSession(sessionId: string): Promise<void> {
+  private async switchSession(sessionId: string, mode?: string): Promise<void> {
     try {
-      this.debug(`ACTION→ switch_session ${sessionId}`);
-      await this.session.switchSession(sessionId);
+      this.debug(`ACTION→ switch_session ${sessionId} mode=${mode || 'default'}`);
+      await this.session.switchSession(sessionId, mode);
       this.postToWebview({
         type: 'connected',
         sessionId: this.session.sessionId!,

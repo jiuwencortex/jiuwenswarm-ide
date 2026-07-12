@@ -1294,7 +1294,7 @@ function renderSessionList() {
     item.title = s.session_id;
     item.onclick = function() {
       if (!isActive) {
-        send({ type: 'switch_session', sessionId: s.session_id });
+        send({ type: 'switch_session', sessionId: s.session_id, mode: state.mode });
       }
       toggleSessions();
     };
