@@ -534,6 +534,19 @@
   a.file-link > code {
     color: var(--accent);
     background: none;
+  }
+  /* ── Clickable symbol links in agent messages ── */
+  a.symbol-link {
+    color: #c586c0;
+    text-decoration: none;
+    border-bottom: 1px dotted #c586c0;
+    cursor: pointer;
+  }
+  a.symbol-link:hover { border-bottom-style: solid; }
+  a.symbol-link > code {
+    color: #c586c0;
+    background: none;
+  }
     padding: 0;
     border-radius: 0;
   }
@@ -977,6 +990,18 @@ window.__jb_dispatch = function(jsonStr) {
 window.addEventListener('message', function(e) {
   handleHostMessage(e.data);
 });
+
+// Keywords we don't want to linkify as symbols
+var COMMON_KEYWORDS = new Set([
+  'YES','NO','ON','OFF','OK','API','URL','URI','ID','UUID',
+  'HTTP','HTTPS','FTP','SSH','JSON','XML','HTML','CSS','SQL',
+  'TODO','FIXME','NOTE','WARN','INFO','DEBUG','ERROR','NULL',
+  'TRUE','FALSE','NAN','INF','INT','STR','BOOL','FLOAT',
+  'GET','POST','PUT','DELETE','PATCH','HEAD','OPTIONS',
+  'TCP','UDP','IP','DNS','SSL','TLS',
+  'CPU','GPU','RAM','ROM','SSD','HDD',
+  'OS','UI','UX','CLI','GUI','SDK','IDE','AI','ML',
+]);
 
 // ─────────────────────────────────────────────
 // State
@@ -1997,6 +2022,10 @@ function openFileLink(el) {
   send({ type: 'open_file', path: path, line: line });
 }
 
+function navigateSymbol(symbol) {
+  send({ type: 'navigate_symbol', symbol: symbol });
+}
+
 function renderInline(line) {
   line = line.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
   line = line.replace(/\*([^*]+)\*/g, '<em>$1</em>');
@@ -2014,6 +2043,11 @@ function renderInline(line) {
   });
   // Generic backtick handler for remaining non-file spans
   line = line.replace(/`([^`]+)`/g, function(_, c) {
+    // Detect symbol-like identifiers (e.g. MyClass, my_function, MAX_SIZE)
+    // Skip if it looks like a file path, URL, or common keyword
+    if (/^[A-Z_][A-Za-z0-9_]*$/.test(c) && c.length >= 3 && !COMMON_KEYWORDS.has(c)) {
+      return '<a class="symbol-link" onclick="navigateSymbol(\'' + escapeHtml(c) + '\')"><code>' + escapeHtml(c) + '</code></a>';
+    }
     return '<code>' + escapeHtml(c) + '</code>';
   });
   // Pattern 2: bare path/to/file.ext:N outside backticks and existing HTML

@@ -20,11 +20,15 @@ Both the VS Code extension and the JetBrains plugin share the same web-based cha
 - **Skills & MCP** — invoke built-in slash-command skills (`/commit`, `/review`, `/init`, …) and any MCP server tools registered with your JiuwenSwarm instance.
 - **IDE Context Injection** — every message automatically includes the active file path, cursor position, selected code, editor diagnostics (warnings/errors), other open files, project directory tree, and git branch/status. The agent always knows what you are looking at.
 - **File Edit Diff Viewer** (JetBrains) — when the agent proposes a file edit, the plugin opens a side-by-side diff window showing Current vs Proposed before applying changes.
+- **File Edit Diff Viewer** (VS Code) — optionally show VS Code's built-in diff before applying agent edits (enable in settings).
 - **File Edit Application** (VS Code) — file edits are applied directly to the workspace with notification toasts confirming each change.
 - **Approval Workflow** — optionally require your confirmation before applying any agent file edit on either platform.
 - **Checkpoint / Rewind** — after each turn that modifies files, click a button to undo all changes from that turn and restore files to their previous state.
 - **Clickable File Links** — file paths mentioned by the agent are clickable and open the file at the referenced line.
+- **Clickable Symbol Navigation** — class names, constants, and other identifiers mentioned by the agent are clickable and jump to their definitions in the workspace.
+- **Terminal Integration** — bash and shell commands run by the agent are executed in an IDE terminal so you see live output (enable in settings).
 - **Alt+Enter Quick Fix** (JetBrains) — place the cursor on any error or warning and press **Alt+Enter** to see "Fix with JiuwenSwarm", which prefills the chat with the error text and surrounding code.
+- **Lightbulb Quick Fix** (VS Code) — click the 💡 lightbulb on any error or warning line and select "Fix with JiuwenSwarm" to prefill the chat with the diagnostic + surrounding code.
 
 ## Prerequisites
 

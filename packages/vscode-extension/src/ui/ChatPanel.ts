@@ -7,6 +7,8 @@ import { JiuwenMessage, ExtToWebviewMsg } from '../client/protocol';
 import { collectContext } from '../context/ContextCollector';
 import { StatusBar } from './StatusBar';
 import * as DiffApplier from '../editor/DiffApplier';
+import { runCommand, extractCommand } from '../terminal/TerminalManager';
+import { showDiffAndPrompt, computeProposedContent, readOriginalContent } from '../editor/DiffViewer';
 
 export class ChatPanel implements vscode.WebviewViewProvider {
   public static readonly viewId = 'jiuwenswarm.chatView';
@@ -173,6 +175,12 @@ export class ChatPanel implements vscode.WebviewViewProvider {
         break;
       }
 
+      case 'navigate_symbol': {
+        const symbol = msg.symbol as string;
+        if (symbol) this.navigateSymbol(symbol);
+        break;
+      }
+
       case 'rewind': {
         this.handleRewind();
         break;
@@ -183,7 +191,7 @@ export class ChatPanel implements vscode.WebviewViewProvider {
   // ──────────────────────────────────────────
   // JiuwenSwarm events → webview
   // ──────────────────────────────────────────
-  private onJiuwenMessage(msg: JiuwenMessage): void {
+  private async onJiuwenMessage(msg: JiuwenMessage): Promise<void> {
     const msgType = msg.type;
     // Skip request-response protocol messages — SessionManager handles those
     if (msgType === 'res') return;
@@ -202,19 +210,61 @@ export class ChatPanel implements vscode.WebviewViewProvider {
     // ── Snapshot & apply file-edit tool calls ──
     if (et === 'chat.tool_call') {
       const toolName = payload.tool_name as string | undefined;
-      if (toolName === 'str_replace_editor' || toolName === 'write_file' || toolName === 'create_file') {
+      const isFileEdit = toolName === 'str_replace_editor' || toolName === 'write_file' || toolName === 'create_file';
+
+      if (isFileEdit) {
         const args = (payload.tool_call as Record<string, unknown>)?.arguments as Record<string, unknown>
           || (payload.tool_input as Record<string, unknown>)
           || (payload.input as Record<string, unknown>)
           || {};
         const filePath = args.path as string | undefined;
+
         if (filePath) {
           DiffApplier.ensureSnapshot(filePath);
           this.debug(`SNAP  → snapshotted ${filePath}`);
+
+          const cfg = vscode.workspace.getConfiguration('jiuwenswarm');
+          if (cfg.get<boolean>('useDiffViewer', false)) {
+            // Show native diff before applying
+            const proposed = computeProposedContent({
+              path: filePath,
+              old_str: args.old_str as string | undefined,
+              new_str: args.new_str as string | undefined,
+              content: args.content as string | undefined,
+              command: args.command as string | undefined,
+            });
+            if (proposed !== undefined) {
+              const accepted = await showDiffAndPrompt(filePath, proposed, toolName ?? 'edit');
+              if (!accepted) {
+                this.debug(`DIFF  → rejected ${filePath}`);
+                vscode.window.showInformationMessage(`JiuwenSwarm: rejected edit to ${path.basename(filePath)}`);
+                // Still dispatch event to webview so card shows, but don't apply
+              } else {
+                this.debug(`DIFF  → accepted ${filePath}`);
+                await DiffApplier.handleToolCall(converted);
+              }
+            } else {
+              // Can't compute diff (old_str not found, etc.) — fall back to direct apply
+              await DiffApplier.handleToolCall(converted);
+            }
+          } else {
+            // Direct apply (existing behaviour)
+            await DiffApplier.handleToolCall(converted);
+          }
         }
       }
-      // Apply the edit (async — snapshot already saved above)
-      DiffApplier.handleToolCall(converted);
+
+      // ── Terminal integration: run bash commands in IDE terminal ──
+      if (toolName === 'bash' || toolName === 'run_command') {
+        const cfg = vscode.workspace.getConfiguration('jiuwenswarm');
+        if (cfg.get<boolean>('runCommandsInTerminal', true)) {
+          const cmd = extractCommand(payload);
+          if (cmd) {
+            this.debug(`TERM  → ${cmd}`);
+            runCommand(cmd);
+          }
+        }
+      }
     }
 
     // ── On turn end, promote snapshots and show rewind bar ──
@@ -452,6 +502,37 @@ export class ChatPanel implements vscode.WebviewViewProvider {
       }
     } catch (e) {
       this.debug(`open_file failed: ${e}`);
+    }
+  }
+
+  /** Navigate to a symbol definition mentioned by the agent. */
+  private async navigateSymbol(symbol: string): Promise<void> {
+    try {
+      const symbols = await vscode.commands.executeCommand<vscode.SymbolInformation[] | vscode.DocumentSymbol[]>(
+        'vscode.executeWorkspaceSymbolProvider',
+        symbol,
+      );
+      if (!symbols || symbols.length === 0) {
+        vscode.window.showInformationMessage(`JiuwenSwarm: No definition found for "${symbol}"`);
+        return;
+      }
+      const first = symbols[0];
+      let uri: vscode.Uri;
+      let range: vscode.Range;
+      if ('location' in first) {
+        uri = first.location.uri;
+        range = first.location.range;
+      } else {
+        // DocumentSymbol
+        uri = vscode.window.activeTextEditor?.document.uri ?? vscode.Uri.file('');
+        range = first.range;
+      }
+      const doc = await vscode.workspace.openTextDocument(uri);
+      const editor = await vscode.window.showTextDocument(doc);
+      editor.selection = new vscode.Selection(range.start, range.start);
+      editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
+    } catch (e) {
+      this.debug(`navigate_symbol failed: ${e}`);
     }
   }
 

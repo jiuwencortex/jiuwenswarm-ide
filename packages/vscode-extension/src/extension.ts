@@ -5,6 +5,12 @@ import { WsClient } from './client/WsClient';
 import { SessionManager } from './client/SessionManager';
 import { ChatPanel } from './ui/ChatPanel';
 import { StatusBar } from './ui/StatusBar';
+import {
+  FixWithAiCodeActionProvider,
+  buildDiagnosticPrefill,
+} from './codeActions/FixWithAiCodeActionProvider';
+import { disposeTerminal } from './terminal/TerminalManager';
+import { registerDiffProvider } from './editor/DiffViewer';
 
 let ws: WsClient | undefined;
 let session: SessionManager | undefined;
@@ -39,6 +45,18 @@ export function activate(context: vscode.ExtensionContext): void {
   if (autoConnect) {
     ws.connect();
   }
+
+  // Register code-action lightbulb before any other interactions
+  registerDiffProvider(context);
+  context.subscriptions.push(
+    vscode.languages.registerCodeActionsProvider(
+      { scheme: 'file' },
+      new FixWithAiCodeActionProvider(),
+      {
+        providedCodeActionKinds: FixWithAiCodeActionProvider.providedCodeActionKinds,
+      },
+    ),
+  );
 
   // ── Commands ──
 
@@ -81,6 +99,18 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
+  // Fix with JiuwenSwarm — triggered from Code Action lightbulb
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'jiuwenswarm.fixDiagnostic',
+      (document: vscode.TextDocument, diagnostics: vscode.Diagnostic[]) => {
+        const prefill = buildDiagnosticPrefill(document, diagnostics);
+        vscode.commands.executeCommand('jiuwenswarm.chatView.focus');
+        chatPanel?.postToWebview({ type: 'prefill', content: prefill });
+      },
+    ),
+  );
+
   // Re-read config if changed
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
@@ -107,6 +137,7 @@ export function deactivate(): void {
 function cleanup(): void {
   ws?.disconnect();
   statusBar?.dispose();
+  disposeTerminal();
 }
 
 /**

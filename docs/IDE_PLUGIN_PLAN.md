@@ -116,12 +116,12 @@ Legend: ✅ done · 🔶 partial · ❌ not started · 🚫 platform limitation
 | # | Feature | Description | JetBrains | VS Code |
 |---|---------|-------------|-----------|---------|
 | 1 | Inline ghost text completions | Real-time inline code suggestions while typing | ❌ | ❌ |
-| 2 | Terminal integration (agent runs commands in IDE terminal) | Run shell commands in an IDE terminal panel | ❌ | ❌ |
+| 2 | Terminal integration (agent runs commands in IDE terminal) | Run shell commands in an IDE terminal panel | ✅ | ✅ |
 | 3 | Replay / TraceHound viewer inside IDE | Display full session history and reasoning traces | ❌ | ❌ |
-| 4 | Symbol navigation (agent references symbols for jump-to-definition) | Click agent-mentioned symbols to jump to definition | ❌ | ❌ |
+| 4 | Symbol navigation (agent references symbols for jump-to-definition) | Click agent-mentioned symbols to jump to definition | ✅ | ✅ |
 | 5 | Shared webview code published as npm package | Extract chat.html as a reusable npm module | ❌ | ❌ |
-| 6 | VS Code: native diff dialog for file edits | Use VS Code's built-in diff/compare functionality | 🚫 | 🚫 |
-| 7 | VS Code: Code Action quick-fix on diagnostics | Register a Code Action provider for diagnostic quick-fixes | 🚫 | 🚫 |
+| 6 | VS Code: native diff dialog for file edits | Use VS Code's built-in diff/compare functionality | 🚫 | ✅ |
+| 7 | VS Code: Code Action quick-fix on diagnostics | Register a Code Action provider for diagnostic quick-fixes | 🚫 | ✅ |
 
 ---
 

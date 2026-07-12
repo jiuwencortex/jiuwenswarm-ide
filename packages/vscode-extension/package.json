@@ -58,6 +58,10 @@
       {
         "command": "jiuwenswarm.reconnect",
         "title": "JiuwenSwarm: Reconnect"
+      },
+      {
+        "command": "jiuwenswarm.fixDiagnostic",
+        "title": "JiuwenSwarm: Fix Diagnostic"
       }
     ],
     "keybindings": [
@@ -115,6 +119,16 @@
           "type": "boolean",
           "default": false,
           "description": "Show approval prompt before applying agent file edits"
+        },
+        "jiuwenswarm.runCommandsInTerminal": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run bash/run_command tool calls in an IDE terminal so you can see live output"
+        },
+        "jiuwenswarm.useDiffViewer": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show VS Code's built-in diff viewer before applying agent file edits"
         }
       }
     }

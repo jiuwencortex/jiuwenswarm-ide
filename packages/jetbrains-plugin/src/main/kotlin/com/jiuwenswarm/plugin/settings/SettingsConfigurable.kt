@@ -26,6 +26,10 @@ class SettingsConfigurable : Configurable {
         "Auto-apply file edits (skip diff dialog)",
         settings.autoApplyEdits,
     )
+    private val runInTerminalBox = JBCheckBox(
+        "Run bash / shell commands in IDE terminal",
+        settings.runCommandsInTerminal,
+    )
 
     private var panel: JPanel? = null
 
@@ -39,6 +43,7 @@ class SettingsConfigurable : Configurable {
             .addComponent(autoConnectBox, 1)
             .addComponent(approveEditsBox, 1)
             .addComponent(autoApplyEditsBox, 1)
+            .addComponent(runInTerminalBox, 1)
             .addComponentFillVertically(JPanel(), 0)
             .panel
         return panel!!
@@ -50,7 +55,8 @@ class SettingsConfigurable : Configurable {
         channelIdField.text != settings.channelId ||
         autoConnectBox.isSelected != settings.autoConnect ||
         approveEditsBox.isSelected != settings.approveEdits ||
-        autoApplyEditsBox.isSelected != settings.autoApplyEdits
+        autoApplyEditsBox.isSelected != settings.autoApplyEdits ||
+        runInTerminalBox.isSelected != settings.runCommandsInTerminal
 
     override fun apply() {
         settings.host = hostField.text.trim()
@@ -59,6 +65,7 @@ class SettingsConfigurable : Configurable {
         settings.autoConnect = autoConnectBox.isSelected
         settings.approveEdits = approveEditsBox.isSelected
         settings.autoApplyEdits = autoApplyEditsBox.isSelected
+        settings.runCommandsInTerminal = runInTerminalBox.isSelected
     }
 
     override fun reset() {
@@ -68,6 +75,7 @@ class SettingsConfigurable : Configurable {
         autoConnectBox.isSelected = settings.autoConnect
         approveEditsBox.isSelected = settings.approveEdits
         autoApplyEditsBox.isSelected = settings.autoApplyEdits
+        runInTerminalBox.isSelected = settings.runCommandsInTerminal
     }
 
     override fun disposeUIResources() {

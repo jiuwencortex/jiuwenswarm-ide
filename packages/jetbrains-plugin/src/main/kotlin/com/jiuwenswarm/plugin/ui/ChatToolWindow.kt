@@ -2,18 +2,24 @@ package com.jiuwenswarm.plugin.ui
 
 import com.google.gson.Gson
 import com.google.gson.JsonObject
+import com.intellij.codeInsight.navigation.actions.GotoDeclarationAction
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.diagnostic.logger
-import com.intellij.openapi.project.Project
+import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
-import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
+import com.intellij.openapi.util.TextRange
+import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import com.intellij.openapi.wm.WindowManager
+import com.intellij.psi.PsiManager
+import com.intellij.psi.search.GlobalSearchScope
+import com.intellij.psi.search.PsiSearchHelper
 import com.intellij.ui.content.ContentFactory
 import com.intellij.ui.jcef.JBCefApp
 import com.intellij.ui.jcef.JBCefBrowser
@@ -24,6 +30,7 @@ import com.jiuwenswarm.plugin.client.SessionInfo
 import com.jiuwenswarm.plugin.client.WsStatus
 import com.jiuwenswarm.plugin.context.ContextCollector
 import com.jiuwenswarm.plugin.editor.DiffApplier
+import com.jiuwenswarm.plugin.terminal.TerminalManager
 import com.jiuwenswarm.plugin.settings.JiuwenSwarmSettings
 import org.cef.browser.CefBrowser
 import org.cef.browser.CefFrame
@@ -175,6 +182,39 @@ class ChatPanel(
 
     fun dispatchToWebview(msg: Map<String, Any?>) {
         dispatchToWebview(gson.toJsonTree(msg).asJsonObject)
+    }
+
+    /** Navigate to a symbol definition mentioned by the agent in chat. */
+    private fun navigateToSymbol(symbol: String) {
+        ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                val scope = GlobalSearchScope.projectScope(project)
+                val helper = PsiSearchHelper.getInstance(project)
+                val files = helper.findFilesWithPlainTextWords(symbol)
+                    .filter { scope.contains(it.virtualFile) }
+
+                if (files.isEmpty()) {
+                    debug("navigate_symbol: no files contain '$symbol'")
+                    return@executeOnPooledThread
+                }
+
+                ApplicationManager.getApplication().invokeLater {
+                    try {
+                        val file = files.first()
+                        val doc = com.intellij.openapi.editor.EditorFactory.getInstance()
+                            .createDocument(file.text)
+                        val text = doc.charsSequence
+                        val idx = text.indexOf(symbol)
+                        val offset = if (idx >= 0) idx else 0
+                        OpenFileDescriptor(project, file.virtualFile, offset).navigate(true)
+                    } catch (e: Exception) {
+                        debug("navigate_symbol failed: ${e.message}")
+                    }
+                }
+            } catch (e: Exception) {
+                debug("navigate_symbol failed: ${e.message}")
+            }
+        }
     }
 
     // ──────────────────────────────────────────
@@ -339,6 +379,12 @@ class ChatPanel(
                         }
                     }
                 }
+                "navigate_symbol" -> {
+                    val symbol = msg.get("symbol")?.asString ?: return
+                    ApplicationManager.getApplication().invokeLater {
+                        navigateToSymbol(symbol)
+                    }
+                }
             }
         } catch (e: Exception) {
             LOG.warn("Failed to parse webview message: $jsonStr", e)
@@ -385,6 +431,7 @@ class ChatPanel(
             if (et == "chat.tool_call") {
                 val payload = converted.getAsJsonObject("payload") ?: JsonObject()
                 val toolName = payload.get("tool_name")?.asString ?: ""
+                // File-edit snapshots
                 if (toolName in setOf("str_replace_editor", "write_file", "create_file")) {
                     val args = payload.getAsJsonObject("tool_call")?.getAsJsonObject("arguments")
                         ?: payload.getAsJsonObject("tool_input")
@@ -400,6 +447,14 @@ class ChatPanel(
                             } catch (_: Exception) { null }
                         }
                         debug("SNAP  → snapshotted $path (existed=${vf != null})")
+                    }
+                }
+                // Terminal integration for bash commands
+                if (toolName == "bash" || toolName == "run_command") {
+                    val cmd = TerminalManager.extractCommand(payload)
+                    if (cmd != null) {
+                        debug("TERM  → $cmd")
+                        TerminalManager.runCommand(project, cmd)
                     }
                 }
             }

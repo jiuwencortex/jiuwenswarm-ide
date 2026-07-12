@@ -170,6 +170,30 @@ Clicking either type sends an `open_file` message from the webview to the IDE, w
 
 ---
 
+## Symbol Navigation
+
+When the agent mentions a code symbol (class name, constant, enum value, or other identifier) in its response, the plugin turns it into a clickable purple link. Clicking it searches the project for the symbol and jumps to the first match.
+
+### What gets linkified
+
+| Pattern | Example | Behaviour |
+|---------|---------|-----------|
+| PascalCase identifier in backticks | `` `MyClass` `` | Searches project for `MyClass`; jumps to first occurrence |
+| SCREAMING_SNAKE_CASE identifier | `` `MAX_SIZE` `` | Searches project for `MAX_SIZE`; jumps to first occurrence |
+
+### What does NOT get linkified
+
+- File paths (handled by file links above)
+- Common keywords like `TODO`, `FIXME`, `HTTP`, `JSON`, `API`, etc.
+- Identifiers shorter than 3 characters
+- camelCase or snake_case that starts with a lowercase letter
+
+### How it works
+
+The markdown renderer checks remaining backtick content after file-link extraction. If it looks like an uppercase identifier (≥3 chars, not in the keyword blocklist), it is wrapped in a `<a class="symbol-link">` element. Clicking sends a `navigate_symbol` message to the plugin, which uses `PsiSearchHelper` to find files containing the symbol and opens the first match.
+
+---
+
 ## Actions & Keyboard Shortcuts
 
 ### Keyboard shortcuts
@@ -256,6 +280,15 @@ Enable **Auto-apply file edits** in **Settings → Tools → JiuwenSwarm** to sk
 - Changes are applied immediately via `WriteCommandAction` and are **undoable** with `Ctrl+Z` / `⌘Z`.
 - A balloon notification confirms each applied edit (e.g. "Applied edit to handler.py").
 - New files are written to disk with any missing parent directories created automatically.
+
+### Terminal integration
+
+When the agent runs a shell command (`bash` or `run_command`), the command is automatically sent to an IDE terminal tab named **"JiuwenSwarm"** so you can see live output, scroll back, and copy text.
+
+- The terminal tab is created on the first command and reused for all subsequent ones.
+- If you close the tab, a new one is created on the next command.
+- The Terminal tool window is brought to the front automatically when a command runs.
+- Disable this in **Settings → Tools → JiuwenSwarm → Run bash / shell commands in IDE terminal** if you prefer commands to run silently.
 
 ---
 

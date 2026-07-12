@@ -170,6 +170,30 @@ Clicking either type sends an `open_file` message from the webview to the extens
 
 ---
 
+## Symbol Navigation
+
+When the agent mentions a code symbol (class name, constant, enum value, or other identifier) in its response, the plugin turns it into a clickable purple link. Clicking it searches the workspace for the symbol definition and jumps to it.
+
+### What gets linkified
+
+| Pattern | Example | Behaviour |
+|---------|---------|-----------|
+| PascalCase identifier in backticks | `` `MyClass` `` | Searches workspace for `MyClass`; jumps to first definition |
+| SCREAMING_SNAKE_CASE identifier | `` `MAX_SIZE` `` | Searches workspace for `MAX_SIZE`; jumps to first definition |
+
+### What does NOT get linkified
+
+- File paths (handled by file links above)
+- Common keywords like `TODO`, `FIXME`, `HTTP`, `JSON`, `API`, etc.
+- Identifiers shorter than 3 characters
+- camelCase or snake_case that starts with a lowercase letter
+
+### How it works
+
+The markdown renderer checks remaining backtick content after file-link extraction. If it looks like an uppercase identifier (≥3 chars, not in the keyword blocklist), it is wrapped in a `<a class="symbol-link">` element. Clicking sends a `navigate_symbol` message to the extension, which calls VS Code's `vscode.executeWorkspaceSymbolProvider` to find the definition and open it.
+
+---
+
 ## Actions & Keyboard Shortcuts
 
 ### Keyboard shortcuts
@@ -203,6 +227,46 @@ Right-clicking anywhere in an editor appends **Send Selection to JiuwenSwarm** t
 
 ---
 
+## Code Action Quick Fix
+
+VS Code shows a lightbulb 💡 next to any line that has an error or warning. JiuwenSwarm registers a **"Fix with JiuwenSwarm"** quick-fix action that appears in this menu.
+
+### How to use it
+
+1. Write or open code that has a compiler or linter error (red squiggly underline).
+2. Place the cursor **on or inside** the highlighted error.
+3. Click the 💡 lightbulb that appears in the left margin (or press `Ctrl+.` / `⌘.`).
+4. Select **"Fix with JiuwenSwarm"** from the menu.
+5. The chat panel opens and the input is pre-filled with:
+   - The exact error message
+   - ±7 lines of surrounding code context
+
+6. Press **Enter** to send. The agent analyses the error and proposes a fix.
+
+### What is included in the prefill
+
+```
+Fix this error in handler.py:
+
+Error:
+Variable 'result' is not used before return
+
+```python
+def handle_request(req):
+    result = blocking_call(req)
+    return result
+```
+
+```
+
+### Scope
+
+- Works for any language that VS Code has diagnostics for (TypeScript, Python, Java, Go, Rust, C#, etc.)
+- If multiple diagnostics exist on the same line, the first one (usually the most severe) is used.
+- No text selection is required — just place the cursor on the error.
+
+---
+
 ## File Edit Workflow
 
 When the agent calls a file-editing tool (`str_replace_editor`, `write_file`, or `create_file`), the extension intercepts the call and handles it.
@@ -216,17 +280,39 @@ When the agent calls a file-editing tool (`str_replace_editor`, `write_file`, or
 | `write_file` | Overwrites an existing file or creates it if missing |
 | `create_file` | Creates a new file; parent directories are created automatically |
 
-### VS Code behaviour
+### VS Code behaviour (default)
 
-The VS Code extension applies file edits directly to the workspace via Node.js `fs` operations:
+By default, file edits are applied directly to the workspace via Node.js `fs` operations:
 
 - File edit tool calls are logged to the Debug log panel with the tool name and parameters.
 - Changes are written to disk immediately. VS Code's built-in **Source Control** panel or file explorer shows the modifications.
 - Each applied edit triggers a notification toast confirming the change.
 
+### Diff viewer (optional)
+
+Enable **Use diff viewer** in **Settings → Extensions → JiuwenSwarm** to review every proposed file edit before it is applied.
+
+When enabled:
+
+1. A side-by-side diff editor opens showing **Current** (left) vs **Proposed** (right).
+2. A notification appears with **Accept** and **Reject** buttons.
+3. If you click **Accept**, the change is written to disk.
+4. If you click **Reject**, the change is discarded and a toast confirms the rejection.
+5. The diff editor closes automatically after you choose.
+
+> **Tip:** Combine the diff viewer with **Approve edits** for maximum control — you'll see the diff first and then get an explicit accept/reject prompt.
+
 ### Approval workflow
 
 Enable **Approve edits** in **Settings → Extensions → JiuwenSwarm** to require your confirmation before every file change. When enabled, a prompt appears with **Approve** and **Reject** buttons for each proposed edit.
+
+### Terminal integration
+
+When the agent runs a shell command (`bash` or `run_command`), the command is automatically sent to an IDE terminal named **"JiuwenSwarm"** so you can see live output, scroll back, and copy text.
+
+- The terminal is created on the first command and reused for all subsequent ones.
+- If you close the terminal, a new one is created on the next command.
+- Disable this in **Settings → Extensions → JiuwenSwarm → Run commands in terminal** if you prefer commands to run silently.
 
 ---
 

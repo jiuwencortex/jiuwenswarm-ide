@@ -31,6 +31,10 @@ Architecture reference for the JetBrains plugin and VS Code extension. Both plug
 │  │  - Apply/reject hunks     │  │
 │  └───────────────────────────┘  │
 │  ┌───────────────────────────┐  │
+│  │  Terminal Manager         │  │
+│  │  - Run bash in IDE term   │  │
+│  └───────────────────────────┘  │
+│  ┌───────────────────────────┐  │
 │  │  WS Client + Session Mgr  │  │
 │  │  - Reconnect logic        │  │
 │  │  - Session CRUD           │  │
@@ -202,6 +206,13 @@ packages/vscode-extension/src/
 │   └── protocol.ts           # Shared type definitions
 ├── context/
 │   └── ContextCollector.ts   # Active file, selection, diagnostics injection
+├── editor/
+│   ├── DiffApplier.ts        # File-edit interception + workspace apply
+│   └── DiffViewer.ts         # Native VS Code diff dialog for proposed edits
+├── terminal/
+│   └── TerminalManager.ts    # Run bash commands in IDE terminal
+├── codeActions/
+│   └── FixWithAiCodeActionProvider.ts   # Lightbulb "Fix with JiuwenSwarm"
 └── ui/
     ├── ChatPanel.ts           # WebviewPanel wrapper + message bridge
     └── StatusBar.ts           # Connection status indicator
@@ -256,6 +267,10 @@ packages/jetbrains-plugin/src/main/kotlin/com/jiuwenswarm/plugin/
 ├── context/
 │   ├── ContextCollector.kt        # ReadAction: active file, selection, diagnostics, open tabs
 │   └── GitContextProvider.kt      # ProcessBuilder → git subprocess (outside ReadAction)
+├── editor/
+│   └── DiffApplier.kt             # File-edit interception + diff window + apply
+├── terminal/
+│   └── TerminalManager.kt         # Reflection-based routing to Terminal plugin
 ├── ui/
 │   ├── ChatToolWindow.kt          # ToolWindowFactory + JCEF panel + message bridge
 │   ├── Actions.kt                 # NewSessionAction, SendSelectionAction
@@ -280,6 +295,8 @@ packages/jetbrains-plugin/src/main/kotlin/com/jiuwenswarm/plugin/
 | Settings | `PersistentStateComponent<State>` |
 | Status bar | `StatusBarWidgetFactory` |
 | Diff view | `DiffManager.getInstance().showDiff()` |
+| Terminal | Reflection on `org.jetbrains.plugins.terminal.TerminalView` |
+| Symbol nav | `PsiSearchHelper.findFilesWithPlainTextWords()` |
 | Keyboard | `<action>` + `<keyboard-shortcut>` in `plugin.xml` |
 
 ### JCEF bridge
@@ -327,7 +344,9 @@ if (typeof acquireVsCodeApi !== 'undefined') {
 | `sessions` | `sessions[]` | Render session list overlay |
 | `skills` | `skills[]` | Render skills overlay |
 | `skill_toggled` | `skillId`, `enabled` | Update skill toggle button |
-| `theme` | `"dark"` / `"light"` | Apply theme override |
+| `rewindable` | `enabled` | Show/hide the checkpoint rewind bar |
+| `rewind_done` | `message` | Display rewind result in chat |
+| `debug_log` | `line` | Append line to debug panel |
 
 ### Webview messages sent to host
 
@@ -339,6 +358,9 @@ if (typeof acquireVsCodeApi !== 'undefined') {
 | `switch_session` | User clicks a session item |
 | `list_skills` | Skills overlay opens |
 | `toggle_skill` | User clicks ON/OFF button |
+| `open_file` | User clicks a file link in the chat |
+| `navigate_symbol` | User clicks a symbol link in the chat |
+| `rewind` | User clicks the rewind button |
 | `debug` | Debug log entry |
 
 ---

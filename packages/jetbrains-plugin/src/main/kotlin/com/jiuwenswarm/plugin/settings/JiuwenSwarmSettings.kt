@@ -21,6 +21,8 @@ class JiuwenSwarmSettings : PersistentStateComponent<JiuwenSwarmSettings.State> 
         var autoApplyEdits: Boolean = false,
         /** When true, show an approval dialog before applying any agent file edit. */
         var approveEdits: Boolean = false,
+        /** When true, bash/run_command tool calls are shown in an IDE terminal. */
+        var runCommandsInTerminal: Boolean = true,
     )
 
     private var state = State()
@@ -58,6 +60,10 @@ class JiuwenSwarmSettings : PersistentStateComponent<JiuwenSwarmSettings.State> 
     var approveEdits: Boolean
         get() = state.approveEdits
         set(v) { state = state.copy(approveEdits = v) }
+
+    var runCommandsInTerminal: Boolean
+        get() = state.runCommandsInTerminal
+        set(v) { state = state.copy(runCommandsInTerminal = v) }
 
     val wsUrl: String get() = "ws://$host:$port/ws"
 
