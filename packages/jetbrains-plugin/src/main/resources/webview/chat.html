@@ -1701,6 +1701,8 @@ function handleJiuwenEvent(evt) {
     if (hDoneEl) hDoneEl.remove();
     _historyPendingAssistant = null;
     state.historyLoading = false;
+  } else if (et === 'chat.error') {
+    appendError(rid, payload.error || 'Unknown error');
   }
 }
 
@@ -1930,6 +1932,25 @@ function finalizeTurn(rid, payload) {
       s.classList.remove('tool-spinner');
     });
     delete state.pendingTurns[rid];
+  }
+  setStreaming(false);
+  scrollToBottom();
+}
+
+function appendError(rid, errorText) {
+  const pt = state.pendingTurns[rid];
+  if (pt) {
+    var errorEl = document.createElement('div');
+    errorEl.className = 'error-msg';
+    errorEl.style.marginTop = '8px';
+    errorEl.textContent = '\u26A0 ' + escapeHtml(errorText);
+    pt.containerEl.appendChild(errorEl);
+    pt.containerEl.querySelectorAll('.tool-spinner').forEach(function(s) {
+      s.classList.remove('tool-spinner');
+    });
+    delete state.pendingTurns[rid];
+  } else {
+    showError(errorText);
   }
   setStreaming(false);
   scrollToBottom();
