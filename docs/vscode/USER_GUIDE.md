@@ -99,6 +99,7 @@ Every message you send automatically has a structured context block prepended. T
 | Selected code | `editor.document.getText(editor.selection)` | Fenced code block of the current selection |
 | Editor diagnostics | `vscode.languages.getDiagnostics(doc.uri)` | Up to 10 current errors and warnings from the Problems panel |
 | Other open tabs | `vscode.window.tabGroups.all` | Paths of up to 10 other files open in the editor |
+| Project tree | `workspace.workspaceFolders` | 2-level directory listing of the workspace root; skips `node_modules`, `build`, `.git`, `target`, etc. |
 | Git status | `git` subprocess | `Git: branch=feature/auth, 3 uncommitted changes` |
 
 The block is assembled at send time. If there is nothing useful (no editor open, no git repo, no selection), the message is sent without a context block.
@@ -125,6 +126,14 @@ Other open files (3):
   /Users/mishka/project/src/api/router.py
   /Users/mishka/project/src/models/request.py
   /Users/mishka/project/tests/test_handler.py
+
+Project structure:
+  src/
+    api/
+    models/
+  tests/
+  pyproject.toml
+  README.md
 
 Git: branch=feature/async-refactor, 3 uncommitted changes
 <!-- End IDE Context -->
@@ -209,13 +218,49 @@ When the agent calls a file-editing tool (`str_replace_editor`, `write_file`, or
 
 ### VS Code behaviour
 
-The VS Code extension does **not** open a native diff dialog (unlike the JetBrains plugin). Instead:
+The VS Code extension applies file edits directly to the workspace via Node.js `fs` operations:
 
 - File edit tool calls are logged to the Debug log panel with the tool name and parameters.
-- The agent's edits are applied directly to the workspace files via the JiuwenSwarm server.
-- You can review changes through VS Code's built-in **Source Control** panel or by opening the modified files directly.
+- Changes are written to disk immediately. VS Code's built-in **Source Control** panel or file explorer shows the modifications.
+- Each applied edit triggers a notification toast confirming the change.
 
-> **Note:** Auto-apply is always on in VS Code; there is no diff review window. If you need to review edits before they are applied, use the JetBrains plugin which supports a side-by-side diff viewer.
+### Approval workflow
+
+Enable **Approve edits** in **Settings → Extensions → JiuwenSwarm** to require your confirmation before every file change. When enabled, a prompt appears with **Approve** and **Reject** buttons for each proposed edit.
+
+---
+
+## Checkpoint / Rewind
+
+After every agent turn that edits one or more files, a rewind bar appears at the bottom of the chat panel:
+
+```
+⟲ Agent edited files this turn    [⟲ Undo changes]
+```
+
+### How it works
+
+Before the agent's first edit to a file in a given turn the extension snapshots the current file content. At the end of the turn (`chat.final`) the snapshots are locked in and the rewind bar becomes active.
+
+### Using the rewind bar
+
+Click **⟲ Undo changes**. The extension restores every snapshotted file to its pre-turn state. Files that did not exist before the turn are deleted on rewind. Each restore triggers a notification toast.
+
+After a successful rewind the bar disappears and a status line appears in the message list, for example:
+
+```
+⟲ Rewound 3 file(s)
+```
+
+### Scope and limits
+
+| Scenario | Behaviour |
+|----------|-----------|
+| Agent created a new file | The file is deleted on rewind |
+| Agent edited an existing file | The file is restored to the content before the first edit in the turn |
+| You send another message | The bar disappears; snapshots are discarded — only the most recent completed turn can be rewound |
+| New session | Rewind bar is cleared |
+| Rewind partially fails | Bar disappears; status line reports how many files were restored and how many failed |
 
 ---
 
@@ -353,7 +398,8 @@ This is most useful when something is not working as expected and you need to se
 | Messages send but no response streams in | Server unreachable after handshake | Enable the Debug log and look for error frames; check server logs |
 | Image preview shows a broken icon | Webview CSP or base64 encoding issue | Update the extension to the latest version |
 | Send Selection does nothing | No text selected or editor not focused | Make sure text is actually selected in the editor; check that the editor has focus before pressing the shortcut |
-| Diff window opens but file does not change | VS Code does not have a native diff dialog for agent edits | Review changes through VS Code's Source Control panel or open the modified files directly |
+| Rewind bar does not appear after agent edits a file | Approval may be off so edits were rejected, or the server did not send `chat.final` | Enable the Debug log to check for `SNAP →` lines; verify the turn completed normally |
+| Rewind restores 0 files | Snapshots were cleared by a subsequent message before rewind was clicked | The rewind window only lasts for the most recently completed turn; click Undo immediately after the turn ends |
 | Session list stays on "Loading…" | Server timeout (15 s) or method not supported | Click **↺ Retry**; check server logs for `session.list` errors |
 | Skills list shows an error | Server does not support `skills.list` | Expected on older server versions; upgrade the server to enable the skills panel |
 | IDE log filled with `[JiuwenSwarm]` lines | Debug mode was left on | Open the panel and click **⚙ → Debug log** to toggle it off |

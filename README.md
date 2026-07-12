@@ -37,46 +37,21 @@ cd jiuwenswarm && jiuwenswarm-start
 
 ## Installation & Usage
 
+Quick-start for each platform — for detailed walkthroughs of every panel, setting, and workflow see the User Guides below.
+
 - [VS Code Extension](docs/vscode/README.md) — install from VSIX or marketplace, configure, and use
 - [JetBrains Plugin](docs/jetbrains/README.md) — install from ZIP or marketplace, configure, and use
-- [VS Code User Guide](docs/vscode/USER_GUIDE.md) — detailed walkthrough of every feature
 
-## Feature Parity
+## Documentation
 
-| Feature | VS Code | JetBrains |
-|---------|---------|-----------|
-| Streaming chat panel | ✅ | ✅ |
-| Tool call cards | ✅ | ✅ |
-| Session management (create / switch / list / delete) | ✅ | ✅ |
-| Send selection (Ctrl+Shift+E) | ✅ | ✅ |
-| New session shortcut (Ctrl+Shift+J) | ✅ | ✅ |
-| Reconnect command | ✅ | ✅ |
-| Connection status widget | ✅ (status bar) | ✅ (status bar + tool window) |
-| Token usage display in status bar | ✅ | ✅ |
-| Multi-model listing & display | ✅ | ✅ |
-| Skills list & toggle | ✅ | ✅ |
-| IDE context (file, cursor, selection, diagnostics) | ✅ | ✅ |
-| IDE context (other open files) | ✅ | ✅ |
-| IDE context (project tree) | ✅ | ✅ |
-| IDE context (git branch & status) | ✅ | ✅ |
-| Debug logging toggle from webview | ✅ | ✅ |
-| Image/media attachments | ✅ | ✅ |
-| E2A streaming format support | ✅ | ✅ |
-| Legacy event format support | ✅ | ✅ |
-| Theme toggle (dark/light) | ✅ | ✅ |
-| Auto-connect on startup | ✅ | ✅ |
-| Clickable file links in responses | ✅ | ✅ |
-| Checkpoint / rewind | ✅ | ✅ |
-| Approval workflow for file edits | ✅ | ✅ |
-| Notification toast on applied edit | ✅ | ✅ |
-| File edit diff viewer | 🚫 | ✅ (native diff dialog) |
-| Auto-apply file edits | ✅ | ✅ (setting) |
-| Alt+Enter quick fix | 🚫 | ✅ (intention action) |
-
-## Publishing
-
-- [VS Code Marketplace & OpenVSX](docs/vscode/PUBLISHING.md) — build, package, and publish the VS Code extension
-- [JetBrains Plugin Marketplace](docs/jetbrains/PUBLISHING.md) — build, sign, and publish the JetBrains plugin
+| Document | What you'll find |
+|----------|------------------|
+| [VS Code User Guide](docs/vscode/USER_GUIDE.md) | Complete walkthrough of every panel, setting, action, and workflow |
+| [JetBrains User Guide](docs/jetbrains/USER_GUIDE.md) | Complete walkthrough of every panel, setting, action, and workflow |
+| [Architecture Reference](docs/ARCHITECTURE.md) | Protocol, component model, context injection, file-edit handling, and shared webview design |
+| [Development Plan](docs/IDE_PLUGIN_PLAN.md) | Feature roadmap with descriptions, implementation phases, and build/distribution notes |
+| [VS Code Publishing](docs/vscode/PUBLISHING.md) | Build, package, and publish the VS Code extension |
+| [JetBrains Publishing](docs/jetbrains/PUBLISHING.md) | Build, sign, and publish the JetBrains plugin |
 
 ## Development
 
