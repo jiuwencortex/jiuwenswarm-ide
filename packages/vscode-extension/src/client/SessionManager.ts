@@ -79,7 +79,7 @@ export class SessionManager {
     const sid = this._sessionId;
     if (!sid) return false;
     const fullContent = ideContext && ideContext.trim()
-      ? `${ideContext}\n\n${content}`
+      ? `${content}\n\n${ideContext}`
       : content;
     const params: Record<string, unknown> = {
       content: fullContent,

@@ -122,7 +122,7 @@ class SessionManager(
     ): Boolean {
         val sid = sessionId ?: return false
         val fullContent = if (!ideContext.isNullOrBlank()) {
-            "$ideContext\n\n$content"
+            "$content\n\n$ideContext"
         } else {
             content
         }
