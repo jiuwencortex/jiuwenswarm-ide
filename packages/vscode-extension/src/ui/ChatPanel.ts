@@ -135,9 +135,8 @@ export class ChatPanel implements vscode.WebviewViewProvider {
       case 'switch_session': {
         const sid = msg.sessionId as string;
         if (sid) {
-          const cfg = vscode.workspace.getConfiguration('jiuwenswarm');
-          const mode = cfg.get<string>('defaultMode', 'agent.plan');
-          this.switchSession(sid, mode);
+          // session.switch is a team-mode server operation
+          this.switchSession(sid, 'team');
         }
         break;
       }

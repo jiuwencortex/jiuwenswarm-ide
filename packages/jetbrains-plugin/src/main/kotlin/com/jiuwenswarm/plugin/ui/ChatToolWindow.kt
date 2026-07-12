@@ -225,12 +225,13 @@ class ChatPanel(
                 }
                 "switch_session" -> {
                     val sid = msg.get("sessionId")?.asString ?: return
-                    val mode = msg.get("mode")?.asString
-                            ?: JiuwenSwarmSettings.instance().defaultMode
-                    debug("ACTION→ switch_session $sid mode=$mode")
+                    // session.switch is a team-mode server operation — the user's
+                    // chat mode (agent.plan / agent.fast / team) is sent per-message,
+                    // not per-session.
+                    debug("ACTION→ switch_session $sid mode=team")
                     ApplicationManager.getApplication().executeOnPooledThread {
                         try {
-                            service.session.switchSession(sid, mode)
+                            service.session.switchSession(sid, "team")
                             sendCurrentStatus()
                         } catch (e: Exception) {
                             dispatchToWebview(mapOf("type" to "error", "message" to e.message))
