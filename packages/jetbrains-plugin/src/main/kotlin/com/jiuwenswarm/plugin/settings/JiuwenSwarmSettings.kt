@@ -23,6 +23,10 @@ class JiuwenSwarmSettings : PersistentStateComponent<JiuwenSwarmSettings.State> 
         var approveEdits: Boolean = false,
         /** When true, bash/run_command tool calls are shown in an IDE terminal. */
         var runCommandsInTerminal: Boolean = true,
+        /** When true, send periodic WebSocket ping frames to keep the connection alive. */
+        var keepAliveEnabled: Boolean = true,
+        /** Seconds between keep-alive ping frames (5–300). */
+        var keepAliveInterval: Int = 30,
     )
 
     private var state = State()
@@ -64,6 +68,14 @@ class JiuwenSwarmSettings : PersistentStateComponent<JiuwenSwarmSettings.State> 
     var runCommandsInTerminal: Boolean
         get() = state.runCommandsInTerminal
         set(v) { state = state.copy(runCommandsInTerminal = v) }
+
+    var keepAliveEnabled: Boolean
+        get() = state.keepAliveEnabled
+        set(v) { state = state.copy(keepAliveEnabled = v) }
+
+    var keepAliveInterval: Int
+        get() = state.keepAliveInterval
+        set(v) { state = state.copy(keepAliveInterval = v.coerceIn(5, 300)) }
 
     val wsUrl: String get() = "ws://$host:$port/ws"
 

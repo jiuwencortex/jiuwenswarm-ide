@@ -129,6 +129,18 @@
           "type": "boolean",
           "default": false,
           "description": "Show VS Code's built-in diff viewer before applying agent file edits"
+        },
+        "jiuwenswarm.keepAlive.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Send periodic WebSocket ping frames to keep the connection alive and detect dropped links early"
+        },
+        "jiuwenswarm.keepAlive.interval": {
+          "type": "number",
+          "default": 30,
+          "minimum": 5,
+          "maximum": 300,
+          "description": "Seconds between keep-alive ping frames (5–300)"
         }
       }
     }

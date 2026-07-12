@@ -23,13 +23,16 @@ export function activate(context: vscode.ExtensionContext): void {
   const port = cfg.get<number>('port', 19000);
   const channelId = cfg.get<string>('channelId', 'ide');
   const autoConnect = cfg.get<boolean>('autoConnect', true);
+  const keepAliveEnabled = cfg.get<boolean>('keepAlive.enabled', true);
+  const keepAliveInterval = cfg.get<number>('keepAlive.interval', 30);
   const url = `ws://${host}:${port}/ws`;
 
   // Copy shared webview HTML into extension resources
   ensureWebviewHtml(context);
 
   // Create core singletons
-  ws = new WsClient(url);
+  const pingIntervalMs = keepAliveEnabled ? keepAliveInterval * 1000 : 0;
+  ws = new WsClient(url, pingIntervalMs);
   session = new SessionManager(ws, channelId);
   statusBar = new StatusBar(ws);
   chatPanel = new ChatPanel(context, ws, session, statusBar);

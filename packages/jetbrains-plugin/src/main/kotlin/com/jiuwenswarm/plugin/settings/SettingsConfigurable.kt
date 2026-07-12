@@ -30,6 +30,13 @@ class SettingsConfigurable : Configurable {
         "Run bash / shell commands in IDE terminal",
         settings.runCommandsInTerminal,
     )
+    private val keepAliveBox = JBCheckBox(
+        "Send keep-alive pings to server",
+        settings.keepAliveEnabled,
+    )
+    private val keepAliveIntervalSpinner = JSpinner(
+        SpinnerNumberModel(settings.keepAliveInterval, 5, 300, 5)
+    )
 
     private var panel: JPanel? = null
 
@@ -44,6 +51,8 @@ class SettingsConfigurable : Configurable {
             .addComponent(approveEditsBox, 1)
             .addComponent(autoApplyEditsBox, 1)
             .addComponent(runInTerminalBox, 1)
+            .addComponent(keepAliveBox, 1)
+            .addLabeledComponent(JBLabel("Keep-alive interval (seconds):"), keepAliveIntervalSpinner, 1, false)
             .addComponentFillVertically(JPanel(), 0)
             .panel
         return panel!!
@@ -56,7 +65,9 @@ class SettingsConfigurable : Configurable {
         autoConnectBox.isSelected != settings.autoConnect ||
         approveEditsBox.isSelected != settings.approveEdits ||
         autoApplyEditsBox.isSelected != settings.autoApplyEdits ||
-        runInTerminalBox.isSelected != settings.runCommandsInTerminal
+        runInTerminalBox.isSelected != settings.runCommandsInTerminal ||
+        keepAliveBox.isSelected != settings.keepAliveEnabled ||
+        (keepAliveIntervalSpinner.value as Int) != settings.keepAliveInterval
 
     override fun apply() {
         settings.host = hostField.text.trim()
@@ -66,6 +77,8 @@ class SettingsConfigurable : Configurable {
         settings.approveEdits = approveEditsBox.isSelected
         settings.autoApplyEdits = autoApplyEditsBox.isSelected
         settings.runCommandsInTerminal = runInTerminalBox.isSelected
+        settings.keepAliveEnabled = keepAliveBox.isSelected
+        settings.keepAliveInterval = (keepAliveIntervalSpinner.value as Int).coerceIn(5, 300)
     }
 
     override fun reset() {
@@ -76,6 +89,8 @@ class SettingsConfigurable : Configurable {
         approveEditsBox.isSelected = settings.approveEdits
         autoApplyEditsBox.isSelected = settings.autoApplyEdits
         runInTerminalBox.isSelected = settings.runCommandsInTerminal
+        keepAliveBox.isSelected = settings.keepAliveEnabled
+        keepAliveIntervalSpinner.value = settings.keepAliveInterval
     }
 
     override fun disposeUIResources() {

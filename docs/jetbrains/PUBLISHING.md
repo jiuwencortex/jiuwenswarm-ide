@@ -6,7 +6,6 @@ This guide covers building, signing, and publishing the JiuwenSwarm plugin to th
 
 ```bash
 cd packages/jetbrains-plugin
-./gradlew runIde        # launch sandboxed IDE with the plugin
 ./gradlew buildPlugin   # → build/distributions/*.zip
 ```
 

@@ -10,7 +10,7 @@ export type WsEventMap = {
 };
 
 const BACKOFF_MS = [1000, 2000, 4000, 8000, 16000, 30000];
-const PING_INTERVAL_MS = 15_000;
+const DEFAULT_PING_INTERVAL_MS = 30_000;
 
 export class WsClient {
   private ws: WebSocket | null = null;
@@ -21,7 +21,10 @@ export class WsClient {
   private destroyed = false;
   private listeners: Partial<{ [K in keyof WsEventMap]: WsEventMap[K][] }> = {};
 
-  constructor(private readonly url: string) {}
+  constructor(
+    private readonly url: string,
+    private pingIntervalMs: number = DEFAULT_PING_INTERVAL_MS,
+  ) {}
 
   on<K extends keyof WsEventMap>(event: K, listener: WsEventMap[K]): this {
     if (!this.listeners[event]) this.listeners[event] = [] as any;
@@ -126,12 +129,21 @@ export class WsClient {
     }, delay);
   }
 
+  setPingInterval(ms: number): void {
+    this.pingIntervalMs = Math.max(5_000, Math.min(ms, 300_000));
+    if (this.status === 'connected') {
+      this.stopPing();
+      this.startPing();
+    }
+  }
+
   private startPing(): void {
+    if (this.pingIntervalMs <= 0) return;
     this.pingTimer = setInterval(() => {
       if (this.ws?.readyState === WebSocket.OPEN) {
         this.ws.ping();
       }
-    }, PING_INTERVAL_MS);
+    }, this.pingIntervalMs);
   }
 
   private stopPing(): void {

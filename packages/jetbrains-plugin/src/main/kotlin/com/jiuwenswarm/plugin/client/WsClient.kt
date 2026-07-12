@@ -21,12 +21,31 @@ typealias MessageListener = (JsonObject) -> Unit
 private val BACKOFF_SECONDS = longArrayOf(1, 2, 4, 8, 16, 30)
 private val gson = Gson()
 
-class WsClient(private val url: String) : Disposable {
+class WsClient(
+    private val url: String,
+    pingIntervalSeconds: Long = 15,
+) : Disposable {
 
-    private val client = OkHttpClient.Builder()
-        .pingInterval(15, TimeUnit.SECONDS)
-        .readTimeout(0, TimeUnit.MILLISECONDS)
-        .build()
+    @Volatile private var pingIntervalSec: Long = pingIntervalSeconds.coerceIn(0, 300)
+
+    private var client: OkHttpClient = buildClient()
+
+    private fun buildClient(): OkHttpClient {
+        val builder = OkHttpClient.Builder()
+            .readTimeout(0, TimeUnit.MILLISECONDS)
+        if (pingIntervalSec > 0) {
+            builder.pingInterval(pingIntervalSec, TimeUnit.SECONDS)
+        }
+        return builder.build()
+    }
+
+    /** Rebuild the underlying OkHttp client with a new keep-alive interval. */
+    fun setPingInterval(seconds: Long) {
+        val clamped = seconds.coerceIn(0, 300)
+        if (pingIntervalSec == clamped) return
+        pingIntervalSec = clamped
+        client = buildClient()
+    }
 
     private val scheduler = Executors.newSingleThreadScheduledExecutor { r ->
         Thread(r, "jiuwenswarm-ws-scheduler").also { it.isDaemon = true }

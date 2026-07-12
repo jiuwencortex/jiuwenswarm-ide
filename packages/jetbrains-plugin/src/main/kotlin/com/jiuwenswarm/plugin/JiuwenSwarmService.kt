@@ -17,7 +17,10 @@ private val LOG = logger<JiuwenSwarmService>()
 class JiuwenSwarmService : Disposable {
 
     val settings = JiuwenSwarmSettings.instance()
-    val ws = WsClient(settings.wsUrl)
+    val ws = WsClient(
+        settings.wsUrl,
+        if (settings.keepAliveEnabled) settings.keepAliveInterval.toLong() else 0,
+    )
     val session = SessionManager(ws, settings.channelId)
 
     /** Cumulative token count for the current session, updated by ChatToolWindow. */
