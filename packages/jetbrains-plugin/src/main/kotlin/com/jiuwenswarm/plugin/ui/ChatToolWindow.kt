@@ -499,6 +499,7 @@ class ChatPanel(
                 mappedPayload.addProperty("text", mappedPayload.get("content").asString)
             }
             val requestId = mappedPayload.get("request_id")?.asString
+                ?: msg.get("request_id")?.asString
                 ?: fallbackRequestId
                 ?: ""
             return JsonObject().apply {

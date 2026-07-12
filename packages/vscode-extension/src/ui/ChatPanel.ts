@@ -286,6 +286,7 @@ export class ChatPanel implements vscode.WebviewViewProvider {
       }
       const rid = (msg.id as string)
         || (payload.request_id as string)
+        || (msg.request_id as string)
         || this.lastRequestId
         || '';
       return {
