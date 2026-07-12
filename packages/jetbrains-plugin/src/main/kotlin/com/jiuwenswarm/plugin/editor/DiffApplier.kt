@@ -35,9 +35,14 @@ private val LOG = logger<DiffApplier>()
  */
 object DiffApplier {
 
-    /** Callable from any thread. Returns true if the event was handled. */
+    /** Callable from any thread. Returns true if the event was handled.
+     *  Accepts either a raw gateway message (tool_name inside payload) or
+     *  a flattened event (tool_name at root).
+     */
     fun handle(project: Project, event: JsonObject): Boolean {
-        val toolName = event.get("tool_name")?.asString ?: return false
+        val toolName = event.get("tool_name")?.asString
+            ?: event.getAsJsonObject("payload")?.get("tool_name")?.asString
+            ?: return false
         if (toolName !in EDIT_TOOLS) return false
 
         val args = parseArguments(event) ?: run {
@@ -230,7 +235,9 @@ object DiffApplier {
     // ──────────────────────────────────────────────────────────────────────────
 
     private fun parseArguments(event: JsonObject): JsonObject? {
-        val toolCall = event.getAsJsonObject("tool_call") ?: return null
+        val toolCall = event.getAsJsonObject("tool_call")
+            ?: event.getAsJsonObject("payload")?.getAsJsonObject("tool_call")
+            ?: return null
         val argsEl: JsonElement = toolCall.get("arguments") ?: return null
         return when {
             argsEl.isJsonObject -> argsEl.asJsonObject

@@ -190,47 +190,44 @@ export class ChatPanel implements vscode.WebviewViewProvider {
 
     this.debug(`RAW ← ${JSON.stringify(msg)}`);
 
-    // Route file-edit tool calls to DiffApplier
-    if (msgType === 'event' && msg.event === 'chat.tool_call') {
-      const convertedPayload = { payload: msg.payload || {} };
-      DiffApplier.handleToolCall(convertedPayload);
-    }
-
     const converted = this.convertServerMessageToLegacyEvent(msg);
-    if (converted) {
-      const et = converted.event_type as string;
-
-      // ── Snapshot files before they are edited so rewind can restore them ──
-      if (et === 'chat.tool_call') {
-        const payload = (converted.payload as Record<string, unknown>) || {};
-        const toolName = payload.tool_name as string | undefined;
-        if (toolName === 'str_replace_editor' || toolName === 'write_file' || toolName === 'create_file') {
-          const args = (payload.tool_call as Record<string, unknown>)?.arguments as Record<string, unknown>
-            || (payload.tool_input as Record<string, unknown>)
-            || (payload.input as Record<string, unknown>)
-            || {};
-          const filePath = args.path as string | undefined;
-          if (filePath) {
-            // ensureSnapshot is called inside DiffApplier before applying
-            this.debug(`SNAP  → will snapshot ${filePath}`);
-          }
-        }
-      }
-
-      // ── On turn end, promote snapshots and show rewind bar ──
-      if (et === 'chat.final') {
-        if (DiffApplier.promoteSnapshots()) {
-          this.postToWebview({ type: 'rewindable', enabled: true });
-          this.debug('SNAP  → turn complete, rewindable');
-        }
-      }
-
-      this.debug(`CONV  → event_type=${et} request_id=${converted.request_id}`);
-      this.postToWebview({ type: 'jiuwen_event', event: converted });
-      this.trackTokenUsage(converted);
-    } else {
+    if (!converted) {
       this.debug('CONV  → dropped (not a recognised chat event)');
+      return;
     }
+
+    const et = converted.event_type as string;
+    const payload = (converted.payload as Record<string, unknown>) || {};
+
+    // ── Snapshot & apply file-edit tool calls ──
+    if (et === 'chat.tool_call') {
+      const toolName = payload.tool_name as string | undefined;
+      if (toolName === 'str_replace_editor' || toolName === 'write_file' || toolName === 'create_file') {
+        const args = (payload.tool_call as Record<string, unknown>)?.arguments as Record<string, unknown>
+          || (payload.tool_input as Record<string, unknown>)
+          || (payload.input as Record<string, unknown>)
+          || {};
+        const filePath = args.path as string | undefined;
+        if (filePath) {
+          DiffApplier.ensureSnapshot(filePath);
+          this.debug(`SNAP  → snapshotted ${filePath}`);
+        }
+      }
+      // Apply the edit (async — snapshot already saved above)
+      DiffApplier.handleToolCall(converted);
+    }
+
+    // ── On turn end, promote snapshots and show rewind bar ──
+    if (et === 'chat.final') {
+      if (DiffApplier.promoteSnapshots()) {
+        this.postToWebview({ type: 'rewindable', enabled: true });
+        this.debug('SNAP  → turn complete, rewindable');
+      }
+    }
+
+    this.debug(`CONV  → event_type=${et} request_id=${converted.request_id}`);
+    this.postToWebview({ type: 'jiuwen_event', event: converted });
+    this.trackTokenUsage(converted);
   }
 
   /** Convert server messages (E2A or old format) to the legacy event format the webview expects.

@@ -1294,7 +1294,7 @@ function renderSessionList() {
     item.title = s.session_id;
     item.onclick = function() {
       if (!isActive) {
-        send({ type: 'switch_session', sessionId: s.session_id });
+        send({ type: 'switch_session', sessionId: s.session_id, mode: state.mode });
       }
       toggleSessions();
     };
@@ -1392,7 +1392,7 @@ function updateSkills(skills) {
         (skill.trigger    ? '<div class="skill-trigger">' + escapeHtml(skill.trigger)    + '</div>' : '') +
       '</div>' +
       '<button class="skill-toggle-btn' + (enabled ? ' enabled' : '') + '" ' +
-        'onclick="toggleSkill(' + JSON.stringify(skill.skill_id) + ',' + !enabled + ')" ' +
+        'onclick="toggleSkill(\'' + escapeHtml(skill.skill_id) + '\',' + (!enabled ? 'true' : 'false') + ')" ' +
         'title="' + (enabled ? 'Disable' : 'Enable') + '">' +
         (enabled ? 'ON' : 'OFF') +
       '</button>';
@@ -1761,21 +1761,22 @@ function appendToolResult(rid, payload) {
 }
 
 function updateUsage(rid, payload) {
-  const pt = state.pendingTurns[rid];
-  if (!pt) return;
-
   const inTok = payload.input_tokens || payload.cache_read_input_tokens || 0;
   const outTok = payload.output_tokens || 0;
   if (inTok || outTok) {
-    let usageEl = pt.containerEl.querySelector('.usage-line');
-    if (!usageEl) {
-      usageEl = document.createElement('div');
-      usageEl.className = 'usage-line';
-      pt.containerEl.appendChild(usageEl);
-    }
     const total = (inTok + outTok).toLocaleString();
-    usageEl.textContent = total + ' tokens';
     document.getElementById('token-counter').textContent = total + ' tok';
+    // Also append a usage line to the active turn, if still streaming
+    const pt = state.pendingTurns[rid];
+    if (pt) {
+      let usageEl = pt.containerEl.querySelector('.usage-line');
+      if (!usageEl) {
+        usageEl = document.createElement('div');
+        usageEl.className = 'usage-line';
+        pt.containerEl.appendChild(usageEl);
+      }
+      usageEl.textContent = total + ' tokens';
+    }
   }
 }
 

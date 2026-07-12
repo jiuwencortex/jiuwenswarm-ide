@@ -371,9 +371,9 @@ class ChatPanel(
 
         debug("RAW ← ${gson.toJson(msg)}")
         // Route file-edit tool calls to DiffApplier (show diff or auto-apply).
-        // Only applies to old-format events where tool_name sits at the message root.
+        // Gateway sends tool_name inside payload on raw events.
         if (msg.get("type")?.asString == "event" &&
-            msg.get("event_type")?.asString == "chat.tool_call") {
+            msg.get("event")?.asString == "chat.tool_call") {
             ApplicationManager.getApplication().executeOnPooledThread {
                 DiffApplier.handle(project, msg)
             }

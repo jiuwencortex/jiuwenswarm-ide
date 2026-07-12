@@ -50,7 +50,7 @@ export function clearLastTurnSnapshots(): void {
 /**
  * Snapshot a file before it is edited, if not already snapshotted this turn.
  */
-function ensureSnapshot(filePath: string): void {
+export function ensureSnapshot(filePath: string): void {
   if (currentTurnSnapshots.has(filePath)) return;
   try {
     if (fs.existsSync(filePath)) {
