@@ -1714,7 +1714,11 @@ function appendToolCall(rid, payload) {
   if (!pt) return;
 
   const toolName = payload.tool_name || payload.name || 'tool';
-  const toolInput = payload.tool_input || payload.input || {};
+  const toolInput = payload.tool_input
+    || payload.input
+    || (payload.tool_call && payload.tool_call.arguments)
+    || payload.arguments
+    || {};
 
   const card = document.createElement('div');
   card.className = 'tool-card';

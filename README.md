@@ -35,34 +35,34 @@ cd jiuwenswarm && jiuwenswarm-start
 # WebSocket server at ws://localhost:19000/ws
 ```
 
-## Installation & Usage
+## Get Started
 
-Quick-start for each platform — for detailed walkthroughs of every panel, setting, and workflow see the User Guides below.
+- [JetBrains Plugin](docs/jetbrains/README.md) — install from ZIP or marketplace
+- [VS Code Extension](docs/vscode/README.md) — install from VSIX or marketplace
 
-- [VS Code Extension](docs/vscode/README.md) — install from VSIX or marketplace, configure, and use
-- [JetBrains Plugin](docs/jetbrains/README.md) — install from ZIP or marketplace, configure, and use
+Full feature walkthroughs:
+- [JetBrains User Guide](docs/jetbrains/USER_GUIDE.md)
+- [VS Code User Guide](docs/vscode/USER_GUIDE.md)
 
-## Documentation
+## Developer Documentation
 
 | Document | What you'll find |
 |----------|------------------|
-| [VS Code User Guide](docs/vscode/USER_GUIDE.md) | Complete walkthrough of every panel, setting, action, and workflow |
-| [JetBrains User Guide](docs/jetbrains/USER_GUIDE.md) | Complete walkthrough of every panel, setting, action, and workflow |
-| [Architecture Reference](docs/ARCHITECTURE.md) | Protocol, component model, context injection, file-edit handling, and shared webview design |
-| [Development Plan](docs/IDE_PLUGIN_PLAN.md) | Feature roadmap with descriptions, implementation phases, and build/distribution notes |
-| [VS Code Publishing](docs/vscode/PUBLISHING.md) | Build, package, and publish the VS Code extension |
+| [Architecture Reference](docs/ARCHITECTURE.md) | Protocol, component model, context injection, file-edit handling, shared webview |
+| [Development Plan](docs/IDE_PLUGIN_PLAN.md) | Feature roadmap with descriptions, implementation phases, build/distribution notes |
 | [JetBrains Publishing](docs/jetbrains/PUBLISHING.md) | Build, sign, and publish the JetBrains plugin |
+| [VS Code Publishing](docs/vscode/PUBLISHING.md) | Build, package, and publish the VS Code extension |
 
 ## Development
 
 ```
 packages/
 ├── shared-webview/      # Self-contained chat UI (vanilla HTML/JS, no build)
-├── vscode-extension/    # VS Code extension (TypeScript + esbuild)
-└── jetbrains-plugin/    # JetBrains plugin (Kotlin + Gradle)
+├── jetbrains-plugin/    # JetBrains plugin (Kotlin + Gradle)
+└── vscode-extension/    # VS Code extension (TypeScript + esbuild)
 ```
 
-Both plugins connect to `ws://localhost:19000/ws` using the same JSON protocol as the JiuwenSwarm web frontend, with `channel_id: "ide"`. The chat UI in `shared-webview/` is embedded as a webview in VS Code and via JCEF in JetBrains, so both IDEs render an identical interface with the same behavior.
+Both plugins connect to `ws://localhost:19000/ws` using the same JSON protocol as the JiuwenSwarm web frontend, with `channel_id: "ide"`. The chat UI in `shared-webview/` is embedded via JCEF in JetBrains and as a VS Code webview, so both IDEs render an identical interface with the same behavior.
 
 ## Feedback & Source
 
