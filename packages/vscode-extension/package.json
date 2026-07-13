@@ -101,9 +101,9 @@
         },
         "jiuwenswarm.defaultMode": {
           "type": "string",
-          "default": "agent.plan",
-          "enum": ["agent.plan", "agent.fast", "team"],
-          "description": "Default agent mode: Planning / Performance / Cluster"
+          "default": "code.plan",
+          "enum": ["code.plan", "code.normal", "code.team"],
+          "description": "Default coding mode: Plan & Explore / Execute / Team Coding"
         },
         "jiuwenswarm.channelId": {
           "type": "string",

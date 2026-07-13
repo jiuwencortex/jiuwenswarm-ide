@@ -2,6 +2,25 @@
 
 This guide covers building, packaging, and publishing the JiuwenSwarm VS Code extension to the VS Code Marketplace and the OpenVSX registry.
 
+## Quick Build from Source
+
+If you just want to build the extension locally and install it manually:
+
+```bash
+cd packages/vscode-extension
+npm install          # installs esbuild + TypeScript dev dependencies
+npm run build        # one-shot compile → out/extension.js
+npx vsce package --no-dependencies   # → jiuwenswarm-0.1.0.vsix
+```
+
+Install the resulting VSIX:
+
+```bash
+code --install-extension jiuwenswarm-0.1.0.vsix
+```
+
+---
+
 ## Development Build
 
 ```bash
@@ -17,8 +36,10 @@ Open `packages/vscode-extension` in VS Code and press **F5** to launch an Extens
 
 ```bash
 npm install -g @vscode/vsce
-vsce package       # → jiuwenswarm-0.1.0.vsix
+npx vsce package --no-dependencies   # → jiuwenswarm-0.1.0.vsix
 ```
+
+> `--no-dependencies` is used because runtime dependencies (`ws`) are not bundled; the extension connects via the host's native WebSocket.
 
 Install the VSIX locally for testing:
 

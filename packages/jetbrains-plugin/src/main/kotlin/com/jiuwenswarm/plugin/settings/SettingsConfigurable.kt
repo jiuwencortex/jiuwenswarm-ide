@@ -24,7 +24,7 @@ class SettingsConfigurable : Configurable {
     private val keepAliveIntervalSpinner = JSpinner(SpinnerNumberModel(settings.keepAliveInterval, 5, 300, 5))
 
     // ── Chat behaviour ──
-    private val defaultModeCombo = JComboBox(arrayOf("agent.plan", "agent.fast", "team")).also {
+    private val defaultModeCombo = JComboBox(arrayOf("code.plan", "code.normal", "code.team")).also {
         it.selectedItem = settings.defaultMode
     }
     private val loadHistoryOnSwitchBox = JBCheckBox(

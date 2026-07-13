@@ -88,7 +88,7 @@ export class ChatPanel implements vscode.WebviewViewProvider {
 
       case 'send': {
         const content = msg.content as string;
-        const mode = (msg.mode as string) || 'agent.plan';
+        const mode = (msg.mode as string) || 'code.plan';
         const rid = msg.requestId as string;
         const mediaItems = msg.media_items as unknown[] | undefined;
         if (!rid) return;

@@ -68,6 +68,26 @@ packages/
 
 Both plugins connect to `ws://localhost:19000/ws` using the same JSON protocol as the JiuwenSwarm web frontend, with `channel_id: "ide"`. The chat UI in `shared-webview/` is embedded via JCEF in JetBrains and as a VS Code webview, so both IDEs render an identical interface with the same behavior.
 
+### Build from source
+
+**VS Code extension:**
+
+```bash
+cd packages/vscode-extension
+npm install
+npm run build
+npx vsce package --no-dependencies
+# → jiuwenswarm-0.1.0.vsix
+```
+
+**JetBrains plugin:**
+
+```bash
+cd packages/jetbrains-plugin
+.\gradlew.bat --no-daemon buildPlugin -x buildSearchableOptions
+# → build/distributions/jiuwenswarm-plugin-0.1.0.zip
+```
+
 ## Feedback & Source
 
 JiuwenSwarm is open-source. Report issues and contribute at [github.com/openjiuwen](https://github.com/openjiuwen).

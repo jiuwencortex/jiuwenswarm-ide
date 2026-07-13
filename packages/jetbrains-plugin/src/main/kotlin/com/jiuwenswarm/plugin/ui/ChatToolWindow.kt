@@ -227,7 +227,7 @@ class ChatPanel(
                 "ready" -> sendCurrentStatus()
                 "send" -> {
                     val content = msg.get("content")?.asString ?: return
-                    val mode = msg.get("mode")?.asString ?: "agent.plan"
+                    val mode = msg.get("mode")?.asString ?: "code.plan"
                     val rid = msg.get("requestId")?.asString ?: return
                     val mediaItems = msg.getAsJsonArray("media_items")
                     lastRequestId = rid
@@ -266,7 +266,7 @@ class ChatPanel(
                 "switch_session" -> {
                     val sid = msg.get("sessionId")?.asString ?: return
                     // session.switch is a team-mode server operation — the user's
-                    // chat mode (agent.plan / agent.fast / team) is sent per-message,
+                    // chat mode (code.plan / code.normal / code.team) is sent per-message,
                     // not per-session.
                     debug("ACTION→ switch_session $sid mode=team")
                     ApplicationManager.getApplication().executeOnPooledThread {

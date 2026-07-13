@@ -212,22 +212,37 @@
     background: var(--bg3);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    min-width: 140px;
+    min-width: 220px;
     z-index: 9999;
     padding: 4px 0;
     box-shadow: 0 -4px 12px rgba(0,0,0,0.3);
   }
   #mode-dropdown.visible { display: block; }
   .mode-option {
-    padding: 6px 12px;
+    padding: 6px 12px 2px;
     font-size: 12px;
-    color: var(--text-muted);
+    color: var(--text);
     cursor: pointer;
-    white-space: nowrap;
     transition: background 0.1s, color 0.1s;
   }
-  .mode-option:hover { background: var(--bg); color: var(--text); }
-  .mode-option.selected { color: var(--text); font-weight: 600; }
+  .mode-option:hover { background: var(--bg); }
+  .mode-option.selected { font-weight: 600; }
+  .mode-desc {
+    padding: 0 12px 6px;
+    font-size: 10px;
+    color: var(--text-dim);
+    line-height: 1.35;
+    cursor: default;
+    pointer-events: none;
+    border-bottom: 1px solid transparent;
+  }
+  .mode-option:hover + .mode-desc,
+  .mode-desc:hover {
+    background: var(--bg);
+  }
+  .mode-option:last-of-type + .mode-desc {
+    border-bottom: none;
+  }
 
   /* ── Session picker (in-flow, replaces the messages area) ── */
   #session-overlay {
@@ -978,14 +993,17 @@
     <button id="attach-btn" disabled title="Add Image" onclick="document.getElementById('image-input').click()">+</button>
     <!-- Mode selector -->
     <div id="mode-wrap">
-      <button id="mode-btn" onclick="toggleModeDropdown()" title="Agent mode">
-        <span id="mode-label">Planning Mode</span>
+      <button id="mode-btn" onclick="toggleModeDropdown()" title="Coding mode — choose how the agent works">
+        <span id="mode-label">Plan & Explore</span>
         <span class="chevron">▾</span>
       </button>
       <div id="mode-dropdown">
-        <div class="mode-option selected" data-mode="agent.plan" onclick="selectMode('agent.plan')">Planning Mode</div>
-        <div class="mode-option"          data-mode="agent.fast" onclick="selectMode('agent.fast')">Performance Mode</div>
-        <div class="mode-option"          data-mode="team"      onclick="selectMode('team')">Cluster Mode</div>
+        <div class="mode-option selected" data-mode="code.plan"    onclick="selectMode('code.plan')">Plan & Explore</div>
+        <div class="mode-desc">Explore files, design a plan, wait for your approval — no edits yet</div>
+        <div class="mode-option"          data-mode="code.normal"  onclick="selectMode('code.normal')">Execute</div>
+        <div class="mode-desc">Edit files, run commands, verify and deliver results directly</div>
+        <div class="mode-option"          data-mode="code.team"    onclick="selectMode('code.team')">Team Coding</div>
+        <div class="mode-desc">Multi-agent collaboration: a leader assigns specialists in parallel</div>
       </div>
     </div>
     <!-- Model display — center/right -->
@@ -1037,7 +1055,7 @@ let state = {
   streaming: false,
   turns: [],
   pendingTurns: {},
-  mode: 'agent.plan',
+  mode: 'code.plan',
   themeMode: 'auto',   // 'auto' | 'dark' | 'light'
   attachments: [],     // { filename, mimeType, base64Data, previewUrl }
   rewindable: false,   // true when last turn edited files and rewind is available
@@ -1581,9 +1599,9 @@ function selectMode(mode) {
 function applyMode(mode) {
   state.mode = mode;
   var labels = {
-    'agent.plan': 'Planning Mode',
-    'agent.fast': 'Performance Mode',
-    'team': 'Cluster Mode'
+    'code.plan':   'Plan & Explore',
+    'code.normal': 'Execute',
+    'code.team':   'Team Coding'
   };
   document.getElementById('mode-label').textContent = labels[mode] || mode;
   document.querySelectorAll('.mode-option').forEach(function(opt) {

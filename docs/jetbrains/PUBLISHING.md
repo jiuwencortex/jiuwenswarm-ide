@@ -2,6 +2,27 @@
 
 This guide covers building, signing, and publishing the JiuwenSwarm plugin to the JetBrains Plugin Marketplace.
 
+## Quick Build from Source
+
+If you just want to build the plugin locally and install it manually:
+
+```bash
+cd packages/jetbrains-plugin
+.\gradlew.bat --no-daemon buildPlugin -x buildSearchableOptions
+# or on macOS/Linux:
+# ./gradlew buildPlugin -x buildSearchableOptions
+```
+
+The plugin ZIP is produced at:
+
+```
+build/distributions/jiuwenswarm-plugin-0.1.0.zip
+```
+
+Install via **Settings → Plugins → ⚙ → Install Plugin from Disk…** and select the ZIP.
+
+---
+
 ## Development Build
 
 ```bash

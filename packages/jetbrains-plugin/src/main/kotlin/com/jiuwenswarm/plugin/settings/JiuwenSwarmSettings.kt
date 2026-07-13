@@ -15,7 +15,7 @@ class JiuwenSwarmSettings : PersistentStateComponent<JiuwenSwarmSettings.State> 
         var host: String = "localhost",
         var port: Int = 19000,
         var channelId: String = "ide",
-        var defaultMode: String = "agent.plan",
+        var defaultMode: String = "code.plan",
         var autoConnect: Boolean = true,
         /** When true, file edits from the agent are applied directly without a diff dialog. */
         var autoApplyEdits: Boolean = false,
