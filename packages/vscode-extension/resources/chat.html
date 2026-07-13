@@ -662,6 +662,29 @@
     font-size: 12px;
   }
 
+  /* Typing dots animation */
+  .typing-dots {
+    display: inline-flex;
+    gap: 4px;
+    padding: 4px 0;
+    align-items: center;
+    height: 20px;
+  }
+  .typing-dots span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    animation: typingBounce 1.4s infinite ease-in-out both;
+  }
+  .typing-dots span:nth-child(1) { animation-delay: -0.32s; }
+  .typing-dots span:nth-child(2) { animation-delay: -0.16s; }
+  .typing-dots span:nth-child(3) { animation-delay: 0s; }
+  @keyframes typingBounce {
+    0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+    40% { transform: scale(1); opacity: 1; }
+  }
+
   /* Empty state */
   #empty-state {
     flex: 1;
@@ -1707,6 +1730,12 @@ function beginTurn(requestId, userContent) {
   bodyEl.className = 'msg-body assistant';
   aEl.appendChild(bodyEl);
 
+  // Typing indicator — removed when first content chunk arrives
+  const typingEl = document.createElement('div');
+  typingEl.className = 'typing-dots';
+  typingEl.innerHTML = '<span></span><span></span><span></span>';
+  bodyEl.appendChild(typingEl);
+
   msgs.appendChild(aEl);
 
   state.pendingTurns[requestId] = {
@@ -1714,6 +1743,7 @@ function beginTurn(requestId, userContent) {
     bodyEl: bodyEl,
     textContent: '',
     thinkingEl: null,
+    typingEl: typingEl,
   };
 
   scrollToBottom();
@@ -1722,6 +1752,11 @@ function beginTurn(requestId, userContent) {
 function appendDelta(rid, text) {
   const pt = state.pendingTurns[rid];
   if (!pt) return;
+  // First real content removes the typing spinner
+  if (pt.typingEl) {
+    pt.typingEl.remove();
+    pt.typingEl = null;
+  }
   pt.textContent += text;
   pt.bodyEl.innerHTML = renderMarkdown(pt.textContent);
   scrollToBottom();
@@ -1891,6 +1926,10 @@ function updateUsage(rid, payload) {
 function finalizeTurn(rid, payload) {
   const pt = state.pendingTurns[rid];
   if (pt) {
+    if (pt.typingEl) {
+      pt.typingEl.remove();
+      pt.typingEl = null;
+    }
     const finalContent = (payload && payload.content) ? payload.content : pt.textContent;
     if (finalContent) {
       pt.bodyEl.innerHTML = renderMarkdown(finalContent);
@@ -1910,6 +1949,10 @@ function finalizeTurn(rid, payload) {
 function appendError(rid, errorText) {
   const pt = state.pendingTurns[rid];
   if (pt) {
+    if (pt.typingEl) {
+      pt.typingEl.remove();
+      pt.typingEl = null;
+    }
     var errorEl = document.createElement('div');
     errorEl.className = 'error-msg';
     errorEl.style.marginTop = '8px';
@@ -1992,6 +2035,8 @@ function setStreaming(yes) {
   state.streaming = yes;
   inputEl.disabled = yes || !state.connected;
   sendBtn.disabled = yes || !state.connected;
+  sendBtn.textContent = yes ? '\u2026' : '\u2191';
+  sendBtn.title = yes ? 'Sending...' : 'Send (Enter)';
   const attachBtn = document.getElementById('attach-btn');
   if (attachBtn) attachBtn.disabled = yes || !state.connected;
   if (!yes) inputEl.focus();

@@ -534,19 +534,6 @@
   a.file-link > code {
     color: var(--accent);
     background: none;
-  }
-  /* ── Clickable symbol links in agent messages ── */
-  a.symbol-link {
-    color: #c586c0;
-    text-decoration: none;
-    border-bottom: 1px dotted #c586c0;
-    cursor: pointer;
-  }
-  a.symbol-link:hover { border-bottom-style: solid; }
-  a.symbol-link > code {
-    color: #c586c0;
-    background: none;
-  }
     padding: 0;
     border-radius: 0;
   }
@@ -673,6 +660,29 @@
     padding: 8px 12px;
     border-radius: var(--radius);
     font-size: 12px;
+  }
+
+  /* Typing dots animation */
+  .typing-dots {
+    display: inline-flex;
+    gap: 4px;
+    padding: 4px 0;
+    align-items: center;
+    height: 20px;
+  }
+  .typing-dots span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    animation: typingBounce 1.4s infinite ease-in-out both;
+  }
+  .typing-dots span:nth-child(1) { animation-delay: -0.32s; }
+  .typing-dots span:nth-child(2) { animation-delay: -0.16s; }
+  .typing-dots span:nth-child(3) { animation-delay: 0s; }
+  @keyframes typingBounce {
+    0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+    40% { transform: scale(1); opacity: 1; }
   }
 
   /* Empty state */
@@ -1012,18 +1022,6 @@ window.addEventListener('message', function(e) {
   handleHostMessage(e.data);
 });
 
-// Keywords we don't want to linkify as symbols
-var COMMON_KEYWORDS = new Set([
-  'YES','NO','ON','OFF','OK','API','URL','URI','ID','UUID',
-  'HTTP','HTTPS','FTP','SSH','JSON','XML','HTML','CSS','SQL',
-  'TODO','FIXME','NOTE','WARN','INFO','DEBUG','ERROR','NULL',
-  'TRUE','FALSE','NAN','INF','INT','STR','BOOL','FLOAT',
-  'GET','POST','PUT','DELETE','PATCH','HEAD','OPTIONS',
-  'TCP','UDP','IP','DNS','SSL','TLS',
-  'CPU','GPU','RAM','ROM','SSD','HDD',
-  'OS','UI','UX','CLI','GUI','SDK','IDE','AI','ML',
-]);
-
 // ─────────────────────────────────────────────
 // State
 // ─────────────────────────────────────────────
@@ -1351,7 +1349,7 @@ function renderSessionList() {
     item.title = s.session_id;
     item.onclick = function() {
       if (!isActive) {
-        send({ type: 'switch_session', sessionId: s.session_id, mode: state.mode });
+        send({ type: 'switch_session', sessionId: s.session_id });
       }
       toggleSessions();
     };
@@ -1449,7 +1447,7 @@ function updateSkills(skills) {
         (skill.trigger    ? '<div class="skill-trigger">' + escapeHtml(skill.trigger)    + '</div>' : '') +
       '</div>' +
       '<button class="skill-toggle-btn' + (enabled ? ' enabled' : '') + '" ' +
-        'onclick="toggleSkill(\'' + escapeHtml(skill.skill_id) + '\',' + (!enabled ? 'true' : 'false') + ')" ' +
+        'onclick="toggleSkill(' + JSON.stringify(skill.skill_id) + ',' + !enabled + ')" ' +
         'title="' + (enabled ? 'Disable' : 'Enable') + '">' +
         (enabled ? 'ON' : 'OFF') +
       '</button>';
@@ -1732,6 +1730,12 @@ function beginTurn(requestId, userContent) {
   bodyEl.className = 'msg-body assistant';
   aEl.appendChild(bodyEl);
 
+  // Typing indicator — removed when first content chunk arrives
+  const typingEl = document.createElement('div');
+  typingEl.className = 'typing-dots';
+  typingEl.innerHTML = '<span></span><span></span><span></span>';
+  bodyEl.appendChild(typingEl);
+
   msgs.appendChild(aEl);
 
   state.pendingTurns[requestId] = {
@@ -1739,6 +1743,7 @@ function beginTurn(requestId, userContent) {
     bodyEl: bodyEl,
     textContent: '',
     thinkingEl: null,
+    typingEl: typingEl,
   };
 
   scrollToBottom();
@@ -1747,6 +1752,11 @@ function beginTurn(requestId, userContent) {
 function appendDelta(rid, text) {
   const pt = state.pendingTurns[rid];
   if (!pt) return;
+  // First real content removes the typing spinner
+  if (pt.typingEl) {
+    pt.typingEl.remove();
+    pt.typingEl = null;
+  }
   pt.textContent += text;
   pt.bodyEl.innerHTML = renderMarkdown(pt.textContent);
   scrollToBottom();
@@ -1780,11 +1790,7 @@ function appendToolCall(rid, payload) {
   if (!pt) return;
 
   const toolName = payload.tool_name || payload.name || 'tool';
-  const toolInput = payload.tool_input
-    || payload.input
-    || (payload.tool_call && payload.tool_call.arguments)
-    || payload.arguments
-    || {};
+  const toolInput = payload.tool_input || payload.input || {};
 
   const card = document.createElement('div');
   card.className = 'tool-card';
@@ -1830,9 +1836,9 @@ function appendToolResult(rid, payload) {
   scrollToBottom();
 }
 
-// ────────────────────────────��────────────────
+// ─────────────────────────────────────────────
 // History rendering (session restore)
-// ────────────���───────────────────���────────────
+// ─────────────────────────────────────────────
 function renderHistoryMessage(payload) {
   var role = payload.role;
   var content = payload.content || '';
@@ -1899,28 +1905,31 @@ function renderHistoryMessage(payload) {
 }
 
 function updateUsage(rid, payload) {
+  const pt = state.pendingTurns[rid];
+  if (!pt) return;
+
   const inTok = payload.input_tokens || payload.cache_read_input_tokens || 0;
   const outTok = payload.output_tokens || 0;
   if (inTok || outTok) {
-    const total = (inTok + outTok).toLocaleString();
-    document.getElementById('token-counter').textContent = total + ' tok';
-    // Also append a usage line to the active turn, if still streaming
-    const pt = state.pendingTurns[rid];
-    if (pt) {
-      let usageEl = pt.containerEl.querySelector('.usage-line');
-      if (!usageEl) {
-        usageEl = document.createElement('div');
-        usageEl.className = 'usage-line';
-        pt.containerEl.appendChild(usageEl);
-      }
-      usageEl.textContent = total + ' tokens';
+    let usageEl = pt.containerEl.querySelector('.usage-line');
+    if (!usageEl) {
+      usageEl = document.createElement('div');
+      usageEl.className = 'usage-line';
+      pt.containerEl.appendChild(usageEl);
     }
+    const total = (inTok + outTok).toLocaleString();
+    usageEl.textContent = total + ' tokens';
+    document.getElementById('token-counter').textContent = total + ' tok';
   }
 }
 
 function finalizeTurn(rid, payload) {
   const pt = state.pendingTurns[rid];
   if (pt) {
+    if (pt.typingEl) {
+      pt.typingEl.remove();
+      pt.typingEl = null;
+    }
     const finalContent = (payload && payload.content) ? payload.content : pt.textContent;
     if (finalContent) {
       pt.bodyEl.innerHTML = renderMarkdown(finalContent);
@@ -1940,6 +1949,10 @@ function finalizeTurn(rid, payload) {
 function appendError(rid, errorText) {
   const pt = state.pendingTurns[rid];
   if (pt) {
+    if (pt.typingEl) {
+      pt.typingEl.remove();
+      pt.typingEl = null;
+    }
     var errorEl = document.createElement('div');
     errorEl.className = 'error-msg';
     errorEl.style.marginTop = '8px';
@@ -2022,6 +2035,8 @@ function setStreaming(yes) {
   state.streaming = yes;
   inputEl.disabled = yes || !state.connected;
   sendBtn.disabled = yes || !state.connected;
+  sendBtn.textContent = yes ? '\u2026' : '\u2191';
+  sendBtn.title = yes ? 'Sending...' : 'Send (Enter)';
   const attachBtn = document.getElementById('attach-btn');
   if (attachBtn) attachBtn.disabled = yes || !state.connected;
   if (!yes) inputEl.focus();
@@ -2151,10 +2166,6 @@ function openFileLink(el) {
   send({ type: 'open_file', path: path, line: line });
 }
 
-function navigateSymbol(symbol) {
-  send({ type: 'navigate_symbol', symbol: symbol });
-}
-
 function renderInline(line) {
   line = line.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
   line = line.replace(/\*([^*]+)\*/g, '<em>$1</em>');
@@ -2172,11 +2183,6 @@ function renderInline(line) {
   });
   // Generic backtick handler for remaining non-file spans
   line = line.replace(/`([^`]+)`/g, function(_, c) {
-    // Detect symbol-like identifiers (e.g. MyClass, my_function, MAX_SIZE)
-    // Skip if it looks like a file path, URL, or common keyword
-    if (/^[A-Z_][A-Za-z0-9_]*$/.test(c) && c.length >= 3 && !COMMON_KEYWORDS.has(c)) {
-      return '<a class="symbol-link" onclick="navigateSymbol(\'' + escapeHtml(c) + '\')"><code>' + escapeHtml(c) + '</code></a>';
-    }
     return '<code>' + escapeHtml(c) + '</code>';
   });
   // Pattern 2: bare path/to/file.ext:N outside backticks and existing HTML
