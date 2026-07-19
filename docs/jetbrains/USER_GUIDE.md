@@ -14,7 +14,7 @@ Open **Settings → Tools → JiuwenSwarm**:
 | Server port | `19000` | Port the server is listening on — connects to `ws://host:port/ws` |
 | Channel ID | `ide` | Identifies this client in server logs and TraceHound traces |
 | Connect automatically on startup | on | Opens the WebSocket connection when the IDE starts |
-| **Default mode** | `agent.plan` | Pre-selects the agent mode (Planning / Performance / Cluster) used when a new session is created |
+| **Default mode** | `code.plan` | Pre-selects the agent mode (Plan & Explore / Execute / Team Coding) used when a new session is created |
 | Auto-apply file edits (skip diff dialog) | off | When on, agent file edits are written immediately without a review window |
 | Run bash / shell commands in IDE terminal | on | Sends agent shell commands to a dedicated terminal tab; disable to run them silently |
 | **Load history when switching sessions** | on | Automatically fetches and displays past messages when you switch to an existing session |
@@ -57,9 +57,9 @@ Located in the input bar at the bottom:
 
 | Mode | Internal key | Description |
 |------|-------------|-------------|
-| **Planning Mode** | `agent.plan` | Full planning mode. The agent reasons step-by-step, reads code, and acts autonomously. Best for non-trivial tasks. |
-| **Performance Mode** | `agent.fast` | Faster, lighter mode. Good for quick questions and small changes. |
-| **Cluster Mode** | `team` | Multi-agent team mode. Spawns specialised sub-agents to collaborate on larger tasks. |
+| **Plan & Explore** | `code.plan` | Explore files, design a plan, wait for your approval — no edits yet. Best for non-trivial tasks. |
+| **Execute** | `code.normal` | Edit files, run commands, verify and deliver results directly. Good for quick changes and clear tasks. |
+| **Team Coding** | `code.team` | Multi-agent collaboration: a leader assigns specialists in parallel. Best for large, decomposable tasks. |
 
 Click the mode button to open the dropdown and switch. If the active session already has messages you will be asked to confirm because switching mode creates a new session.
 

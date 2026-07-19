@@ -62,7 +62,7 @@ The plugin uses the same JSON message protocol as the web frontend.
   "method": "chat.send",
   "params": {
     "content": "Refactor this function to use async/await",
-    "mode": "agent.plan"
+    "mode": "code.plan"
   },
   "timestamp": 1720000000.0
 }
@@ -413,6 +413,6 @@ Not required for the current feature set.
 
 3. **No server running**: The plugin should show a helpful setup prompt rather than a raw "connection refused". Could bundle a launcher command.
 
-4. **Inline completions latency**: `agent.plan` / `agent.fast` have 1–3 s latency — too slow for ghost text. A dedicated fast model path (`code.complete` mode) would need to be added to `ReqMethod`.
+4. **Inline completions latency**: `code.plan` / `code.normal` have 1–3 s latency — too slow for ghost text. A dedicated fast model path (`code.complete` mode) would need to be added to `ReqMethod`.
 
 5. **Project-wide indexing**: Proactively sending all project file contents is expensive for large repos. Start with active file + selection; add opt-in "send project index" for smaller repos.

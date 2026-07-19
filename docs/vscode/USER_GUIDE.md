@@ -14,7 +14,7 @@ Open **Settings → Extensions → JiuwenSwarm**:
 | `jiuwenswarm.port` | `19000` | Port the server is listening on — connects to `ws://host:port/ws` |
 | `jiuwenswarm.channelId` | `ide` | Identifies this client in server logs and TraceHound traces |
 | `jiuwenswarm.autoConnect` | `true` | Opens the WebSocket connection when VS Code starts |
-| `jiuwenswarm.defaultMode` | `agent.plan` | Default agent mode (agent.plan / agent.fast / team) for new sessions |
+| `jiuwenswarm.defaultMode` | `code.plan` | Default agent mode (code.plan / code.normal / code.team) for new sessions |
 | `jiuwenswarm.loadHistoryOnSwitch` | `true` | Automatically fetches and displays past messages when you switch to an existing session |
 | `jiuwenswarm.rewindEnabled` | `true` | Enables file snapshots after each agent turn and shows the rewind bar; disable to reduce memory usage |
 | `jiuwenswarm.projectTree.enabled` | `true` | Appends a 2-level directory listing of the workspace root to every outgoing message |
@@ -55,9 +55,9 @@ Located in the input bar at the bottom:
 
 | Mode | Internal key | Description |
 |------|-------------|-------------|
-| **Planning Mode** | `agent.plan` | Full planning mode. The agent reasons step-by-step, reads code, and acts autonomously. Best for non-trivial tasks. |
-| **Performance Mode** | `agent.fast` | Faster, lighter mode. Good for quick questions and small changes. |
-| **Cluster Mode** | `team` | Multi-agent team mode. Spawns specialised sub-agents to collaborate on larger tasks. |
+| **Plan & Explore** | `code.plan` | Explore files, design a plan, wait for your approval — no edits yet. Best for non-trivial tasks. |
+| **Execute** | `code.normal` | Edit files, run commands, verify and deliver results directly. Good for quick changes and clear tasks. |
+| **Team Coding** | `code.team` | Multi-agent collaboration: a leader assigns specialists in parallel. Best for large, decomposable tasks. |
 
 Click the mode button to open the dropdown and switch. If the active session already has messages you will be asked to confirm because switching mode creates a new session.
 

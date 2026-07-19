@@ -268,10 +268,10 @@ class ChatPanel(
                     // session.switch is a team-mode server operation — the user's
                     // chat mode (code.plan / code.normal / code.team) is sent per-message,
                     // not per-session.
-                    debug("ACTION→ switch_session $sid mode=team")
+                    debug("ACTION→ switch_session $sid mode=code.team")
                     ApplicationManager.getApplication().executeOnPooledThread {
                         try {
-                            service.session.switchSession(sid, "team")
+                            service.session.switchSession(sid, "code.team")
                             val loadHistory = JiuwenSwarmSettings.instance().loadHistoryOnSwitch
                             dispatchToWebview(mapOf("type" to "history_loading", "loading" to loadHistory))
                             sendCurrentStatus()

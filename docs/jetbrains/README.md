@@ -57,7 +57,7 @@ The chat panel renders inside the IDE via JCEF. It supports:
 
 - Markdown rendering with syntax-highlighted code blocks
 - Collapsible tool call cards showing every agent action with live status, inputs, and outputs
-- A mode selector dropdown (`agent.plan`, `agent.fast`, `team`)
+- A mode selector dropdown (`code.plan`, `code.normal`, `code.team`)
 - A session dropdown to create, switch, or delete conversations
 - A skills panel to view and toggle registered skills
 - Clickable file links in agent responses — click to open the file at the referenced line

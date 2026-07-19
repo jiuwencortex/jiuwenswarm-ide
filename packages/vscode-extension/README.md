@@ -27,7 +27,7 @@ JiuwenSwarm must be running locally before the extension connects. By default th
 |---------|---------|-------------|
 | `jiuwenswarm.host` | `localhost` | JiuwenSwarm server hostname |
 | `jiuwenswarm.port` | `19000` | JiuwenSwarm WebSocket port |
-| `jiuwenswarm.defaultMode` | `agent.plan` | Default agent mode: Planning / Performance / Team |
+| `jiuwenswarm.defaultMode` | `code.plan` | Default agent mode: Plan & Explore / Execute / Team Coding |
 | `jiuwenswarm.channelId` | `ide` | Channel ID reported to JiuwenSwarm |
 | `jiuwenswarm.autoConnect` | `true` | Automatically connect on startup |
 

@@ -31,7 +31,7 @@ Open **Settings → Extensions → JiuwenSwarm**:
 |---------|---------|-------------|
 | `jiuwenswarm.host` | `localhost` | JiuwenSwarm server hostname |
 | `jiuwenswarm.port` | `19000` | WebSocket port |
-| `jiuwenswarm.defaultMode` | `agent.plan` | Default agent mode: `agent.plan` / `agent.fast` / `team` |
+| `jiuwenswarm.defaultMode` | `code.plan` | Default agent mode: `code.plan` / `code.normal` / `code.team` |
 | `jiuwenswarm.channelId` | `ide` | Channel ID reported to the server |
 | `jiuwenswarm.autoConnect` | `true` | Connect on startup |
 | `jiuwenswarm.approveEdits` | `false` | Show approval prompt before applying agent file edits |
@@ -56,7 +56,7 @@ The chat panel renders in the sidebar using a VS Code webview. It supports:
 
 - Markdown rendering with syntax-highlighted code blocks
 - Collapsible tool call cards showing every agent action with live status, inputs, and outputs
-- A mode selector dropdown (`agent.plan`, `agent.fast`, `team`)
+- A mode selector dropdown (`code.plan`, `code.normal`, `code.team`)
 - A session dropdown to create, switch, or delete conversations
 - A skills panel to view and toggle registered skills
 - Clickable file links in agent responses — click to open the file at the referenced line
