@@ -1850,6 +1850,7 @@ function beginTurn(requestId, userContent) {
     inputTokens: 0,
     outputTokens: 0,
     costUsd: 0,
+    toolErrors: [],
     errorCategories: [],
   };
 
@@ -1936,8 +1937,13 @@ function appendToolResult(rid, payload) {
 
   const statusEl = pt.lastToolCard.querySelector('.tool-status');
   const result = payload.tool_result || payload.content || payload.result || '';
-  const isError = payload.is_error || false;
-  if (isError) pt.toolErrorCount++;
+  const isError = payload.is_error || /^(Error|success=False|error=')/.test(String(result));
+  if (isError) {
+    pt.toolErrorCount++;
+    const errMsg = String(result).replace(/^success=False\s+data=None\s+error='/g, '').replace(/'$/g, '').trim();
+    pt.toolErrors = pt.toolErrors || [];
+    pt.toolErrors.push(errMsg || 'Unknown error');
+  }
 
   if (statusEl) {
     statusEl.innerHTML = isError
@@ -2091,7 +2097,11 @@ function finalizeTurn(rid, payload) {
     if (totalTok)           footerHtml += '<span class="stat-chip">'          + fmtTok(totalTok)      + ' tok</span>';
     if (pt.llmCallCount > 1) footerHtml += '<span class="stat-chip">'         + pt.llmCallCount       + ' LLM calls</span>';
     if (pt.toolCallCount)   footerHtml += '<span class="stat-chip">'          + pt.toolCallCount      + ' tools</span>';
-    if (pt.toolErrorCount)  footerHtml += '<span class="stat-chip stat-chip-warn">' + pt.toolErrorCount + ' tool err</span>';
+    if (pt.toolErrorCount) {
+      const errSummary = pt.toolErrors.map(function(e) { return '• ' + escapeHtml(e); }).join('\n');
+      footerHtml += '<span class="stat-chip stat-chip-warn" onclick="var n=this.nextElementSibling;n.style.display=n.style.display===\'none\'?\'block\':\'none\'" style="cursor:pointer">' + pt.toolErrorCount + ' tool err</span>';
+      footerHtml += '<div class="tool-error-detail" style="display:none;margin-top:4px;padding:4px 8px;background:rgba(245,158,11,0.1);border-radius:4px;font-size:11px;white-space:pre-wrap;line-height:1.4">' + errSummary + '</div>';
+    }
     footerHtml += '<span class="stat-chip">' + fmtMs(durationMs) + '</span>';
     footerHtml += '<span class="stat-chip stat-chip-dim">' + lengthBadge + '</span>';
     footer.innerHTML = footerHtml;
