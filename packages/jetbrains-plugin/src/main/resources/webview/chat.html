@@ -1897,8 +1897,14 @@ function appendToolCall(rid, payload) {
   const pt = state.pendingTurns[rid];
   if (!pt) return;
 
-  const toolName = payload.tool_name || payload.name || 'tool';
-  const toolInput = payload.tool_input || payload.input || {};
+  const toolName = payload.tool_name || payload.name || (payload.tool_call && payload.tool_call.name) || 'tool';
+  let toolInput = payload.tool_args || payload.tool_input || payload.input || {};
+
+  if (payload.tool_call && typeof payload.tool_call.arguments === 'string') {
+    try { toolInput = JSON.parse(payload.tool_call.arguments); } catch (_) {}
+  } else if (payload.tool_call && typeof payload.tool_call.arguments === 'object') {
+    toolInput = payload.tool_call.arguments;
+  }
 
   const card = document.createElement('div');
   card.className = 'tool-card';
