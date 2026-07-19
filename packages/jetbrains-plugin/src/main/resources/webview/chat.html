@@ -875,6 +875,67 @@
   .session-delete-btn:hover { color: var(--error-text); border-color: var(--error-text); }
   .session-delete-btn.confirm { color: var(--error-text); border-color: var(--error-text); background: rgba(220,50,50,0.1); }
 
+  /* ── Session stats bar (live TraceHound-style metrics) ── */
+  #session-stats-bar {
+    display: none;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 5px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg2);
+    font-size: 11px;
+    flex-shrink: 0;
+  }
+  #session-stats-bar.visible { display: flex; }
+  .ss-chip { color: var(--text-dim); white-space: nowrap; }
+  .ss-chip b { color: var(--text); font-weight: 600; }
+  .ss-chip-err b { color: #ef4444; }
+
+  /* ── Mini bar charts (tokens/turn + duration/turn) ── */
+  #mini-charts {
+    display: none;
+    gap: 12px;
+    padding: 5px 12px 4px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg2);
+    flex-shrink: 0;
+  }
+  #mini-charts.visible { display: flex; }
+  .mini-chart { flex: 1; min-width: 0; }
+  .mini-chart-label { font-size: 10px; color: var(--text-dim); margin-bottom: 3px; }
+  .mini-bars { display: flex; align-items: flex-end; gap: 2px; height: 28px; }
+  .mini-bar { flex: 1; min-width: 3px; border-radius: 1px 1px 0 0; transition: opacity 0.15s; }
+  .mini-bar:hover { opacity: 0.7; cursor: default; }
+
+  /* ── Turn stats footer ── */
+  .turn-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+    margin-top: 6px;
+    padding-top: 5px;
+    border-top: 1px solid var(--border);
+  }
+  .stat-badge {
+    padding: 1px 7px;
+    border-radius: 10px;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: capitalize;
+  }
+  .stat-chip {
+    padding: 1px 6px;
+    border-radius: 10px;
+    background: var(--bg3);
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    font-size: 10px;
+  }
+  .stat-chip-warn { color: #f59e0b; border-color: rgba(245,158,11,0.4); }
+  .stat-chip-dim  { opacity: 0.55; }
+
   /* ── Rewind bar (shown after agent edits files) ── */
   #rewind-bar {
     display: none;
@@ -957,6 +1018,10 @@
     </div>
   </div>
 </div>
+
+<!-- Live session metrics — filled by JS as events arrive -->
+<div id="session-stats-bar"></div>
+<div id="mini-charts"></div>
 
 <div id="messages">
   <div id="empty-state">
@@ -1060,6 +1125,18 @@ let state = {
   attachments: [],     // { filename, mimeType, base64Data, previewUrl }
   rewindable: false,   // true when last turn edited files and rewind is available
   historyLoading: false, // true while session history is being loaded after a switch
+  sessionStats: {
+    totalTurns: 0,
+    totalErrors: 0,
+    totalTokens: 0,
+    totalLlmCalls: 0,
+    totalCostUsd: 0,
+    latencies: [],      // ms per completed turn
+    ttfts: [],          // ms time-to-first-token per turn
+    turnTokens: [],     // total tokens per turn (for chart)
+    turnDurations: [],  // ms per turn (for chart)
+    outcomes: [],       // outcome string per turn (for chart colours)
+  },
 };
 var _historyPendingAssistant = null; // assistant turn being assembled from history records
 
@@ -1762,6 +1839,18 @@ function beginTurn(requestId, userContent) {
     textContent: '',
     thinkingEl: null,
     typingEl: typingEl,
+    // metrics tracking
+    startTime: Date.now(),
+    firstTokenTime: null,
+    llmCallCount: 0,
+    toolCallCount: 0,
+    toolErrorCount: 0,
+    hasError: false,
+    hasFinal: false,
+    inputTokens: 0,
+    outputTokens: 0,
+    costUsd: 0,
+    errorCategories: [],
   };
 
   scrollToBottom();
@@ -1770,11 +1859,12 @@ function beginTurn(requestId, userContent) {
 function appendDelta(rid, text) {
   const pt = state.pendingTurns[rid];
   if (!pt) return;
-  // First real content removes the typing spinner
+  // First real content removes the typing spinner and records TTFT
   if (pt.typingEl) {
     pt.typingEl.remove();
     pt.typingEl = null;
   }
+  if (!pt.firstTokenTime) pt.firstTokenTime = Date.now();
   pt.textContent += text;
   pt.bodyEl.innerHTML = renderMarkdown(pt.textContent);
   scrollToBottom();
@@ -1830,6 +1920,7 @@ function appendToolCall(rid, payload) {
   card.appendChild(body);
   pt.containerEl.insertBefore(card, pt.bodyEl);
   pt.lastToolCard = card;
+  pt.toolCallCount++;
   scrollToBottom();
 }
 
@@ -1840,6 +1931,7 @@ function appendToolResult(rid, payload) {
   const statusEl = pt.lastToolCard.querySelector('.tool-status');
   const result = payload.tool_result || payload.content || payload.result || '';
   const isError = payload.is_error || false;
+  if (isError) pt.toolErrorCount++;
 
   if (statusEl) {
     statusEl.innerHTML = isError
@@ -1926,8 +2018,15 @@ function updateUsage(rid, payload) {
   const pt = state.pendingTurns[rid];
   if (!pt) return;
 
-  const inTok = payload.input_tokens || payload.cache_read_input_tokens || 0;
+  const inTok  = payload.input_tokens  || payload.cache_read_input_tokens || 0;
   const outTok = payload.output_tokens || 0;
+  const cost   = payload.cost_usd || 0;
+
+  pt.llmCallCount++;
+  pt.inputTokens  += inTok;
+  pt.outputTokens += outTok;
+  pt.costUsd      += cost;
+
   if (inTok || outTok) {
     let usageEl = pt.containerEl.querySelector('.usage-line');
     if (!usageEl) {
@@ -1935,9 +2034,12 @@ function updateUsage(rid, payload) {
       usageEl.className = 'usage-line';
       pt.containerEl.appendChild(usageEl);
     }
-    const total = (inTok + outTok).toLocaleString();
-    usageEl.textContent = total + ' tokens';
-    document.getElementById('token-counter').textContent = total + ' tok';
+    const total = pt.inputTokens + pt.outputTokens;
+    let label = fmtTok(total) + ' tok';
+    if (pt.llmCallCount > 1) label += ' · ' + pt.llmCallCount + ' calls';
+    if (pt.costUsd > 0) label += ' · $' + pt.costUsd.toFixed(3);
+    usageEl.textContent = label;
+    document.getElementById('token-counter').textContent = fmtTok(total) + ' tok';
   }
 }
 
@@ -1958,6 +2060,38 @@ function finalizeTurn(rid, payload) {
     pt.containerEl.querySelectorAll('.tool-spinner').forEach(function(s) {
       s.classList.remove('tool-spinner');
     });
+
+    // ── Live metrics ──
+    pt.hasFinal = true;
+    const durationMs  = Date.now() - pt.startTime;
+    const outcome     = classifyOutcome(pt);
+    const totalTok    = pt.inputTokens + pt.outputTokens;
+    const lengthBadge = classifyLength(finalContent || pt.textContent);
+    const ttftMs      = pt.firstTokenTime ? pt.firstTokenTime - pt.startTime : null;
+
+    const outcomeColors = {
+      completed:             '#2563eb',
+      completed_with_issues: '#f59e0b',
+      error:                 '#ef4444',
+      no_response:           '#8b5cf6',
+    };
+    const outcomeColor = outcomeColors[outcome] || '#6b7280';
+
+    const footer = document.createElement('div');
+    footer.className = 'turn-stats';
+    let footerHtml =
+      '<span class="stat-badge" style="background:' + outcomeColor + '">' +
+      outcome.replace(/_/g, ' ') + '</span>';
+    if (totalTok)           footerHtml += '<span class="stat-chip">'          + fmtTok(totalTok)      + ' tok</span>';
+    if (pt.llmCallCount > 1) footerHtml += '<span class="stat-chip">'         + pt.llmCallCount       + ' LLM calls</span>';
+    if (pt.toolCallCount)   footerHtml += '<span class="stat-chip">'          + pt.toolCallCount      + ' tools</span>';
+    if (pt.toolErrorCount)  footerHtml += '<span class="stat-chip stat-chip-warn">' + pt.toolErrorCount + ' tool err</span>';
+    footerHtml += '<span class="stat-chip">' + fmtMs(durationMs) + '</span>';
+    footerHtml += '<span class="stat-chip stat-chip-dim">' + lengthBadge + '</span>';
+    footer.innerHTML = footerHtml;
+    pt.containerEl.appendChild(footer);
+
+    updateSessionStats(outcome, totalTok, durationMs, pt.llmCallCount, pt.costUsd, ttftMs);
     delete state.pendingTurns[rid];
   }
   setStreaming(false);
@@ -1971,14 +2105,35 @@ function appendError(rid, errorText) {
       pt.typingEl.remove();
       pt.typingEl = null;
     }
+    pt.hasError = true;
+    var cat = classifyError(errorText);
+    pt.errorCategories.push(cat);
+
     var errorEl = document.createElement('div');
     errorEl.className = 'error-msg';
     errorEl.style.marginTop = '8px';
-    errorEl.textContent = '\u26A0 ' + escapeHtml(errorText);
+    errorEl.innerHTML =
+      '\u26A0 ' + escapeHtml(errorText) +
+      ' <span style="font-size:9px;opacity:0.7;margin-left:6px;text-transform:uppercase">[' + cat + ']</span>';
     pt.containerEl.appendChild(errorEl);
     pt.containerEl.querySelectorAll('.tool-spinner').forEach(function(s) {
       s.classList.remove('tool-spinner');
     });
+
+    // Render error turn stats footer
+    const durationMs = Date.now() - pt.startTime;
+    const totalTok   = pt.inputTokens + pt.outputTokens;
+    const footer = document.createElement('div');
+    footer.className = 'turn-stats';
+    footer.innerHTML =
+      '<span class="stat-badge" style="background:#ef4444">error</span>' +
+      '<span class="stat-chip stat-chip-warn">' + cat + '</span>' +
+      (totalTok ? '<span class="stat-chip">' + fmtTok(totalTok) + ' tok</span>' : '') +
+      '<span class="stat-chip">' + fmtMs(durationMs) + '</span>';
+    pt.containerEl.appendChild(footer);
+
+    updateSessionStats('error', totalTok, durationMs, pt.llmCallCount, pt.costUsd,
+      pt.firstTokenTime ? pt.firstTokenTime - pt.startTime : null);
     delete state.pendingTurns[rid];
   } else {
     showError(errorText);
@@ -2061,6 +2216,112 @@ function setStreaming(yes) {
 }
 
 // ─────────────────────────────────────────────
+// Live metrics helpers (TraceHound-style)
+// ─────────────────────────────────────────────
+function fmtTok(n) {
+  return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
+}
+
+function fmtMs(ms) {
+  return ms >= 1000 ? (ms / 1000).toFixed(1) + 's' : ms + 'ms';
+}
+
+function classifyError(text) {
+  var t = (text || '').toLowerCase();
+  if (/auth|unauthorized|forbidden|api.?key/.test(t))         return 'api_auth';
+  if (/timeout|timed.?out|deadline/.test(t))                  return 'timeout';
+  if (/file not found|permission denied|no such file/.test(t)) return 'filesystem';
+  if (/connection refused|dns|ssl/.test(t))                   return 'network';
+  if (/syntaxerror|parse error|invalid syntax/.test(t))       return 'syntax';
+  if (/importerror|no module|modulenot/.test(t))              return 'import';
+  if (/context.?length|token limit/.test(t))                  return 'model';
+  if (/runtimeerror|exception|traceback/.test(t))             return 'execution';
+  return 'other';
+}
+
+function classifyOutcome(pt) {
+  if (pt.hasError)   return 'error';
+  if (!pt.hasFinal)  return 'no_response';
+  if (pt.toolErrorCount > 0 || pt.llmCallCount > 4) return 'completed_with_issues';
+  return 'completed';
+}
+
+function classifyLength(text) {
+  var words = (text || '').split(/\s+/).filter(Boolean).length;
+  if (words < 30)  return 'terse';
+  if (words < 150) return 'normal';
+  if (words < 500) return 'verbose';
+  return 'essay';
+}
+
+function _avg(arr) {
+  return arr.length ? arr.reduce(function(a, b) { return a + b; }, 0) / arr.length : 0;
+}
+
+function updateSessionStats(outcome, tokens, durationMs, llmCalls, costUsd, ttftMs) {
+  var s = state.sessionStats;
+  s.totalTurns++;
+  if (outcome === 'error') s.totalErrors++;
+  s.totalTokens   += tokens;
+  s.totalLlmCalls += llmCalls;
+  s.totalCostUsd  += costUsd;
+  s.latencies.push(durationMs);
+  if (ttftMs != null) s.ttfts.push(ttftMs);
+  s.turnTokens.push(tokens);
+  s.turnDurations.push(durationMs);
+  s.outcomes.push(outcome);
+  renderStatsBar();
+  renderMiniCharts();
+}
+
+function renderStatsBar() {
+  var s = state.sessionStats;
+  var el = document.getElementById('session-stats-bar');
+  if (!el) return;
+  var avgLat  = fmtMs(Math.round(_avg(s.latencies)));
+  var avgTtft = s.ttfts.length ? fmtMs(Math.round(_avg(s.ttfts))) : '\u2014';
+  var html =
+    '<span class="ss-chip">Turns <b>' + s.totalTurns + '</b></span>' +
+    (s.totalErrors ? '<span class="ss-chip ss-chip-err">Errors <b>' + s.totalErrors + '</b></span>' : '') +
+    '<span class="ss-chip">Tokens <b>' + fmtTok(s.totalTokens) + '</b></span>' +
+    '<span class="ss-chip">LLM calls <b>' + s.totalLlmCalls + '</b></span>' +
+    '<span class="ss-chip">Avg latency <b>' + avgLat + '</b></span>' +
+    '<span class="ss-chip">Avg TTFT <b>' + avgTtft + '</b></span>';
+  if (s.totalCostUsd > 0) html += '<span class="ss-chip">Cost <b>$' + s.totalCostUsd.toFixed(3) + '</b></span>';
+  el.innerHTML = html;
+  el.classList.add('visible');
+}
+
+function renderMiniCharts() {
+  var el = document.getElementById('mini-charts');
+  if (!el) return;
+  var s = state.sessionStats;
+  if (s.totalTurns < 2) return;
+  var outcomeColor = {
+    completed:             '#2563eb',
+    completed_with_issues: '#f59e0b',
+    error:                 '#ef4444',
+    no_response:           '#8b5cf6',
+  };
+  function bars(values, maxVal) {
+    return values.map(function(v, i) {
+      var pct = Math.max(6, Math.round(v / maxVal * 100));
+      var col = outcomeColor[s.outcomes[i]] || '#6b7280';
+      var label = values[i] + (values === s.turnTokens ? ' tok' : 'ms');
+      return '<div class="mini-bar" style="height:' + pct + '%;background:' + col + '" title="Turn ' + (i + 1) + ': ' + label + '"></div>';
+    }).join('');
+  }
+  var maxTok = Math.max.apply(null, s.turnTokens.concat([1]));
+  var maxDur = Math.max.apply(null, s.turnDurations.concat([1]));
+  el.innerHTML =
+    '<div class="mini-chart"><div class="mini-chart-label">Tokens / turn</div>' +
+    '<div class="mini-bars">' + bars(s.turnTokens, maxTok) + '</div></div>' +
+    '<div class="mini-chart"><div class="mini-chart-label">Duration / turn</div>' +
+    '<div class="mini-bars">' + bars(s.turnDurations, maxDur) + '</div></div>';
+  el.classList.add('visible');
+}
+
+// ─────────────────────────────────────────────
 // Rewind
 // ─────────────────────────────────────────────
 function requestRewind() {
@@ -2092,6 +2353,15 @@ function clearMessages() {
   document.getElementById('token-counter').textContent = '';
   var rewindBar = document.getElementById('rewind-bar');
   if (rewindBar) rewindBar.classList.remove('visible');
+  // Reset live session metrics
+  state.sessionStats = {
+    totalTurns: 0, totalErrors: 0, totalTokens: 0, totalLlmCalls: 0, totalCostUsd: 0,
+    latencies: [], ttfts: [], turnTokens: [], turnDurations: [], outcomes: [],
+  };
+  var ssBar = document.getElementById('session-stats-bar');
+  if (ssBar) { ssBar.innerHTML = ''; ssBar.classList.remove('visible'); }
+  var mc = document.getElementById('mini-charts');
+  if (mc) { mc.innerHTML = ''; mc.classList.remove('visible'); }
 }
 
 function showError(msg) {
