@@ -2078,7 +2078,6 @@ function finalizeTurn(rid, payload) {
     const durationMs  = Date.now() - pt.startTime;
     const outcome     = classifyOutcome(pt);
     const totalTok    = pt.inputTokens + pt.outputTokens;
-    const lengthBadge = classifyLength(finalContent || pt.textContent);
     const ttftMs      = pt.firstTokenTime ? pt.firstTokenTime - pt.startTime : null;
 
     const outcomeColors = {
@@ -2097,6 +2096,7 @@ function finalizeTurn(rid, payload) {
     if (totalTok)           footerHtml += '<span class="stat-chip">'          + fmtTok(totalTok)      + ' tok</span>';
     if (pt.llmCallCount > 1) footerHtml += '<span class="stat-chip">'         + pt.llmCallCount       + ' LLM calls</span>';
     if (pt.toolCallCount)   footerHtml += '<span class="stat-chip">'          + pt.toolCallCount      + ' tools</span>';
+    if (ttftMs !== null)    footerHtml += '<span class="stat-chip stat-chip-dim">TTFT ' + fmtMs(ttftMs) + '</span>';
     if (pt.toolErrorCount) {
       const errSummary = pt.toolErrors.map(function(e) { return '• ' + escapeHtml(e); }).join('\n');
       footerHtml += '<span class="stat-chip stat-chip-warn" onclick="var n=this.nextElementSibling;n.style.display=n.style.display===\'none\'?\'block\':\'none\'" style="cursor:pointer">' + pt.toolErrorCount + ' tool err</span>';
@@ -2258,7 +2258,7 @@ function classifyError(text) {
 function classifyOutcome(pt) {
   if (pt.hasError)   return 'error';
   if (!pt.hasFinal)  return 'no_response';
-  if (pt.toolErrorCount > 0 || pt.llmCallCount > 4) return 'completed_with_issues';
+  if (pt.toolErrorCount > 0) return 'completed_with_issues';
   return 'completed';
 }
 
