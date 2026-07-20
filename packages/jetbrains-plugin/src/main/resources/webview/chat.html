@@ -767,6 +767,8 @@
   }
   #send-btn:hover:not(:disabled) { background: var(--accent-hover); }
   #send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  #send-btn.stop { background: #c0392b; font-size: 15px; }
+  #send-btn.stop:hover { background: #e74c3c; }
 
   #attach-btn {
     background: none;
@@ -833,17 +835,64 @@
     color: var(--text-dim);
   }
   #token-counter { color: var(--text-dim); }
-  #model-display {
-    color: var(--text-dim);
-    font-size: 10px;
+  #model-wrap {
+    position: relative;
     margin-left: auto;
     margin-right: 8px;
+  }
+  #model-btn {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 10px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 3px;
     white-space: nowrap;
+    max-width: 200px;
+    padding: 1px 4px;
+    border-radius: 3px;
+    transition: color 0.15s, background 0.15s;
+  }
+  #model-btn:hover { color: var(--text); background: var(--bg3); }
+  #model-btn .chevron { font-size: 8px; opacity: 0.6; }
+  #model-display {
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 200px;
   }
   #model-display:empty { display: none; }
+  #model-btn:has(#model-display:empty) .chevron { display: none; }
+
+  #model-dropdown {
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 4px);
+    right: 0;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    min-width: 200px;
+    max-height: 240px;
+    overflow-y: auto;
+    z-index: 9999;
+    padding: 4px 0;
+    box-shadow: 0 -4px 12px rgba(0,0,0,0.3);
+  }
+  #model-dropdown.visible { display: block; }
+  .model-option {
+    padding: 5px 12px;
+    font-size: 11px;
+    color: var(--text);
+    cursor: pointer;
+    transition: background 0.1s;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .model-option:hover { background: var(--bg); }
+  .model-option.selected { color: var(--accent); font-weight: 600; }
+  .model-option .model-provider { font-size: 9px; color: var(--text-dim); font-weight: 400; }
 
   /* Scrollbar for textareas */
   #input::-webkit-scrollbar { width: 4px; }
@@ -935,6 +984,68 @@
   }
   .stat-chip-warn { color: #f59e0b; border-color: rgba(245,158,11,0.4); }
   .stat-chip-dim  { opacity: 0.55; }
+
+  /* ── Copy button ── */
+  .copy-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    border-radius: 3px;
+    padding: 0 5px;
+    font-size: 10px;
+    cursor: pointer;
+    line-height: 1.6;
+    margin-left: 6px;
+    transition: color 0.1s, border-color 0.1s;
+  }
+  .copy-btn:hover { color: var(--text); border-color: var(--text-muted); }
+  .copy-btn.copied { color: #4ec9b0; border-color: #4ec9b0; }
+
+  /* ── Resend button on user messages ── */
+  .resend-btn {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 10px;
+    padding: 0;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s;
+    line-height: 1;
+  }
+  .msg:hover .resend-btn { opacity: 0.6; }
+  .resend-btn:hover { opacity: 1 !important; color: var(--accent); }
+
+  /* ── Session title inline edit ── */
+  .session-title-input {
+    background: var(--bg3);
+    border: 1px solid var(--accent);
+    color: var(--text);
+    border-radius: var(--radius);
+    padding: 1px 6px;
+    font-size: 12px;
+    font-weight: 600;
+    font-family: var(--font);
+    flex: 1;
+    min-width: 0;
+    outline: none;
+  }
+
+  /* ── Token usage bar ── */
+  #token-bar-wrap {
+    display: none;
+    height: 2px;
+    background: var(--bg3);
+    border-radius: 1px;
+    overflow: hidden;
+  }
+  #token-bar-wrap.visible { display: block; }
+  #token-bar-fill {
+    height: 100%;
+    border-radius: 1px;
+    transition: width 0.3s ease, background 0.3s ease;
+    width: 0%;
+  }
 
   /* ── Rewind bar (shown after agent edits files) ── */
   #rewind-bar {
@@ -1052,6 +1163,7 @@
     <textarea id="input" placeholder="Enter to send, Shift+Enter for new line" rows="1" disabled></textarea>
     <button id="send-btn" disabled title="Send (Enter)">↑</button>
   </div>
+  <div id="token-bar-wrap"><div id="token-bar-fill"></div></div>
   <input type="file" id="image-input" accept="image/png,image/jpeg,image/webp,image/gif" multiple style="display:none">
   <div id="input-meta">
     <!-- Attach button — leftmost -->
@@ -1071,8 +1183,14 @@
         <div class="mode-desc">Multi-agent collaboration: a leader assigns specialists in parallel</div>
       </div>
     </div>
-    <!-- Model display — center/right -->
-    <span id="model-display" title="Current model"></span>
+    <!-- Model selector -->
+    <div id="model-wrap">
+      <button id="model-btn" onclick="toggleModelDropdown()" title="Switch model">
+        <span id="model-display"></span>
+        <span class="chevron">▾</span>
+      </button>
+      <div id="model-dropdown"></div>
+    </div>
     <!-- Token counter — right side -->
     <span id="token-counter"></span>
   </div>
@@ -1118,8 +1236,11 @@ let state = {
   skills: [],
   showDebug: false,
   streaming: false,
+  models: [],
+  activeModel: null,
   turns: [],
   pendingTurns: {},
+  lastUserEl: null,
   mode: 'code.plan',
   themeMode: 'auto',   // 'auto' | 'dark' | 'light'
   attachments: [],     // { filename, mimeType, base64Data, previewUrl }
@@ -1147,6 +1268,8 @@ function handleHostMessage(msg) {
   switch (msg.type) {
     case 'connected':
       setConnected(true, msg.sessionId, msg.sessionTitle);
+      state.models = msg.models || [];
+      state.activeModel = msg.activeModel || null;
       if (msg.models) updateModelDisplay(msg.models, msg.activeModel);
       break;
     case 'disconnected':
@@ -1219,6 +1342,22 @@ function handleHostMessage(msg) {
     case 'history_loading':
       state.historyLoading = !!msg.loading;
       break;
+    case 'session_renamed':
+      state.sessionTitle = msg.title;
+      document.getElementById('header-title').textContent = msg.title;
+      if (state.sessions) {
+        state.sessions = state.sessions.map(function(s) {
+          if (s.session_id === state.sessionId) s.title = msg.title;
+          return s;
+        });
+        renderSessionList();
+      }
+      break;
+    case 'model_changed':
+      state.activeModel = msg.model;
+      if (msg.models) { state.models = msg.models; }
+      updateModelDisplay(state.models, state.activeModel);
+      break;
   }
 }
 
@@ -1272,11 +1411,12 @@ function setReconnecting() {
 function updateModelDisplay(models, activeModel) {
   const el = document.getElementById('model-display');
   if (!el) return;
+  state.models = models || [];
+  state.activeModel = activeModel || null;
   if (!models || !models.length) {
     el.textContent = '';
     return;
   }
-  // Find the active model entry
   const active = models.find(function(m) {
     return m.model_name === activeModel || m.alias === activeModel;
   });
@@ -1289,6 +1429,38 @@ function updateModelDisplay(models, activeModel) {
   } else {
     el.textContent = '';
   }
+  // Populate dropdown
+  var dd = document.getElementById('model-dropdown');
+  if (!dd) return;
+  dd.innerHTML = '';
+  models.forEach(function(m) {
+    var opt = document.createElement('div');
+    opt.className = 'model-option' + (m.model_name === activeModel || m.alias === activeModel ? ' selected' : '');
+    var label = (m.alias || m.model_name) + (m.model_provider ? ' \u00B7 ' + m.model_provider : '');
+    opt.innerHTML = '<span>' + escapeHtml(m.alias || m.model_name) + '</span>' +
+      (m.model_provider ? '<span class="model-provider">' + escapeHtml(m.model_provider) + '</span>' : '');
+    opt.onclick = function() {
+      var name = m.alias || m.model_name;
+      if (name !== state.activeModel && !state.streaming) {
+        state.activeModel = name;
+        send({ type: 'switch_model', model: m.model_name });
+        updateModelDisplay(state.models, name);
+      }
+      closeModelDropdown();
+    };
+    dd.appendChild(opt);
+  });
+}
+
+function toggleModelDropdown() {
+  var dd = document.getElementById('model-dropdown');
+  if (!dd) return;
+  dd.classList.toggle('visible');
+}
+
+function closeModelDropdown() {
+  var dd = document.getElementById('model-dropdown');
+  if (dd) dd.classList.remove('visible');
 }
 
 // ─────────────────────────────────────────────
@@ -1808,8 +1980,10 @@ function beginTurn(requestId, userContent) {
   userEl.className = 'msg';
   userEl.innerHTML =
     '<div class="msg-header user">You</div>' +
-    '<div class="msg-body user">' + escapeHtml(userContent) + '</div>';
+    '<div class="msg-body user">' + escapeHtml(userContent) + '</div>' +
+    '<button class="resend-btn" onclick="resendMessage(this)" title="Resend">\u21BA</button>';
   msgs.appendChild(userEl);
+  state.lastUserEl = userEl;
 
   // Assistant message (streaming)
   const aEl = document.createElement('div');
@@ -1873,7 +2047,7 @@ function appendDelta(rid, text) {
 
 function appendThinking(rid, text) {
   const pt = state.pendingTurns[rid];
-  if (!pt) return;
+  if (!pt || !text) return;
 
   if (!pt.thinkingEl) {
     const block = document.createElement('div');
@@ -1940,9 +2114,10 @@ function appendToolResult(rid, payload) {
   const isError = payload.is_error || /^(Error|success=False|error=')/.test(String(result));
   if (isError) {
     pt.toolErrorCount++;
-    const errMsg = String(result).replace(/^success=False\s+data=None\s+error='/g, '').replace(/'$/g, '').trim();
+    var toolName = pt.lastToolCard.dataset.toolName || 'tool';
+    var errMsg = String(result).replace(/^success=False\s+data=None\s+error='/g, '').replace(/'$/g, '').trim();
     pt.toolErrors = pt.toolErrors || [];
-    pt.toolErrors.push(errMsg || 'Unknown error');
+    pt.toolErrors.push(toolName + ': ' + (errMsg || 'Unknown error'));
   }
 
   if (statusEl) {
@@ -2072,9 +2247,27 @@ function finalizeTurn(rid, payload) {
     pt.containerEl.querySelectorAll('.tool-spinner').forEach(function(s) {
       s.classList.remove('tool-spinner');
     });
+    // Resolve any tool cards still showing "running" (no result event arrived)
+    pt.containerEl.querySelectorAll('.tool-status').forEach(function(s) {
+      if (s.textContent.indexOf('running') !== -1) {
+        s.innerHTML = '<span style="color:var(--text-dim)">\u2713 done</span>';
+      }
+    });
 
     // ── Live metrics ──
     pt.hasFinal = true;
+
+    // Copy button on assistant header
+    var hdrEl = pt.containerEl.querySelector('.msg-header.assistant');
+    if (hdrEl && !hdrEl.querySelector('.copy-btn')) {
+      var cb = document.createElement('button');
+      cb.className = 'copy-btn';
+      cb.textContent = '\uD83D\uDCCB';
+      cb.title = 'Copy response';
+      cb.onclick = function() { copyMessageContent(this); };
+      hdrEl.appendChild(cb);
+    }
+
     const durationMs  = Date.now() - pt.startTime;
     const outcome     = classifyOutcome(pt);
     const totalTok    = pt.inputTokens + pt.outputTokens;
@@ -2096,14 +2289,13 @@ function finalizeTurn(rid, payload) {
     if (totalTok)           footerHtml += '<span class="stat-chip">'          + fmtTok(totalTok)      + ' tok</span>';
     if (pt.llmCallCount > 1) footerHtml += '<span class="stat-chip">'         + pt.llmCallCount       + ' LLM calls</span>';
     if (pt.toolCallCount)   footerHtml += '<span class="stat-chip">'          + pt.toolCallCount      + ' tools</span>';
-    if (ttftMs !== null)    footerHtml += '<span class="stat-chip stat-chip-dim">TTFT ' + fmtMs(ttftMs) + '</span>';
+    if (ttftMs !== null)    footerHtml += '<span class="stat-chip stat-chip-dim" title="Time from send to first response token">first token ' + fmtMs(ttftMs) + '</span>';
     if (pt.toolErrorCount) {
       const errSummary = pt.toolErrors.map(function(e) { return '• ' + escapeHtml(e); }).join('\n');
-      footerHtml += '<span class="stat-chip stat-chip-warn" onclick="var n=this.nextElementSibling;n.style.display=n.style.display===\'none\'?\'block\':\'none\'" style="cursor:pointer">' + pt.toolErrorCount + ' tool err</span>';
+      footerHtml += '<span class="stat-chip stat-chip-warn" style="cursor:pointer;text-decoration:underline dotted rgba(245,158,11,0.5)" onclick="var n=this.nextElementSibling;n.style.display=n.style.display===\'none\'?\'block\':\'none\'">' + pt.toolErrorCount + ' tool err \u25BE</span>';
       footerHtml += '<div class="tool-error-detail" style="display:none;margin-top:4px;padding:4px 8px;background:rgba(245,158,11,0.1);border-radius:4px;font-size:11px;white-space:pre-wrap;line-height:1.4">' + errSummary + '</div>';
     }
     footerHtml += '<span class="stat-chip">' + fmtMs(durationMs) + '</span>';
-    footerHtml += '<span class="stat-chip stat-chip-dim">' + lengthBadge + '</span>';
     footer.innerHTML = footerHtml;
     pt.containerEl.appendChild(footer);
 
@@ -2128,12 +2320,15 @@ function appendError(rid, errorText) {
     var errorEl = document.createElement('div');
     errorEl.className = 'error-msg';
     errorEl.style.marginTop = '8px';
-    errorEl.innerHTML =
-      '\u26A0 ' + escapeHtml(errorText) +
-      ' <span style="font-size:9px;opacity:0.7;margin-left:6px;text-transform:uppercase">[' + cat + ']</span>';
+    errorEl.innerHTML = '\u26A0 ' + escapeHtml(errorText);
     pt.containerEl.appendChild(errorEl);
     pt.containerEl.querySelectorAll('.tool-spinner').forEach(function(s) {
       s.classList.remove('tool-spinner');
+    });
+    pt.containerEl.querySelectorAll('.tool-status').forEach(function(s) {
+      if (s.textContent.indexOf('running') !== -1) {
+        s.innerHTML = '<span style="color:var(--text-dim)">\u2713 done</span>';
+      }
     });
 
     // Render error turn stats footer
@@ -2143,7 +2338,6 @@ function appendError(rid, errorText) {
     footer.className = 'turn-stats';
     footer.innerHTML =
       '<span class="stat-badge" style="background:#ef4444">error</span>' +
-      '<span class="stat-chip stat-chip-warn">' + cat + '</span>' +
       (totalTok ? '<span class="stat-chip">' + fmtTok(totalTok) + ' tok</span>' : '') +
       '<span class="stat-chip">' + fmtMs(durationMs) + '</span>';
     pt.containerEl.appendChild(footer);
@@ -2177,7 +2371,13 @@ inputEl.addEventListener('input', function() {
   sendBtn.disabled = !this.value.trim() || !state.connected || state.streaming;
 });
 
-sendBtn.addEventListener('click', submitMessage);
+sendBtn.addEventListener('click', function() {
+  if (state.streaming) {
+    send({ type: 'stop' });
+  } else {
+    submitMessage();
+  }
+});
 
 const imageInputEl = document.getElementById('image-input');
 if (imageInputEl) {
@@ -2200,6 +2400,7 @@ function submitMessage() {
     type: 'send',
     content: content,
     mode: state.mode,
+    model: state.activeModel,
     requestId: requestId,
   };
   // Attach images if any
@@ -2223,12 +2424,20 @@ function submitMessage() {
 function setStreaming(yes) {
   state.streaming = yes;
   inputEl.disabled = yes || !state.connected;
-  sendBtn.disabled = yes || !state.connected;
-  sendBtn.textContent = yes ? '\u2026' : '\u2191';
-  sendBtn.title = yes ? 'Sending...' : 'Send (Enter)';
+  sendBtn.disabled = false; // always clickable: sends message or stops
+  if (yes) {
+    sendBtn.classList.add('stop');
+    sendBtn.textContent = '\u25A0';
+    sendBtn.title = 'Stop generation';
+  } else {
+    sendBtn.classList.remove('stop');
+    sendBtn.textContent = '\u2191';
+    sendBtn.title = 'Send (Enter)';
+    sendBtn.disabled = !inputEl.value.trim() || !state.connected;
+    inputEl.focus();
+  }
   const attachBtn = document.getElementById('attach-btn');
   if (attachBtn) attachBtn.disabled = yes || !state.connected;
-  if (!yes) inputEl.focus();
 }
 
 // ─────────────────────────────────────────────
@@ -2262,12 +2471,54 @@ function classifyOutcome(pt) {
   return 'completed';
 }
 
-function classifyLength(text) {
-  var words = (text || '').split(/\s+/).filter(Boolean).length;
-  if (words < 30)  return 'terse';
-  if (words < 150) return 'normal';
-  if (words < 500) return 'verbose';
-  return 'essay';
+function copyMessageContent(btn) {
+  var msg = btn.closest('.msg');
+  var body = msg ? msg.querySelector('.msg-body.assistant') : null;
+  var text = body ? body.textContent : '';
+  if (!text) return;
+  (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).catch(function() {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed'; ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  });
+  btn.textContent = '\u2713';
+  btn.classList.add('copied');
+  setTimeout(function() { btn.textContent = '\uD83D\uDCCB'; btn.classList.remove('copied'); }, 2000);
+}
+
+function resendMessage(btn) {
+  if (state.streaming) return;
+  var msg = btn.closest('.msg');
+  var body = msg ? msg.querySelector('.msg-body.user') : null;
+  if (!body) return;
+  var text = body.textContent;
+  var inputEl = document.getElementById('input');
+  if (inputEl) {
+    inputEl.value = text;
+    inputEl.dispatchEvent(new Event('input'));
+  }
+  submitMessage();
+}
+
+function updateTokenBar() {
+  var total = state.sessionStats.totalTokens;
+  var limit = 128000;
+  var pct = Math.min(100, Math.round(total / limit * 100));
+  var wrap = document.getElementById('token-bar-wrap');
+  var fill = document.getElementById('token-bar-fill');
+  if (!wrap || !fill) return;
+  if (total > 0) {
+    wrap.classList.add('visible');
+    fill.style.width = pct + '%';
+    fill.style.background = pct > 80 ? '#ef4444' : pct > 60 ? '#f59e0b' : 'var(--accent)';
+  } else {
+    fill.style.width = '0%';
+    wrap.classList.remove('visible');
+  }
 }
 
 function _avg(arr) {
@@ -2288,6 +2539,7 @@ function updateSessionStats(outcome, tokens, durationMs, llmCalls, costUsd, ttft
   s.outcomes.push(outcome);
   renderStatsBar();
   renderMiniCharts();
+  updateTokenBar();
 }
 
 function renderStatsBar() {
@@ -2502,6 +2754,49 @@ function renderInline(line) {
 // ─────────────────────────────────────────────
 window.addEventListener('load', function() {
   restoreTheme();
+
+  // Session rename on double-click
+  var htEl = document.getElementById('header-title');
+  if (htEl) {
+    htEl.addEventListener('dblclick', function() {
+      if (state.streaming) return;
+      var current = this.textContent;
+      var inp = document.createElement('input');
+      inp.type = 'text';
+      inp.className = 'session-title-input';
+      inp.value = current;
+      inp.maxLength = 100;
+      this.style.display = 'none';
+      this.parentNode.insertBefore(inp, this);
+      inp.focus();
+      inp.select();
+      function save() {
+        var val = inp.value.trim();
+        if (val && val !== current) {
+          state.sessionTitle = val;
+          send({ type: 'rename_session', title: val });
+        }
+        htEl.textContent = val || current;
+        htEl.style.display = '';
+        inp.remove();
+      }
+      inp.addEventListener('blur', save);
+      inp.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') { e.preventDefault(); save(); }
+        if (e.key === 'Escape') { htEl.style.display = ''; inp.remove(); }
+      });
+    });
+  }
+
+  // Close model dropdown on click outside
+  document.addEventListener('click', function(e) {
+    var wrap = document.getElementById('model-wrap');
+    if (wrap && !wrap.contains(e.target)) closeModelDropdown();
+    // Also close mode dropdown
+    var modeWrap = document.getElementById('mode-wrap');
+    if (modeWrap && !modeWrap.contains(e.target)) closeModeDropdown();
+  });
+
   send({ type: 'ready' });
 });
 </script>
