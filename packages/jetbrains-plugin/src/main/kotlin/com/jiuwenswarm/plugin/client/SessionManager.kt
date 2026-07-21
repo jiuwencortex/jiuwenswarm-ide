@@ -164,6 +164,17 @@ class SessionManager(
         return ws.send(msg)
     }
 
+    fun interrupt() {
+        val msg = buildJsonObject {
+            addProperty("id", java.util.UUID.randomUUID().toString())
+            addProperty("type", "req")
+            addProperty("channel_id", channelId)
+            addProperty("method", "chat.interrupt")
+            add("params", buildJsonObject { })
+        }
+        ws.send(msg)
+    }
+
     // ──────────────────────────────────────────
     private fun setSessionId(sid: String?) {
         if (sessionId == sid) return

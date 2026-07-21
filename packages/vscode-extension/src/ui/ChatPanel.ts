@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { WsClient, WsStatus } from '../client/WsClient';
 import { SessionManager } from '../client/SessionManager';
-import { JiuwenMessage, ExtToWebviewMsg } from '../client/protocol';
+import { JiuwenMessage, ExtToWebviewMsg, makeRequest } from '../client/protocol';
 import { collectContext } from '../context/ContextCollector';
 import { StatusBar } from './StatusBar';
 import * as DiffApplier from '../editor/DiffApplier';
@@ -183,6 +183,14 @@ export class ChatPanel implements vscode.WebviewViewProvider {
 
       case 'rewind': {
         this.handleRewind();
+        break;
+      }
+
+      case 'stop': {
+        if (!this.ws.isConnected()) break;
+        this.debug('ACTION→ stop (chat.interrupt)');
+        const msg = makeRequest('chat.interrupt', {});
+        this.ws.send(msg);
         break;
       }
     }

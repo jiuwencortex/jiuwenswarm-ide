@@ -68,7 +68,8 @@ export type WebviewToExtMsg =
   | { type: 'toggle_debug'; enabled: boolean }
   | { type: 'set_mode'; mode: string }
   | { type: 'open_file'; path: string; line?: number }
-  | { type: 'rewind' };
+  | { type: 'rewind' }
+  | { type: 'stop' };
 
 function randomId(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {

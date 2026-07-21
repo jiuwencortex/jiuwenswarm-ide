@@ -19,9 +19,17 @@
     "code",
     "productivity"
   ],
-  "engines": { "vscode": "^1.85.0" },
-  "categories": ["AI", "Chat", "Other"],
-  "activationEvents": ["onStartupFinished"],
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "AI",
+    "Chat",
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "viewsContainers": {
@@ -102,7 +110,11 @@
         "jiuwenswarm.defaultMode": {
           "type": "string",
           "default": "code.plan",
-          "enum": ["code.plan", "code.normal", "code.team"],
+          "enum": [
+            "code.plan",
+            "code.normal",
+            "code.team"
+          ],
           "description": "Default coding mode: Plan & Explore / Execute / Team Coding"
         },
         "jiuwenswarm.channelId": {
@@ -177,6 +189,7 @@
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.85.0",
     "@types/ws": "^8.5.10",
+    "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.21.0",
     "typescript": "^5.4.0"
   },

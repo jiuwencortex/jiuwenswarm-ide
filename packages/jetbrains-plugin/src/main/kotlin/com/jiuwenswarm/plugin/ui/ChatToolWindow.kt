@@ -390,6 +390,10 @@ class ChatPanel(
                         navigateToSymbol(symbol)
                     }
                 }
+                "stop" -> {
+                    debug("ACTION→ stop (chat.interrupt)")
+                    service.session.interrupt()
+                }
             }
         } catch (e: Exception) {
             LOG.warn("Failed to parse webview message: $jsonStr", e)
