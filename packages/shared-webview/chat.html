@@ -487,6 +487,7 @@
   #messages {
     flex: 1;
     overflow-y: auto;
+    overflow-x: hidden;
     padding: 12px;
     display: flex;
     flex-direction: column;
@@ -1007,8 +1008,7 @@
     content: attr(data-tooltip);
     position: absolute;
     bottom: calc(100% + 6px);
-    right: 50%;
-    transform: translateX(50%);
+    right: 0;
     background: #333;
     color: #eee;
     font-size: 11px;
@@ -2335,6 +2335,7 @@ function finalizeTurn(rid, payload) {
 
     // ── Live metrics ──
     pt.hasFinal = true;
+    if (payload.stopped) pt.stopped = true;
 
     const durationMs  = Date.now() - pt.startTime;
     const outcome     = classifyOutcome(pt);
@@ -2346,6 +2347,7 @@ function finalizeTurn(rid, payload) {
       completed_with_issues: '#f59e0b',
       error:                 '#ef4444',
       no_response:           '#8b5cf6',
+      stopped:               '#6b7280',
     };
     const outcomeColor = outcomeColors[outcome] || '#6b7280';
 
@@ -2455,7 +2457,7 @@ sendBtn.addEventListener('click', function() {
     // Without this, the UI stays stuck in streaming mode because the Gateway's
     // interrupt_result event is not handled by the webview.
     Object.keys(state.pendingTurns).forEach(function(rid) {
-      finalizeTurn(rid, {});
+      finalizeTurn(rid, { stopped: true });
     });
   } else {
     submitMessage();
@@ -2549,6 +2551,7 @@ function classifyError(text) {
 
 function classifyOutcome(pt) {
   if (pt.hasError)   return 'error';
+  if (pt.stopped)    return 'stopped';
   if (!pt.hasFinal)  return 'no_response';
   if (pt.toolErrorCount > 0) return 'completed_with_issues';
   return 'completed';
