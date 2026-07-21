@@ -635,7 +635,7 @@
     max-height: 200px;
     overflow-y: auto;
   }
-  .tool-header.open + .tool-body { display: block; }
+  .tool-header.open ~ .tool-body { display: block; }
   .tool-body.result { color: var(--text); border-top: 1px solid var(--tool-border); }
   /* ── History loading indicator ── */
   #history-loading {
@@ -1995,21 +1995,22 @@ function beginTurn(requestId, userContent) {
   headerEl.textContent = 'JiuwenSwarm';
   aEl.appendChild(headerEl);
 
-  const bodyEl = document.createElement('div');
-  bodyEl.className = 'msg-body assistant';
-  aEl.appendChild(bodyEl);
+  const streamEl = document.createElement('div');
+  streamEl.className = 'msg-body assistant stream';
+  aEl.appendChild(streamEl);
 
   // Typing indicator — removed when first content chunk arrives
   const typingEl = document.createElement('div');
   typingEl.className = 'typing-dots';
   typingEl.innerHTML = '<span></span><span></span><span></span>';
-  bodyEl.appendChild(typingEl);
+  streamEl.appendChild(typingEl);
 
   msgs.appendChild(aEl);
 
   state.pendingTurns[requestId] = {
     containerEl: aEl,
-    bodyEl: bodyEl,
+    streamEl: streamEl,
+    bodyEl: null,
     textContent: '',
     thinkingEl: null,
     typingEl: typingEl,
@@ -2018,6 +2019,8 @@ function beginTurn(requestId, userContent) {
     firstTokenTime: null,
     llmCallCount: 0,
     toolCallCount: 0,
+    toolCards: [],
+    toolResultIdx: 0,
     toolErrorCount: 0,
     hasError: false,
     hasFinal: false,
@@ -2041,7 +2044,16 @@ function appendDelta(rid, text) {
   }
   if (!pt.firstTokenTime) pt.firstTokenTime = Date.now();
   pt.textContent += text;
-  pt.bodyEl.innerHTML = renderMarkdown(pt.textContent);
+  // Append raw text to the stream (interleaved with tool cards)
+  var lastChild = pt.streamEl.lastElementChild;
+  if (lastChild && lastChild.classList.contains('chunk-text')) {
+    lastChild.textContent += text;
+  } else {
+    var span = document.createElement('span');
+    span.className = 'chunk-text';
+    span.textContent = text;
+    pt.streamEl.appendChild(span);
+  }
   scrollToBottom();
 }
 
@@ -2060,7 +2072,7 @@ function appendThinking(rid, text) {
     body.className = 'thinking-body';
     block.appendChild(header);
     block.appendChild(body);
-    pt.containerEl.insertBefore(block, pt.bodyEl);
+    pt.streamEl.prepend(block);
     pt.thinkingEl = body;
     pt.thinkingHeader = header;
   }
@@ -2095,26 +2107,30 @@ function appendToolCall(rid, payload) {
 
   const body = document.createElement('div');
   body.className = 'tool-body';
-  body.textContent = formatToolInput(toolName, toolInput);
+  body.textContent = 'Arguments\n' + formatToolInput(toolName, toolInput);
 
   card.appendChild(header);
   card.appendChild(body);
-  pt.containerEl.insertBefore(card, pt.bodyEl);
-  pt.lastToolCard = card;
+  pt.streamEl.appendChild(card);
+  pt.toolCards.push(card);
   pt.toolCallCount++;
   scrollToBottom();
 }
 
 function appendToolResult(rid, payload) {
   const pt = state.pendingTurns[rid];
-  if (!pt || !pt.lastToolCard) return;
+  if (!pt || !pt.toolCards || pt.toolResultIdx >= pt.toolCards.length) return;
 
-  const statusEl = pt.lastToolCard.querySelector('.tool-status');
+  // Index-based matching: results arrive in call order
+  var targetCard = pt.toolCards[pt.toolResultIdx];
+  pt.toolResultIdx++;
+
+  const statusEl = targetCard.querySelector('.tool-status');
   const result = payload.tool_result || payload.content || payload.result || '';
   const isError = payload.is_error || /^(Error|success=False|error=')/.test(String(result));
   if (isError) {
     pt.toolErrorCount++;
-    var toolName = pt.lastToolCard.dataset.toolName || 'tool';
+    var toolName = targetCard.dataset.toolName || 'tool';
     var errMsg = String(result).replace(/^success=False\s+data=None\s+error='/g, '').replace(/'$/g, '').trim();
     pt.toolErrors = pt.toolErrors || [];
     pt.toolErrors.push(toolName + ': ' + (errMsg || 'Unknown error'));
@@ -2128,8 +2144,8 @@ function appendToolResult(rid, payload) {
 
   const resultEl = document.createElement('div');
   resultEl.className = 'tool-body result';
-  resultEl.textContent = truncate(String(result), 500);
-  pt.lastToolCard.appendChild(resultEl);
+  resultEl.textContent = 'Result\n' + truncate(String(result), 500);
+  targetCard.appendChild(resultEl);
   scrollToBottom();
 }
 
@@ -2184,9 +2200,9 @@ function renderHistoryMessage(payload) {
       hdr.onclick = function() { hdr.classList.toggle('open'); };
       var bdy = document.createElement('div');
       bdy.className = 'tool-body';
-      bdy.textContent = (typeof formatToolInput === 'function')
+      bdy.textContent = 'Arguments\n' + ((typeof formatToolInput === 'function')
         ? formatToolInput(String(toolName), toolInput)
-        : JSON.stringify(toolInput, null, 2);
+        : JSON.stringify(toolInput, null, 2));
       card.appendChild(hdr);
       card.appendChild(bdy);
       _historyPendingAssistant.bodyEl.appendChild(card);
@@ -2237,10 +2253,9 @@ function finalizeTurn(rid, payload) {
       pt.typingEl.remove();
       pt.typingEl = null;
     }
-    const finalContent = (payload && payload.content) ? payload.content : pt.textContent;
-    if (finalContent) {
-      pt.bodyEl.innerHTML = renderMarkdown(finalContent);
-    }
+    // Keep streaming content as-is (chunk-text and tool cards stay interleaved).
+    // No markdown replacement — the raw streaming text preserves the chronological layout.
+    if (pt.streamEl.querySelector('.typing-dots')) { pt.streamEl.querySelector('.typing-dots').remove(); }
     if (pt.thinkingHeader) {
       pt.thinkingHeader.textContent = 'Thinking';
     }
@@ -2250,7 +2265,7 @@ function finalizeTurn(rid, payload) {
     // Resolve any tool cards still showing "running" (no result event arrived)
     pt.containerEl.querySelectorAll('.tool-status').forEach(function(s) {
       if (s.textContent.indexOf('running') !== -1) {
-        s.innerHTML = '<span style="color:var(--text-dim)">\u2713 done</span>';
+        s.innerHTML = '';
       }
     });
 
@@ -2327,7 +2342,7 @@ function appendError(rid, errorText) {
     });
     pt.containerEl.querySelectorAll('.tool-status').forEach(function(s) {
       if (s.textContent.indexOf('running') !== -1) {
-        s.innerHTML = '<span style="color:var(--text-dim)">\u2713 done</span>';
+        s.innerHTML = '';
       }
     });
 
@@ -2473,8 +2488,8 @@ function classifyOutcome(pt) {
 
 function copyMessageContent(btn) {
   var msg = btn.closest('.msg');
-  var body = msg ? msg.querySelector('.msg-body.assistant') : null;
-  var text = body ? body.textContent : '';
+  var stream = msg ? msg.querySelector('.stream') : null;
+  var text = stream ? stream.textContent : '';
   if (!text) return;
   (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).catch(function() {
     var ta = document.createElement('textarea');
