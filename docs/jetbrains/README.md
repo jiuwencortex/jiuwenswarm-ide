@@ -17,7 +17,7 @@ JCEF (Chromium Embedded Framework) must be enabled in your IDE. If you see a war
 
 ### From ZIP
 
-1. Download `jiuwenswarm-1.0-SNAPSHOT.zip` from the [releases page](https://github.com/openjiuwen/jiuwenswarm-ide/releases).
+1. Download [`jiuwenswarm-plugin-0.1.0.zip`](https://github.com/jiuwencortex/jiuwenswarm-ide/releases/download/0.1.0/jiuwenswarm-plugin-0.1.0.zip).
 2. Go to **Settings → Plugins → ⚙ → Install Plugin from Disk** and select the ZIP file.
 3. Restart the IDE.
 

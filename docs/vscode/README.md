@@ -15,7 +15,7 @@ cd jiuwenswarm && jiuwenswarm-start
 
 ### From VSIX
 
-1. Download `jiuwenswarm-0.1.0.vsix` from the [releases page](https://github.com/openjiuwen/jiuwenswarm-ide/releases).
+1. Download [`jiuwenswarm-0.1.0.vsix`](https://github.com/jiuwencortex/jiuwenswarm-ide/releases/download/0.1.0/jiuwenswarm-0.1.0.vsix).
 2. In VS Code, go to **Extensions → ⋯ → Install from VSIX** and select the file.
 3. The JiuwenSwarm icon appears in the Activity Bar.
 

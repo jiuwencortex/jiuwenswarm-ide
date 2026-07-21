@@ -80,6 +80,8 @@ npx vsce package --no-dependencies
 # → jiuwenswarm-0.1.0.vsix
 ```
 
+Or download the pre-built VSIX: [`jiuwenswarm-0.1.0.vsix`](https://github.com/jiuwencortex/jiuwenswarm-ide/releases/download/0.1.0/jiuwenswarm-0.1.0.vsix)
+
 **JetBrains plugin:**
 
 ```bash
@@ -87,6 +89,8 @@ cd packages/jetbrains-plugin
 .\gradlew.bat --no-daemon buildPlugin -x buildSearchableOptions
 # → build/distributions/jiuwenswarm-plugin-0.1.0.zip
 ```
+
+Or download the pre-built ZIP: [`jiuwenswarm-plugin-0.1.0.zip`](https://github.com/jiuwencortex/jiuwenswarm-ide/releases/download/0.1.0/jiuwenswarm-plugin-0.1.0.zip)
 
 ## Feedback & Source
 
