@@ -985,21 +985,21 @@
   .stat-chip-warn { color: #f59e0b; border-color: rgba(245,158,11,0.4); }
   .stat-chip-dim  { opacity: 0.55; }
 
-  /* ── Copy button ── */
+  /* ── Copy button (message-level action, bottom-right of each msg) ── */
   .copy-btn {
     background: none;
-    border: 1px solid var(--border);
+    border: none;
     color: var(--text-dim);
-    border-radius: 3px;
-    padding: 0 5px;
-    font-size: 10px;
     cursor: pointer;
-    line-height: 1.6;
-    margin-left: 6px;
-    transition: color 0.1s, border-color 0.1s;
+    padding: 2px;
+    opacity: 0.5;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    transition: opacity 0.15s;
   }
-  .copy-btn:hover { color: var(--text); border-color: var(--text-muted); }
-  .copy-btn.copied { color: #4ec9b0; border-color: #4ec9b0; }
+  .copy-btn:hover { opacity: 1; color: var(--text); }
+  .copy-btn.copied { opacity: 1; color: #4ec9b0; }
 
   /* ── Resend button on user messages ── */
   .resend-btn {
@@ -2308,17 +2308,6 @@ function finalizeTurn(rid, payload) {
     // ── Live metrics ──
     pt.hasFinal = true;
 
-    // Copy button on assistant header
-    var hdrEl = pt.containerEl.querySelector('.msg-header.assistant');
-    if (hdrEl && !hdrEl.querySelector('.copy-btn')) {
-      var cb = document.createElement('button');
-      cb.className = 'copy-btn';
-      cb.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
-      cb.title = 'Copy response';
-      cb.onclick = function() { copyMessageContent(this); };
-      hdrEl.appendChild(cb);
-    }
-
     const durationMs  = Date.now() - pt.startTime;
     const outcome     = classifyOutcome(pt);
     const totalTok    = pt.inputTokens + pt.outputTokens;
@@ -2348,7 +2337,19 @@ function finalizeTurn(rid, payload) {
     }
     footerHtml += '<span class="stat-chip">' + fmtMs(durationMs) + '</span>';
     footer.innerHTML = footerHtml;
+
     pt.containerEl.appendChild(footer);
+
+    // Copy action row — right-aligned below stats, clearly for the answer
+    var copyRow = document.createElement('div');
+    copyRow.style.cssText = 'display:flex;justify-content:flex-end;padding:2px 12px 6px';
+    var copyBtn = document.createElement('button');
+    copyBtn.className = 'copy-btn';
+    copyBtn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+    copyBtn.title = 'Copy response';
+    copyBtn.onclick = function() { copyMessageContent(this); };
+    copyRow.appendChild(copyBtn);
+    pt.containerEl.appendChild(copyRow);
 
     updateSessionStats(outcome, totalTok, durationMs, pt.llmCallCount, pt.costUsd, ttftMs);
     delete state.pendingTurns[rid];
