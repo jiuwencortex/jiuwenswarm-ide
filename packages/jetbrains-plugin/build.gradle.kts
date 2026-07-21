@@ -33,7 +33,7 @@ kotlin {
 intellijPlatform {
     pluginConfiguration {
         id = "com.jiuwenswarm.ide-plugin"
-        name = "JiuwenSwarm"
+        name = "JiuwenSwarm — AI Code Agent"
         version = project.version.toString()
 
         ideaVersion {
