@@ -2431,6 +2431,12 @@ inputEl.addEventListener('input', function() {
 sendBtn.addEventListener('click', function() {
   if (state.streaming) {
     send({ type: 'stop' });
+    // Finalize all pending turns immediately — Gateway handles backend cancellation.
+    // Without this, the UI stays stuck in streaming mode because the Gateway's
+    // interrupt_result event is not handled by the webview.
+    Object.keys(state.pendingTurns).forEach(function(rid) {
+      finalizeTurn(rid, {});
+    });
   } else {
     submitMessage();
   }
