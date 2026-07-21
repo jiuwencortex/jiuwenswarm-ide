@@ -2178,15 +2178,9 @@ function appendToolResult(rid, payload) {
       : '<span style="color:#4ec9b0">✓ done</span>';
   }
 
-  // Debug: always show payload structure
-  var _dbg = '🔍 keys=' + Object.keys(payload).join(',') + ' | result=' + JSON.stringify(payload.result).slice(0,200) + ' | content=' + JSON.stringify(payload.content).slice(0,200) + ' | tool_result=' + JSON.stringify(payload.tool_result).slice(0,200);
   const resultEl = document.createElement('div');
   resultEl.className = 'tool-body result';
   resultEl.textContent = 'Result\n' + truncate(String(result), 500);
-  var dbgEl = document.createElement('div');
-  dbgEl.style.cssText = 'font-size:10px;color:#f59e0b;border-top:1px dashed #888;margin-top:4px;padding-top:2px;white-space:pre-wrap;word-break:break-all;';
-  dbgEl.textContent = _dbg;
-  resultEl.appendChild(dbgEl);
   targetCard.appendChild(resultEl);
   scrollToBottom();
 }

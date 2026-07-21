@@ -2176,11 +2176,6 @@ function appendToolResult(rid, payload) {
     statusEl.innerHTML = isError
       ? '<span style="color:#f14c4c">✗ error</span>'
       : '<span style="color:#4ec9b0">✓ done</span>';
-    // Debug: show payload keys in status
-    var _info = document.createElement('span');
-    _info.style.cssText = 'font-size:9px;color:#f59e0b;margin-left:6px;';
-    _info.textContent = '[' + Object.keys(payload).join(',') + ']';
-    statusEl.appendChild(_info);
   }
 
   const resultEl = document.createElement('div');
