@@ -1153,6 +1153,7 @@
   <div id="debug-panel-header">
     <span>Debug Log</span>
     <button id="debug-clear-btn" onclick="clearDebugLog()" title="Clear">Clear</button>
+    <button id="debug-copy-btn" onclick="copyDebugLog()" title="Copy log to clipboard">Copy</button>
   </div>
   <div id="debug-log"></div>
 </div>
@@ -1934,6 +1935,29 @@ function clearDebugLog() {
   if (log) log.innerHTML = '';
 }
 
+function copyDebugLog() {
+  var log = document.getElementById('debug-log');
+  if (!log) return;
+  var lines = [];
+  for (var i = 0; i < log.children.length; i++) {
+    lines.push(log.children[i].textContent);
+  }
+  var text = lines.join('\n');
+  if (!text) return;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text);
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  }
+}
+
 // ─────────────────────────────────────────────
 // JiuwenSwarm event handlers
 // ─────────────────────────────────────────────
@@ -1948,8 +1972,10 @@ function handleJiuwenEvent(evt) {
     appendThinking(rid, payload.text || '');
   } else if (et === 'chat.tool_call') {
     appendToolCall(rid, payload);
-  } else if (et === 'chat.tool_result' || et === 'chat.tool_update') {
+  } else if (et === 'chat.tool_result') {
     appendToolResult(rid, payload);
+  } else if (et === 'chat.tool_update') {
+    appendToolUpdate(rid, payload);
   } else if (et === 'chat.usage_metadata' || et === 'chat.usage_summary') {
     updateUsage(rid, payload);
   } else if (et === 'chat.final') {
@@ -2019,6 +2045,8 @@ function beginTurn(requestId, userContent) {
     firstTokenTime: null,
     llmCallCount: 0,
     toolCallCount: 0,
+    toolCards: [],
+    toolResultIdx: 0,
     toolErrorCount: 0,
     hasError: false,
     hasFinal: false,
@@ -2110,19 +2138,28 @@ function appendToolCall(rid, payload) {
   card.appendChild(header);
   card.appendChild(body);
   pt.streamEl.appendChild(card);
-  pt.toolCards = pt.toolCards || [];
   pt.toolCards.push(card);
-  pt.lastToolCard = card;
   pt.toolCallCount++;
   scrollToBottom();
 }
 
+function appendToolUpdate(rid, payload) {
+  const pt = state.pendingTurns[rid];
+  if (!pt || !pt.toolCards || pt.toolResultIdx >= pt.toolCards.length) return;
+  var targetCard = pt.toolCards[pt.toolResultIdx];
+  const statusEl = targetCard.querySelector('.tool-status');
+  if (statusEl) {
+    statusEl.innerHTML = '<span class="tool-spinner">◌</span> running';
+  }
+}
+
 function appendToolResult(rid, payload) {
   const pt = state.pendingTurns[rid];
-  if (!pt || !pt.toolCards || !pt.toolCards.length) return;
+  if (!pt || !pt.toolCards || pt.toolResultIdx >= pt.toolCards.length) return;
 
-  // FIFO: match result to the oldest unresolved tool card
-  var targetCard = pt.toolCards.shift();
+  // Index-based matching: results arrive in call order
+  var targetCard = pt.toolCards[pt.toolResultIdx];
+  pt.toolResultIdx++;
 
   const statusEl = targetCard.querySelector('.tool-status');
   const result = payload.tool_result || payload.content || payload.result || '';
@@ -2141,9 +2178,15 @@ function appendToolResult(rid, payload) {
       : '<span style="color:#4ec9b0">✓ done</span>';
   }
 
+  // Debug: always show payload structure
+  var _dbg = '🔍 keys=' + Object.keys(payload).join(',') + ' | result=' + JSON.stringify(payload.result).slice(0,200) + ' | content=' + JSON.stringify(payload.content).slice(0,200) + ' | tool_result=' + JSON.stringify(payload.tool_result).slice(0,200);
   const resultEl = document.createElement('div');
   resultEl.className = 'tool-body result';
   resultEl.textContent = 'Result\n' + truncate(String(result), 500);
+  var dbgEl = document.createElement('div');
+  dbgEl.style.cssText = 'font-size:10px;color:#f59e0b;border-top:1px dashed #888;margin-top:4px;padding-top:2px;white-space:pre-wrap;word-break:break-all;';
+  dbgEl.textContent = _dbg;
+  resultEl.appendChild(dbgEl);
   targetCard.appendChild(resultEl);
   scrollToBottom();
 }

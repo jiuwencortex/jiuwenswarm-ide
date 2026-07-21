@@ -1153,6 +1153,7 @@
   <div id="debug-panel-header">
     <span>Debug Log</span>
     <button id="debug-clear-btn" onclick="clearDebugLog()" title="Clear">Clear</button>
+    <button id="debug-copy-btn" onclick="copyDebugLog()" title="Copy log to clipboard">Copy</button>
   </div>
   <div id="debug-log"></div>
 </div>
@@ -1934,6 +1935,29 @@ function clearDebugLog() {
   if (log) log.innerHTML = '';
 }
 
+function copyDebugLog() {
+  var log = document.getElementById('debug-log');
+  if (!log) return;
+  var lines = [];
+  for (var i = 0; i < log.children.length; i++) {
+    lines.push(log.children[i].textContent);
+  }
+  var text = lines.join('\n');
+  if (!text) return;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text);
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  }
+}
+
 // ─────────────────────────────────────────────
 // JiuwenSwarm event handlers
 // ─────────────────────────────────────────────
@@ -1948,8 +1972,10 @@ function handleJiuwenEvent(evt) {
     appendThinking(rid, payload.text || '');
   } else if (et === 'chat.tool_call') {
     appendToolCall(rid, payload);
-  } else if (et === 'chat.tool_result' || et === 'chat.tool_update') {
+  } else if (et === 'chat.tool_result') {
     appendToolResult(rid, payload);
+  } else if (et === 'chat.tool_update') {
+    appendToolUpdate(rid, payload);
   } else if (et === 'chat.usage_metadata' || et === 'chat.usage_summary') {
     updateUsage(rid, payload);
   } else if (et === 'chat.final') {
@@ -2117,6 +2143,16 @@ function appendToolCall(rid, payload) {
   scrollToBottom();
 }
 
+function appendToolUpdate(rid, payload) {
+  const pt = state.pendingTurns[rid];
+  if (!pt || !pt.toolCards || pt.toolResultIdx >= pt.toolCards.length) return;
+  var targetCard = pt.toolCards[pt.toolResultIdx];
+  const statusEl = targetCard.querySelector('.tool-status');
+  if (statusEl) {
+    statusEl.innerHTML = '<span class="tool-spinner">◌</span> running';
+  }
+}
+
 function appendToolResult(rid, payload) {
   const pt = state.pendingTurns[rid];
   if (!pt || !pt.toolCards || pt.toolResultIdx >= pt.toolCards.length) return;
@@ -2140,6 +2176,11 @@ function appendToolResult(rid, payload) {
     statusEl.innerHTML = isError
       ? '<span style="color:#f14c4c">✗ error</span>'
       : '<span style="color:#4ec9b0">✓ done</span>';
+    // Debug: show payload keys in status
+    var _info = document.createElement('span');
+    _info.style.cssText = 'font-size:9px;color:#f59e0b;margin-left:6px;';
+    _info.textContent = '[' + Object.keys(payload).join(',') + ']';
+    statusEl.appendChild(_info);
   }
 
   const resultEl = document.createElement('div');
