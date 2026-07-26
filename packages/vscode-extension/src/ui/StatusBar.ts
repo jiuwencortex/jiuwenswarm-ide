@@ -1,9 +1,13 @@
 import * as vscode from 'vscode';
 import { WsClient, WsStatus } from '../client/WsClient';
+import { SessionMetrics } from '../client/protocol';
 
 export class StatusBar {
   private readonly item: vscode.StatusBarItem;
   private tokenCount = 0;
+  private contextEstimatedTokens = 0;
+  private costUsd = 0;
+  private hasCost = false;
   private sessionId: string | null = null;
 
   constructor(private readonly ws: WsClient) {
@@ -18,6 +22,14 @@ export class StatusBar {
     this.update(this.ws.getStatus());
   }
 
+  setMetrics(metrics: SessionMetrics): void {
+    this.tokenCount = metrics.sessionTokens;
+    this.contextEstimatedTokens = metrics.contextEstimatedTokens;
+    this.costUsd = metrics.sessionCostUsd;
+    this.hasCost = metrics.hasCost;
+    this.update(this.ws.getStatus());
+  }
+
   setSessionId(sid: string | null): void {
     this.sessionId = sid;
     this.update(this.ws.getStatus());
@@ -27,11 +39,22 @@ export class StatusBar {
     const tokenLabel = this.tokenCount > 0
       ? ` \u00b7 ${formatTokenCount(this.tokenCount)}`
       : '';
+    const contextLabel = this.contextEstimatedTokens > 0
+      ? ` \u00b7 ctx ${formatTokenCount(this.contextEstimatedTokens)}`
+      : '';
+    const costLabel = this.hasCost
+      ? ` \u00b7 $${this.costUsd.toFixed(3)}`
+      : '';
+    const metricsTooltip = [
+      this.tokenCount > 0 ? `${this.tokenCount} session tokens` : undefined,
+      this.contextEstimatedTokens > 0 ? `${this.contextEstimatedTokens} estimated context tokens` : undefined,
+      this.hasCost ? `$${this.costUsd.toFixed(3)} session cost` : undefined,
+    ].filter(Boolean).join(' — ');
 
     switch (s) {
       case 'connected':
-        this.item.text = `$(check) JiuwenSwarm${tokenLabel}`;
-        this.item.tooltip = `JiuwenSwarm: Connected${this.sessionId ? ` — session ${this.sessionId.slice(0, 8)}` : ''}${tokenLabel ? ` — ${this.tokenCount} tokens used` : ''}`;
+        this.item.text = `$(check) JiuwenSwarm${tokenLabel}${contextLabel}${costLabel}`;
+        this.item.tooltip = `JiuwenSwarm: Connected${this.sessionId ? ` — session ${this.sessionId.slice(0, 8)}` : ''}${metricsTooltip ? ` — ${metricsTooltip}` : ''}`;
         this.item.backgroundColor = undefined;
         this.item.command = 'jiuwenswarm.openChat';
         break;
@@ -42,8 +65,8 @@ export class StatusBar {
         this.item.command = undefined;
         break;
       case 'reconnecting':
-        this.item.text = `$(sync~spin) JiuwenSwarm${tokenLabel}`;
-        this.item.tooltip = `JiuwenSwarm: Reconnecting…${tokenLabel ? ` — ${this.tokenCount} tokens used` : ''}`;
+        this.item.text = `$(sync~spin) JiuwenSwarm${tokenLabel}${contextLabel}${costLabel}`;
+        this.item.tooltip = `JiuwenSwarm: Reconnecting…${metricsTooltip ? ` — ${metricsTooltip}` : ''}`;
         this.item.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
         this.item.command = undefined;
         break;

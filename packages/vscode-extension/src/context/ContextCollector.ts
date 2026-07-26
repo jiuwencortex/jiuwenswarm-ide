@@ -3,12 +3,25 @@ import { execSync } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 
+export interface ContextMetrics {
+  byteLength: number;
+  estimatedTokens: number;
+  diagnosticsCount: number;
+  otherOpenFilesCount: number;
+  projectTreeFilesCount: number;
+}
+
+export interface CollectedContext {
+  text?: string;
+  metrics: ContextMetrics;
+}
+
 /**
  * Collects IDE context (active file path, language, selection, diagnostics,
  * other open files, project tree, and git status) and formats it as a structured
  * text block to prepend to outgoing chat messages.
  */
-export function collectContext(): string | undefined {
+export function collectContext(): CollectedContext {
   const editor = vscode.window.activeTextEditor;
 
   const filePath = editor?.document.fileName;
@@ -27,14 +40,23 @@ export function collectContext(): string | undefined {
   const cfg = vscode.workspace.getConfiguration('jiuwenswarm');
   const projectTreeEnabled = cfg.get<boolean>('projectTree.enabled', true);
   const projectTreeMaxFiles = cfg.get<number>('projectTree.maxFiles', 200);
-  const projectTree = projectTreeEnabled ? collectProjectTree(projectTreeMaxFiles) : undefined;
+  const projectTreeResult = projectTreeEnabled ? collectProjectTree(projectTreeMaxFiles) : undefined;
+  const projectTree = projectTreeResult?.text;
 
   // Git context
   const gitInfo = filePath ? collectGitContext(filePath) : undefined;
 
   // Nothing meaningful if everything is empty
+  const emptyMetrics = {
+    byteLength: 0,
+    estimatedTokens: 0,
+    diagnosticsCount: diagnostics.length,
+    otherOpenFilesCount: otherOpenFiles.length,
+    projectTreeFilesCount: projectTreeResult?.fileCount ?? 0,
+  };
+
   if (!filePath && !selection && diagnostics.length === 0 && otherOpenFiles.length === 0 && !projectTree && !gitInfo) {
-    return undefined;
+    return { metrics: emptyMetrics };
   }
 
   const lines: string[] = [];
@@ -70,7 +92,15 @@ export function collectContext(): string | undefined {
     lines.push(gitInfo);
   }
   lines.push('<!-- End IDE Context -->');
-  return lines.join('\n');
+  const text = lines.join('\n');
+  return {
+    text,
+    metrics: {
+      ...emptyMetrics,
+      byteLength: Buffer.byteLength(text, 'utf8'),
+      estimatedTokens: estimateTokens(text),
+    },
+  };
 }
 
 function collectDiagnostics(doc: vscode.TextDocument): string[] {
@@ -106,14 +136,14 @@ const SKIP_DIRS = new Set([
   'target', '__pycache__', '.venv', 'venv', '.tox', 'coverage', '.cache',
 ]);
 
-function collectProjectTree(maxFiles = 200): string | undefined {
+function collectProjectTree(maxFiles = 200): { text: string; fileCount: number } | undefined {
   const folders = vscode.workspace.workspaceFolders;
   if (!folders || folders.length === 0) return undefined;
   const root = folders[0].uri.fsPath;
   try {
     const counter = { count: 0 };
     const tree = buildDirTree(root, 0, maxFiles, counter);
-    return tree || undefined;
+    return tree ? { text: tree, fileCount: counter.count } : undefined;
   } catch {
     return undefined;
   }
@@ -185,4 +215,9 @@ function collectGitContext(filePath: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+export function estimateTokens(text: string): number {
+  const length = text.trim().length;
+  return length > 0 ? Math.ceil(length / 4) : 0;
 }

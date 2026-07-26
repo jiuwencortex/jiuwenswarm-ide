@@ -3,22 +3,29 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { WsClient, WsStatus } from '../client/WsClient';
 import { SessionManager } from '../client/SessionManager';
-import { JiuwenMessage, ExtToWebviewMsg, makeRequest } from '../client/protocol';
-import { collectContext } from '../context/ContextCollector';
+import { JiuwenMessage, ExtToWebviewMsg, makeRequest, SessionMetrics } from '../client/protocol';
+import { collectContext, estimateTokens } from '../context/ContextCollector';
 import { StatusBar } from './StatusBar';
 import * as DiffApplier from '../editor/DiffApplier';
 import { runCommand, extractCommand } from '../terminal/TerminalManager';
-import { showDiffAndPrompt, computeProposedContent, readOriginalContent } from '../editor/DiffViewer';
+import { showDiffAndPrompt, computeProposedContent } from '../editor/DiffViewer';
 
-export class ChatPanel implements vscode.WebviewViewProvider {
+export class ChatPanel implements vscode.Disposable {
   public static readonly viewId = 'jiuwenswarm.chatView';
 
-  private view?: vscode.WebviewView;
+  private panel?: vscode.WebviewPanel;
   private readonly webviewHtmlPath: string;
   private disposables: vscode.Disposable[] = [];
+  private panelDisposables: vscode.Disposable[] = [];
+  private pendingWebviewMessages: ExtToWebviewMsg[] = [];
+  private webviewReady = false;
   private debugEnabled = false;
   private lastRequestId = '';
-  private lastTokenCount = 0;
+  private sessionTokens = 0;
+  private sessionCostUsd = 0;
+  private hasCost = false;
+  private latestInput = '';
+  private latestContextMetrics: SessionMetrics = this.emptyMetrics();
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -27,27 +34,6 @@ export class ChatPanel implements vscode.WebviewViewProvider {
     private readonly statusBar: StatusBar,
   ) {
     this.webviewHtmlPath = path.join(context.extensionPath, 'resources', 'chat.html');
-  }
-
-  resolveWebviewView(
-    webviewView: vscode.WebviewView,
-    _ctx: vscode.WebviewViewResolveContext,
-    _token: vscode.CancellationToken,
-  ): void {
-    this.view = webviewView;
-    webviewView.webview.options = {
-      enableScripts: true,
-      localResourceRoots: [
-        vscode.Uri.joinPath(this.context.extensionUri, 'resources'),
-      ],
-    };
-    webviewView.webview.html = this.getHtml(webviewView.webview);
-
-    // Webview → extension
-    const d1 = webviewView.webview.onDidReceiveMessage((raw) => this.handleWebviewMessage(raw));
-    this.disposables.push(d1);
-
-    // WS events → webview
     const statusListener = (s: WsStatus) => this.onStatusChange(s);
     const msgListener = (m: JiuwenMessage) => this.onJiuwenMessage(m);
     const sessionListener = (sid: string | null) => this.onSessionChange(sid);
@@ -60,20 +46,63 @@ export class ChatPanel implements vscode.WebviewViewProvider {
       new vscode.Disposable(() => this.ws.off('message', msgListener)),
       new vscode.Disposable(() => this.session.removeSessionListener(sessionListener)),
     );
+  }
 
-    webviewView.onDidDispose(() => {
-      this.disposables.forEach((d) => d.dispose());
-      this.disposables = [];
-    });
+  show(): void {
+    if (this.panel) {
+      this.panel.reveal(vscode.ViewColumn.Beside, true);
+      this.sendCurrentStatus();
+      this.refreshMetrics();
+      return;
+    }
 
-    // Send current status immediately if already connected
+    this.panel = vscode.window.createWebviewPanel(
+      ChatPanel.viewId,
+      'JiuwenSwarm',
+      vscode.ViewColumn.Beside,
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+        localResourceRoots: [
+          vscode.Uri.joinPath(this.context.extensionUri, 'resources'),
+        ],
+      },
+    );
+    this.panel.iconPath = vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'icon.svg');
+    this.panel.webview.html = this.getHtml(this.panel.webview);
+
+    this.panelDisposables.push(
+      this.panel.webview.onDidReceiveMessage((raw) => this.handleWebviewMessage(raw)),
+      this.panel.onDidDispose(() => {
+        this.panelDisposables.forEach((d) => d.dispose());
+        this.panelDisposables = [];
+        this.pendingWebviewMessages = [];
+        this.webviewReady = false;
+        this.panel = undefined;
+      }),
+    );
+
     if (this.ws.isConnected()) {
       this.sendCurrentStatus();
     }
+    this.refreshMetrics();
   }
 
   postToWebview(msg: ExtToWebviewMsg): void {
-    this.view?.webview.postMessage(msg);
+    if (!this.panel) return;
+    if (!this.webviewReady && msg.type !== 'debug_log') {
+      this.pendingWebviewMessages.push(msg);
+      return;
+    }
+    this.panel.webview.postMessage(msg);
+  }
+
+  dispose(): void {
+    this.panelDisposables.forEach((d) => d.dispose());
+    this.panelDisposables = [];
+    this.disposables.forEach((d) => d.dispose());
+    this.disposables = [];
+    this.panel?.dispose();
   }
 
   // ──────────────────────────────────────────
@@ -83,8 +112,17 @@ export class ChatPanel implements vscode.WebviewViewProvider {
     const type = msg.type as string;
     switch (type) {
       case 'ready':
+        this.webviewReady = true;
+        this.flushPendingMessages();
         this.sendCurrentStatus();
+        this.refreshMetrics();
         break;
+
+      case 'input_changed': {
+        this.latestInput = (msg.content as string) || '';
+        this.refreshMetrics();
+        break;
+      }
 
       case 'send': {
         const content = msg.content as string;
@@ -101,8 +139,10 @@ export class ChatPanel implements vscode.WebviewViewProvider {
           return;
         }
         this.debug(`SEND→ requestId=${rid} mode=${mode} content=${content.substring(0, 60)}`);
+        this.latestInput = content;
         const ideContext = collectContext();
-        if (!this.session.sendChat(content, mode, rid, ideContext || undefined, mediaItems)) {
+        this.updateMetrics(content, ideContext.metrics, mediaItems?.length ?? 0);
+        if (!this.session.sendChat(content, mode, rid, ideContext.text || undefined, mediaItems)) {
           this.debug('SEND→ FAILED (no session or disconnected)');
           this.postToWebview({ type: 'error', message: 'Not connected or no active session', requestId: rid });
         } else {
@@ -119,6 +159,7 @@ export class ChatPanel implements vscode.WebviewViewProvider {
         this.debug('ACTION→ new_session (reconnecting for fresh session)');
         DiffApplier.clearSnapshots();
         this.postToWebview({ type: 'rewindable', enabled: false });
+        this.resetSessionMetrics();
         this.ws.reconnect();
         break;
       }
@@ -368,8 +409,18 @@ export class ChatPanel implements vscode.WebviewViewProvider {
       || (payload.cache_read_input_tokens as number)
       || 0;
     const output = (payload.output_tokens as number) || 0;
-    this.lastTokenCount += input + output;
-    this.statusBar.setTokenCount(this.lastTokenCount);
+    const cost = (payload.cost_usd as number) || 0;
+    this.sessionTokens += input + output;
+    if (cost > 0) {
+      this.sessionCostUsd += cost;
+      this.hasCost = true;
+    }
+    this.publishMetrics({
+      ...this.latestContextMetrics,
+      sessionTokens: this.sessionTokens,
+      sessionCostUsd: this.sessionCostUsd,
+      hasCost: this.hasCost,
+    });
   }
 
   private onStatusChange(s: WsStatus): void {
@@ -378,6 +429,7 @@ export class ChatPanel implements vscode.WebviewViewProvider {
 
   private onSessionChange(sid: string | null): void {
     this.statusBar.setSessionId(sid);
+    this.resetSessionMetrics();
     if (this.ws.isConnected()) {
       this.sendCurrentStatus();
     }
@@ -443,6 +495,7 @@ export class ChatPanel implements vscode.WebviewViewProvider {
     try {
       this.debug(`ACTION→ switch_session ${sessionId} mode=${mode || 'default'}`);
       await this.session.switchSession(sessionId, mode);
+      this.resetSessionMetrics();
       const cfg = vscode.workspace.getConfiguration('jiuwenswarm');
       const loadHistory = cfg.get<boolean>('loadHistoryOnSwitch', true);
       this.postToWebview({ type: 'history_loading', loading: loadHistory });
@@ -573,6 +626,64 @@ export class ChatPanel implements vscode.WebviewViewProvider {
       console.log(`[JiuwenSwarm] ${line}`);
       this.postToWebview({ type: 'debug_log', line });
     }
+  }
+
+  refreshMetrics(): void {
+    const ideContext = collectContext();
+    this.updateMetrics(this.latestInput, ideContext.metrics, 0);
+  }
+
+  resetMetrics(): void {
+    this.resetSessionMetrics();
+  }
+
+  private updateMetrics(content: string, contextMetrics: { byteLength: number; estimatedTokens: number }, attachmentsCount: number): void {
+    const promptEstimatedTokens = estimateTokens(content) + contextMetrics.estimatedTokens;
+    this.publishMetrics({
+      contextBytes: contextMetrics.byteLength,
+      contextEstimatedTokens: contextMetrics.estimatedTokens,
+      promptEstimatedTokens,
+      sessionTokens: this.sessionTokens,
+      sessionCostUsd: this.sessionCostUsd,
+      hasCost: this.hasCost,
+      attachmentsCount,
+    });
+  }
+
+  private publishMetrics(metrics: SessionMetrics): void {
+    this.latestContextMetrics = metrics;
+    this.statusBar.setMetrics(metrics);
+    this.postToWebview({ type: 'metrics', metrics });
+  }
+
+  private resetSessionMetrics(): void {
+    this.sessionTokens = 0;
+    this.sessionCostUsd = 0;
+    this.hasCost = false;
+    this.publishMetrics({
+      ...this.latestContextMetrics,
+      sessionTokens: 0,
+      sessionCostUsd: 0,
+      hasCost: false,
+    });
+  }
+
+  private emptyMetrics(): SessionMetrics {
+    return {
+      contextBytes: 0,
+      contextEstimatedTokens: 0,
+      promptEstimatedTokens: 0,
+      sessionTokens: 0,
+      sessionCostUsd: 0,
+      hasCost: false,
+      attachmentsCount: 0,
+    };
+  }
+
+  private flushPendingMessages(): void {
+    if (!this.panel || this.pendingWebviewMessages.length === 0) return;
+    const pending = this.pendingWebviewMessages.splice(0);
+    pending.forEach((msg) => this.panel?.webview.postMessage(msg));
   }
 
   // ──────────────────────────────────────────

@@ -29,17 +29,29 @@ export type ExtToWebviewMsg =
   | { type: 'connected'; sessionId: string | null; sessionTitle: string; needsSession?: boolean; models?: ModelEntry[]; activeModel?: string }
   | { type: 'disconnected' }
   | { type: 'reconnecting' }
+  | { type: 'metrics'; metrics: SessionMetrics }
   | { type: 'sessions'; sessions: SessionInfo[] }
   | { type: 'session_deleted'; sessionId: string }
   | { type: 'skills'; skills: SkillEntry[] }
   | { type: 'skill_toggled'; skillId: string; enabled: boolean }
   | { type: 'skills_error'; message: string }
-  | { type: 'jiuwen_event'; event: JiuwenMessage }
+  | { type: 'jiuwen_event'; event: Record<string, unknown> }
   | { type: 'error'; message?: string; requestId?: string }
   | { type: 'debug_log'; line: string }
   | { type: 'prefill'; content: string }
+  | { type: 'history_loading'; loading: boolean }
   | { type: 'rewindable'; enabled: boolean }
   | { type: 'rewind_done'; message: string; restored: number; failed: number };
+
+export interface SessionMetrics {
+  contextBytes: number;
+  contextEstimatedTokens: number;
+  promptEstimatedTokens: number;
+  sessionTokens: number;
+  sessionCostUsd: number;
+  hasCost: boolean;
+  attachmentsCount: number;
+}
 
 export interface ModelEntry {
   model_name: string;
@@ -58,6 +70,7 @@ export interface SkillEntry {
 // Messages from webview → extension host
 export type WebviewToExtMsg =
   | { type: 'ready' }
+  | { type: 'input_changed'; content: string }
   | { type: 'send'; content: string; mode: string; requestId: string; media_items?: unknown[] }
   | { type: 'new_session' }
   | { type: 'switch_session'; sessionId: string }

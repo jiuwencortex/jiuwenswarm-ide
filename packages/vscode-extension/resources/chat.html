@@ -836,6 +836,23 @@
     color: var(--text-dim);
   }
   #token-counter { color: var(--text-dim); }
+  #context-metrics {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    min-height: 18px;
+    color: var(--text-dim);
+    font-size: 10px;
+    line-height: 1.4;
+  }
+  .metric-chip {
+    white-space: nowrap;
+  }
+  .metric-chip b {
+    color: var(--text);
+    font-weight: 600;
+  }
   #model-wrap {
     position: relative;
     margin-left: auto;
@@ -1186,6 +1203,12 @@
   </div>
   <div id="token-bar-wrap"><div id="token-bar-fill"></div></div>
   <input type="file" id="image-input" accept="image/png,image/jpeg,image/webp,image/gif" multiple style="display:none">
+  <div id="context-metrics" title="Estimated prompt context and server-reported session usage">
+    <span class="metric-chip">Context <b id="metric-context">0 est tok</b></span>
+    <span class="metric-chip">Prompt <b id="metric-prompt">0 est tok</b></span>
+    <span class="metric-chip">Session <b id="metric-session">0 tok</b></span>
+    <span class="metric-chip">Cost <b id="metric-cost">--</b></span>
+  </div>
   <div id="input-meta">
     <!-- Attach button — leftmost -->
     <button id="attach-btn" disabled title="Add Image" onclick="document.getElementById('image-input').click()">+</button>
@@ -1267,6 +1290,15 @@ let state = {
   attachments: [],     // { filename, mimeType, base64Data, previewUrl }
   rewindable: false,   // true when last turn edited files and rewind is available
   historyLoading: false, // true while session history is being loaded after a switch
+  hostMetrics: {
+    contextBytes: 0,
+    contextEstimatedTokens: 0,
+    promptEstimatedTokens: 0,
+    sessionTokens: 0,
+    sessionCostUsd: 0,
+    hasCost: false,
+    attachmentsCount: 0,
+  },
   sessionStats: {
     totalTurns: 0,
     totalErrors: 0,
@@ -1298,6 +1330,10 @@ function handleHostMessage(msg) {
       break;
     case 'reconnecting':
       setReconnecting();
+      break;
+    case 'metrics':
+      state.hostMetrics = msg.metrics || state.hostMetrics;
+      renderHostMetrics();
       break;
     case 'sessions':
       updateSessions(msg.sessions);
@@ -2440,6 +2476,7 @@ inputEl.addEventListener('input', function() {
   this.style.height = 'auto';
   this.style.height = Math.min(this.scrollHeight, 160) + 'px';
   sendBtn.disabled = !this.value.trim() || !state.connected || state.streaming;
+  send({ type: 'input_changed', content: this.value });
 });
 
 sendBtn.addEventListener('click', function() {
@@ -2524,6 +2561,12 @@ function fmtTok(n) {
   return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
 }
 
+function fmtBytes(n) {
+  if (n >= 1024 * 1024) return (n / (1024 * 1024)).toFixed(1) + ' MB';
+  if (n >= 1024) return (n / 1024).toFixed(1) + ' KB';
+  return n + ' B';
+}
+
 function fmtMs(ms) {
   return ms >= 1000 ? (ms / 1000).toFixed(1) + 's' : ms + 'ms';
 }
@@ -2583,7 +2626,7 @@ function resendMessage(btn) {
 }
 
 function updateTokenBar() {
-  var total = state.sessionStats.totalTokens;
+  var total = state.hostMetrics.sessionTokens || state.sessionStats.totalTokens;
   var limit = 128000;
   var pct = Math.min(100, Math.round(total / limit * 100));
   var wrap = document.getElementById('token-bar-wrap');
@@ -2597,6 +2640,24 @@ function updateTokenBar() {
     fill.style.width = '0%';
     wrap.classList.remove('visible');
   }
+}
+
+function renderHostMetrics() {
+  var m = state.hostMetrics || {};
+  var contextEl = document.getElementById('metric-context');
+  var promptEl = document.getElementById('metric-prompt');
+  var sessionEl = document.getElementById('metric-session');
+  var costEl = document.getElementById('metric-cost');
+  var tokenCounterEl = document.getElementById('token-counter');
+  if (contextEl) {
+    contextEl.textContent = fmtTok(m.contextEstimatedTokens || 0) + ' est tok';
+    contextEl.title = fmtBytes(m.contextBytes || 0);
+  }
+  if (promptEl) promptEl.textContent = fmtTok(m.promptEstimatedTokens || 0) + ' est tok';
+  if (sessionEl) sessionEl.textContent = fmtTok(m.sessionTokens || 0) + ' tok';
+  if (costEl) costEl.textContent = m.hasCost ? '$' + Number(m.sessionCostUsd || 0).toFixed(3) : '--';
+  if (tokenCounterEl && m.sessionTokens) tokenCounterEl.textContent = fmtTok(m.sessionTokens) + ' tok';
+  updateTokenBar();
 }
 
 function _avg(arr) {
@@ -2700,6 +2761,16 @@ function clearMessages() {
   var rewindBar = document.getElementById('rewind-bar');
   if (rewindBar) rewindBar.classList.remove('visible');
   // Reset live session metrics
+  state.hostMetrics = {
+    contextBytes: 0,
+    contextEstimatedTokens: 0,
+    promptEstimatedTokens: 0,
+    sessionTokens: 0,
+    sessionCostUsd: 0,
+    hasCost: false,
+    attachmentsCount: 0,
+  };
+  renderHostMetrics();
   state.sessionStats = {
     totalTurns: 0, totalErrors: 0, totalTokens: 0, totalLlmCalls: 0, totalCostUsd: 0,
     latencies: [], ttfts: [], turnTokens: [], turnDurations: [], outcomes: [],

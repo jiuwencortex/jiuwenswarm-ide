@@ -32,24 +32,6 @@
   ],
   "main": "./out/extension.js",
   "contributes": {
-    "viewsContainers": {
-      "activitybar": [
-        {
-          "id": "jiuwenswarm-sidebar",
-          "title": "JiuwenSwarm",
-          "icon": "resources/icon.svg"
-        }
-      ]
-    },
-    "views": {
-      "jiuwenswarm-sidebar": [
-        {
-          "type": "webview",
-          "id": "jiuwenswarm.chatView",
-          "name": "Chat"
-        }
-      ]
-    },
     "commands": [
       {
         "command": "jiuwenswarm.openChat",

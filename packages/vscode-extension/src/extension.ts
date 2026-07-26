@@ -37,13 +37,6 @@ export function activate(context: vscode.ExtensionContext): void {
   statusBar = new StatusBar(ws);
   chatPanel = new ChatPanel(context, ws, session, statusBar);
 
-  // Register sidebar webview provider
-  context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(ChatPanel.viewId, chatPanel, {
-      webviewOptions: { retainContextWhenHidden: true },
-    }),
-  );
-
   // Auto-connect on startup
   if (autoConnect) {
     ws.connect();
@@ -65,7 +58,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('jiuwenswarm.openChat', () => {
-      vscode.commands.executeCommand('jiuwenswarm.chatView.focus');
+      chatPanel?.show();
     }),
   );
 
@@ -75,8 +68,9 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.window.showWarningMessage('JiuwenSwarm: Not connected');
         return;
       }
+      chatPanel?.show();
+      chatPanel?.resetMetrics();
       ws.reconnect();
-      vscode.commands.executeCommand('jiuwenswarm.chatView.focus');
     }),
   );
 
@@ -91,7 +85,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const fileName = path.basename(editor.document.fileName);
       const prefill = `[File: ${fileName}]\n\`\`\`\n${selection}\n\`\`\`\n\n`;
 
-      vscode.commands.executeCommand('jiuwenswarm.chatView.focus');
+      chatPanel?.show();
       chatPanel?.postToWebview({ type: 'prefill', content: prefill });
     }),
   );
@@ -108,10 +102,17 @@ export function activate(context: vscode.ExtensionContext): void {
       'jiuwenswarm.fixDiagnostic',
       (document: vscode.TextDocument, diagnostics: vscode.Diagnostic[]) => {
         const prefill = buildDiagnosticPrefill(document, diagnostics);
-        vscode.commands.executeCommand('jiuwenswarm.chatView.focus');
+        chatPanel?.show();
         chatPanel?.postToWebview({ type: 'prefill', content: prefill });
       },
     ),
+  );
+
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveTextEditor(() => chatPanel?.refreshMetrics()),
+    vscode.window.onDidChangeTextEditorSelection(() => chatPanel?.refreshMetrics()),
+    vscode.window.tabGroups.onDidChangeTabs(() => chatPanel?.refreshMetrics()),
+    vscode.languages.onDidChangeDiagnostics(() => chatPanel?.refreshMetrics()),
   );
 
   // Re-read config if changed
@@ -139,6 +140,7 @@ export function deactivate(): void {
 
 function cleanup(): void {
   ws?.disconnect();
+  chatPanel?.dispose();
   statusBar?.dispose();
   disposeTerminal();
 }
