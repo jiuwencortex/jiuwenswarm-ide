@@ -836,23 +836,6 @@
     color: var(--text-dim);
   }
   #token-counter { color: var(--text-dim); }
-  #context-metrics {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    align-items: center;
-    min-height: 18px;
-    color: var(--text-dim);
-    font-size: 10px;
-    line-height: 1.4;
-  }
-  .metric-chip {
-    white-space: nowrap;
-  }
-  .metric-chip b {
-    color: var(--text);
-    font-weight: 600;
-  }
   #model-wrap {
     position: relative;
     margin-left: auto;
@@ -954,9 +937,10 @@
     flex-shrink: 0;
   }
   #session-stats-bar.visible { display: flex; }
-  .ss-chip { color: var(--text-dim); white-space: nowrap; }
+  .ss-chip { color: #b8b8b8; white-space: nowrap; }
   .ss-chip b { color: var(--text); font-weight: 600; }
   .ss-chip-err b { color: #ef4444; }
+  :root[data-theme="light"] .ss-chip { color: #4f4f4f; }
 
   /* ── Mini bar charts (tokens/turn + duration/turn) ── */
   #mini-charts {
@@ -1203,12 +1187,6 @@
   </div>
   <div id="token-bar-wrap"><div id="token-bar-fill"></div></div>
   <input type="file" id="image-input" accept="image/png,image/jpeg,image/webp,image/gif" multiple style="display:none">
-  <div id="context-metrics" title="Estimated prompt context and server-reported session usage">
-    <span class="metric-chip">Context <b id="metric-context">0 est tok</b></span>
-    <span class="metric-chip">Prompt <b id="metric-prompt">0 est tok</b></span>
-    <span class="metric-chip">Session <b id="metric-session">0 tok</b></span>
-    <span class="metric-chip">Cost <b id="metric-cost">--</b></span>
-  </div>
   <div id="input-meta">
     <!-- Attach button — leftmost -->
     <button id="attach-btn" disabled title="Add Image" onclick="document.getElementById('image-input').click()">+</button>
@@ -2644,19 +2622,9 @@ function updateTokenBar() {
 
 function renderHostMetrics() {
   var m = state.hostMetrics || {};
-  var contextEl = document.getElementById('metric-context');
-  var promptEl = document.getElementById('metric-prompt');
-  var sessionEl = document.getElementById('metric-session');
-  var costEl = document.getElementById('metric-cost');
   var tokenCounterEl = document.getElementById('token-counter');
-  if (contextEl) {
-    contextEl.textContent = fmtTok(m.contextEstimatedTokens || 0) + ' est tok';
-    contextEl.title = fmtBytes(m.contextBytes || 0);
-  }
-  if (promptEl) promptEl.textContent = fmtTok(m.promptEstimatedTokens || 0) + ' est tok';
-  if (sessionEl) sessionEl.textContent = fmtTok(m.sessionTokens || 0) + ' tok';
-  if (costEl) costEl.textContent = m.hasCost ? '$' + Number(m.sessionCostUsd || 0).toFixed(3) : '--';
   if (tokenCounterEl && m.sessionTokens) tokenCounterEl.textContent = fmtTok(m.sessionTokens) + ' tok';
+  renderStatsBar();
   updateTokenBar();
 }
 
@@ -2683,18 +2651,24 @@ function updateSessionStats(outcome, tokens, durationMs, llmCalls, costUsd, ttft
 
 function renderStatsBar() {
   var s = state.sessionStats;
+  var m = state.hostMetrics || {};
   var el = document.getElementById('session-stats-bar');
   if (!el) return;
-  var avgLat  = fmtMs(Math.round(_avg(s.latencies)));
+  var avgLat  = s.latencies.length ? fmtMs(Math.round(_avg(s.latencies))) : '\u2014';
   var avgTtft = s.ttfts.length ? fmtMs(Math.round(_avg(s.ttfts))) : '\u2014';
+  var sessionTokens = m.sessionTokens || s.totalTokens;
+  var costLabel = m.hasCost
+    ? '$' + Number(m.sessionCostUsd || 0).toFixed(3)
+    : (s.totalCostUsd > 0 ? '$' + s.totalCostUsd.toFixed(3) : '\u2014');
   var html =
     '<span class="ss-chip">Turns <b>' + s.totalTurns + '</b></span>' +
     (s.totalErrors ? '<span class="ss-chip ss-chip-err">Errors <b>' + s.totalErrors + '</b></span>' : '') +
-    '<span class="ss-chip">Tokens <b>' + fmtTok(s.totalTokens) + '</b></span>' +
+    '<span class="ss-chip">Tokens <b>' + fmtTok(sessionTokens) + '</b></span>' +
     '<span class="ss-chip">LLM calls <b>' + s.totalLlmCalls + '</b></span>' +
     '<span class="ss-chip">Avg latency <b>' + avgLat + '</b></span>' +
-    '<span class="ss-chip">Avg TTFT <b>' + avgTtft + '</b></span>';
-  if (s.totalCostUsd > 0) html += '<span class="ss-chip">Cost <b>$' + s.totalCostUsd.toFixed(3) + '</b></span>';
+    '<span class="ss-chip">Avg TTFT <b>' + avgTtft + '</b></span>' +
+    '<span class="ss-chip" title="' + fmtBytes(m.contextBytes || 0) + ' injected IDE context, plus current input">Ctx Size <b>' + fmtTok(m.promptEstimatedTokens || 0) + ' est tok</b></span>' +
+    '<span class="ss-chip">Cost <b>' + costLabel + '</b></span>';
   el.innerHTML = html;
   el.classList.add('visible');
 }
@@ -2761,6 +2735,10 @@ function clearMessages() {
   var rewindBar = document.getElementById('rewind-bar');
   if (rewindBar) rewindBar.classList.remove('visible');
   // Reset live session metrics
+  state.sessionStats = {
+    totalTurns: 0, totalErrors: 0, totalTokens: 0, totalLlmCalls: 0, totalCostUsd: 0,
+    latencies: [], ttfts: [], turnTokens: [], turnDurations: [], outcomes: [],
+  };
   state.hostMetrics = {
     contextBytes: 0,
     contextEstimatedTokens: 0,
@@ -2771,12 +2749,6 @@ function clearMessages() {
     attachmentsCount: 0,
   };
   renderHostMetrics();
-  state.sessionStats = {
-    totalTurns: 0, totalErrors: 0, totalTokens: 0, totalLlmCalls: 0, totalCostUsd: 0,
-    latencies: [], ttfts: [], turnTokens: [], turnDurations: [], outcomes: [],
-  };
-  var ssBar = document.getElementById('session-stats-bar');
-  if (ssBar) { ssBar.innerHTML = ''; ssBar.classList.remove('visible'); }
   var mc = document.getElementById('mini-charts');
   if (mc) { mc.innerHTML = ''; mc.classList.remove('visible'); }
 }

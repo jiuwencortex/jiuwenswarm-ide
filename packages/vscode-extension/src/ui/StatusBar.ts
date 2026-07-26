@@ -5,7 +5,7 @@ import { SessionMetrics } from '../client/protocol';
 export class StatusBar {
   private readonly item: vscode.StatusBarItem;
   private tokenCount = 0;
-  private contextEstimatedTokens = 0;
+  private promptEstimatedTokens = 0;
   private costUsd = 0;
   private hasCost = false;
   private sessionId: string | null = null;
@@ -24,7 +24,7 @@ export class StatusBar {
 
   setMetrics(metrics: SessionMetrics): void {
     this.tokenCount = metrics.sessionTokens;
-    this.contextEstimatedTokens = metrics.contextEstimatedTokens;
+    this.promptEstimatedTokens = metrics.promptEstimatedTokens;
     this.costUsd = metrics.sessionCostUsd;
     this.hasCost = metrics.hasCost;
     this.update(this.ws.getStatus());
@@ -39,15 +39,15 @@ export class StatusBar {
     const tokenLabel = this.tokenCount > 0
       ? ` \u00b7 ${formatTokenCount(this.tokenCount)}`
       : '';
-    const contextLabel = this.contextEstimatedTokens > 0
-      ? ` \u00b7 ctx ${formatTokenCount(this.contextEstimatedTokens)}`
+    const contextLabel = this.promptEstimatedTokens > 0
+      ? ` \u00b7 ctx ${formatTokenCount(this.promptEstimatedTokens)}`
       : '';
     const costLabel = this.hasCost
       ? ` \u00b7 $${this.costUsd.toFixed(3)}`
       : '';
     const metricsTooltip = [
       this.tokenCount > 0 ? `${this.tokenCount} session tokens` : undefined,
-      this.contextEstimatedTokens > 0 ? `${this.contextEstimatedTokens} estimated context tokens` : undefined,
+      this.promptEstimatedTokens > 0 ? `${this.promptEstimatedTokens} estimated prompt context tokens` : undefined,
       this.hasCost ? `$${this.costUsd.toFixed(3)} session cost` : undefined,
     ].filter(Boolean).join(' — ');
 
