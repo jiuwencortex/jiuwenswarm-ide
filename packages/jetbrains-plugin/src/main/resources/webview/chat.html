@@ -2737,10 +2737,13 @@ function updateUsage(rid, payload) {
   }
 
   pt.events = pt.events || [];
+  // Prompt is serialized into usage_metadata.prompt only on some agent paths; keep it if present.
+  var evtPrompt = (typeof meta.prompt === 'string' && meta.prompt.trim()) ? meta.prompt : null;
   pt.events.push({
     type: 'usage',
     t: Date.now(),
     label: meta.model_name || state.modelName || 'LLM',
+    prompt: evtPrompt,
     detail: 'in ' + (inTok || 0).toLocaleString() + ' / out ' + (outTok || 0).toLocaleString() +
       ' = ' + (inTok + outTok).toLocaleString() + ' tok' +
       ((meta.cache_tokens || 0) > 0 ? ' \u00B7 cache ' + meta.cache_tokens.toLocaleString() : '') +
@@ -3126,6 +3129,21 @@ function toggleTrajectory(containerEl) {
   if (visible) scrollToBottom();
 }
 
+/** Collect the LLM response that followed a usage event (until the next usage event),
+ *  mirroring TraceHound's forward-scan: final text + tool calls + reasoning + errors. */
+function collectLLMResponse(events, startIdx) {
+  var parts = [];
+  for (var i = startIdx + 1; i < events.length; i++) {
+    var e = events[i];
+    if (e.type === 'usage') break;
+    if (e.type === 'final') parts.push('Text:\n' + (e.detail || ''));
+    else if (e.type === 'tool_call') parts.push('Tool: ' + (e.label || '') + '\n' + (e.detail || ''));
+    else if (e.type === 'reasoning') parts.push('Reasoning:\n' + (e.detail || ''));
+    else if (e.type === 'error') parts.push('Error:\n' + (e.detail || ''));
+  }
+  return parts.join('\n\n---\n\n');
+}
+
 function renderTrajectory(events) {
   if (!events || !events.length) return '';
   var firstT = events[0].t;
@@ -3141,7 +3159,14 @@ function renderTrajectory(events) {
     var meta = TRAJ_EVENT_META[e.type] || { icon: '\u2022', label: e.type || '' };
     var icon = e.icon || meta.icon;
     var label = escapeHtml(meta.label + (e.label ? ': ' + e.label : ''));
-    var content = e.detail ? escapeHtml(e.detail) : '';
+    var rawContent = e.detail ? e.detail : '';
+    // For an LLM call, show the prompt (when available) and the model's response right inside the usage row
+    if (e.type === 'usage') {
+      if (e.prompt) rawContent = (rawContent ? rawContent + '\n\n' : '') + 'LLM Prompt:\n' + e.prompt;
+      var resp = collectLLMResponse(events, i);
+      if (resp) rawContent = (rawContent ? rawContent + '\n\n' : '') + 'LLM Response:\n' + resp;
+    }
+    var content = rawContent ? escapeHtml(rawContent) : '';
     var elapsed = e.t - firstT;
     out += '<div class="traj-row ' + escapeHtml(e.type) + '">' +
       '<div class="traj-header" onclick="this.classList.toggle(\'open\')">' +
