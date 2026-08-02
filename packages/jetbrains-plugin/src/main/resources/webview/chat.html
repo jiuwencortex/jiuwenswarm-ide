@@ -1008,17 +1008,17 @@
     bottom: calc(100% + 4px);
     left: 50%;
     transform: translateX(-50%);
-    background: var(--bg3);
-    color: var(--text);
-    border: 1px solid var(--border);
+    background: #333;
+    color: #f0f0f0;
+    border: 1px solid rgba(255,255,255,0.25);
     border-radius: 4px;
     padding: 4px 6px;
     font-size: 10px;
     line-height: 1.4;
     white-space: pre;
-    z-index: 50;
+    z-index: 55;
     pointer-events: none;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+    box-shadow: 0 3px 10px rgba(0,0,0,0.45);
   }
   .charts-toggle {
     margin-left: auto;
@@ -1031,6 +1031,12 @@
     line-height: 1;
   }
   .charts-toggle:hover { color: var(--text); }
+  :root[data-theme="light"] .mini-bar:hover::after {
+    background: #3a3a3d;
+    color: #f5f5f5;
+    border: 1px solid rgba(0,0,0,0.4);
+    box-shadow: 0 3px 10px rgba(0,0,0,0.35);
+  }
 
   /* ── Turn stats footer ── */
   .turn-stats {
@@ -2110,6 +2116,9 @@ function handleJiuwenEvent(evt) {
     if (typeof payload.context_max === 'number' && payload.context_max > 0) {
       state.contextWindow = payload.context_max;
     }
+    if (typeof payload.context_window_tokens === 'number' && payload.context_window_tokens > 0) {
+      state.contextWindow = payload.context_window_tokens;
+    }
     if (typeof payload.tokens_used === 'number') {
       state.contextTokensUsed = payload.tokens_used;
     }
@@ -2539,12 +2548,21 @@ function updateUsage(rid, payload) {
   }
 }
 
+function contextUsagePct() {
+  var limit = state.contextWindow;
+  if (state.contextUsagePercent != null) return Math.min(100, Math.max(0, Math.round(state.contextUsagePercent)));
+  if (state.contextTokensUsed > 0 && limit > 0) return Math.min(100, Math.max(0, Math.round(state.contextTokensUsed / limit * 100)));
+  return null;
+}
+
 function renderTokenCounter(total) {
   state.lastTokenTotal = total;
   var el = document.getElementById('token-counter');
   if (!el) return;
   var text = fmtTok(total) + ' tok';
   if (state.contextWindow > 0) text += ' \u00B7 ctx ' + fmtTok(state.contextWindow);
+  var pct = contextUsagePct();
+  if (pct != null) text += ' (' + pct + '%)';
   el.textContent = text;
 }
 
@@ -2603,10 +2621,10 @@ function finalizeTurn(rid, payload) {
     let footerHtml =
       '<span class="stat-badge" style="background:' + outcomeColor + '">' +
       outcome.replace(/_/g, ' ') + '</span>';
-    if (totalTok)           footerHtml += '<span class="stat-chip" title="input / output tokens">toks: ' + fmtTok(pt.inputTokens) + ' in · ' + fmtTok(pt.outputTokens) + ' out</span>';
+    if (totalTok)           footerHtml += '<span class="stat-chip" title="input / output tokens">toks in ' + fmtTok(pt.inputTokens) + ' · out ' + fmtTok(pt.outputTokens) + '</span>';
     if (pt.llmCallCount > 1) footerHtml += '<span class="stat-chip">'         + pt.llmCallCount       + ' LLM calls</span>';
     if (pt.toolCallCount)   footerHtml += '<span class="stat-chip">'          + pt.toolCallCount      + ' tools</span>';
-    footerHtml += '<span class="stat-chip" title="total duration · time from send to first response token">' + (durationMs !== null ? 'lat ' + fmtMs(durationMs) : '') + (ttftMs !== null ? ' · first tok ' + fmtMs(ttftMs) : '') + '</span>';
+    footerHtml += '<span class="stat-chip" title="total duration · time from send to first response token">' + (durationMs !== null ? 'dur ' + fmtMs(durationMs) : '') + (ttftMs !== null ? ' · first ' + fmtMs(ttftMs) : '') + '</span>';
     if (pt.toolErrorCount) {
       const errSummary = pt.toolErrors.map(function(e) { return '• ' + escapeHtml(e); }).join('\n');
       footerHtml += '<span class="stat-chip stat-chip-warn" style="cursor:pointer;text-decoration:underline dotted rgba(245,158,11,0.5)" onclick="var n=this.nextElementSibling;n.style.display=n.style.display===\'none\'?\'block\':\'none\'">' + pt.toolErrorCount + ' tool err \u25BE</span>';
@@ -2668,7 +2686,7 @@ function appendError(rid, errorText) {
     footer.className = 'turn-stats';
     footer.innerHTML =
       '<span class="stat-badge" style="background:#ef4444">error</span>' +
-      (totalTok ? '<span class="stat-chip" title="input / output tokens">toks: ' + fmtTok(pt.inputTokens) + ' in · ' + fmtTok(pt.outputTokens) + ' out</span>' : '') +
+      (totalTok ? '<span class="stat-chip" title="input / output tokens">toks in ' + fmtTok(pt.inputTokens) + ' · out ' + fmtTok(pt.outputTokens) + '</span>' : '') +
       '<span class="stat-chip">' + fmtMs(durationMs) + '</span>';
     pt.containerEl.appendChild(footer);
 
@@ -2843,20 +2861,23 @@ function resendMessage(btn) {
 
 function updateTokenBar() {
   var total = state.sessionStats.totalTokens;
-  var limit = state.contextWindow || 128000;
+  var limit = state.contextWindow;
   var pct;
   if (state.contextUsagePercent != null) {
     pct = Math.min(100, Math.round(state.contextUsagePercent));
-  } else if (state.contextTokensUsed > 0) {
+  } else if (state.contextTokensUsed > 0 && limit > 0) {
     pct = Math.min(100, Math.round(state.contextTokensUsed / limit * 100));
-  } else {
+  } else if (limit > 0) {
     pct = Math.min(100, Math.round(total / limit * 100));
+  } else {
+    pct = state.contextTokensUsed > 0 ? 100 : 6;
   }
   var wrap = document.getElementById('token-bar-wrap');
   var fill = document.getElementById('token-bar-fill');
   if (!wrap || !fill) return;
   if (total > 0 || state.contextTokensUsed > 0) {
     wrap.classList.add('visible');
+    pct = Math.max(pct, 6);
     fill.style.width = pct + '%';
     fill.style.background = pct > 80 ? '#ef4444' : pct > 60 ? '#f59e0b' : 'var(--accent)';
   } else {
@@ -2898,8 +2919,8 @@ function renderStatsBar() {
     (s.totalErrors ? '<span class="ss-chip ss-chip-err">Errors <b>' + s.totalErrors + '</b></span>' : '') +
     '<span class="ss-chip">Tokens <b>' + fmtTok(s.totalTokens) + '</b></span>' +
     '<span class="ss-chip">LLM calls <b>' + s.totalLlmCalls + '</b></span>' +
-    '<span class="ss-chip">Avg latency <b>' + avgLat + '</b></span>' +
-    '<span class="ss-chip">Avg First Token <b>' + avgTtft + '</b></span>';
+    '<span class="ss-chip">Avg duration <b>' + avgLat + '</b></span>' +
+    '<span class="ss-chip">Avg first token <b>' + avgTtft + '</b></span>';
   if (s.totalCostUsd > 0) html += '<span class="ss-chip">Cost <b>$' + s.totalCostUsd.toFixed(3) + '</b></span>';
   if (s.totalTurns >= 2) html += '<button class="charts-toggle" onclick="toggleCharts()" title="' + (state.chartsCollapsed ? 'Show charts' : 'Hide charts') + '">' + (state.chartsCollapsed ? '\u25B8' : '\u25BE') + '</button>';
   el.innerHTML = html;
@@ -2931,10 +2952,9 @@ function renderMiniCharts() {
     return values.map(function(v, i) {
       var pct = Math.max(6, Math.round(v / maxVal * 100));
       var col = outcomeColor[s.outcomes[i]] || '#6b7280';
-      var pctOfMax = Math.round(v / maxVal * 100);
       var ttft = s.ttfts[i];
       var tip = 'Turn ' + (i + 1) + '\n' +
-        (isTokens ? 'Tokens: ' + fmtTok(v) : 'Duration: ' + fmtMs(v)) + ' (' + pctOfMax + '% of max)' +
+        (isTokens ? 'Tokens: ' + fmtTok(v) : 'Duration: ' + fmtMs(v)) +
         (!isTokens && ttft != null ? '\nFirst token: ' + fmtMs(ttft) : '') +
         '\nStatus: ' + (s.outcomes[i] || 'unknown');
       return '<div class="mini-bar" style="height:' + pct + '%;background:' + col + '" data-tip="' + tip + '"></div>';
