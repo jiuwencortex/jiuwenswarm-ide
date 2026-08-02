@@ -9,6 +9,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
 import com.jiuwenswarm.plugin.settings.JiuwenSwarmSettings
+import java.io.File
 
 /**
  * Collects IDE context (active file, language, selection, diagnostics, open tabs, git)
@@ -20,8 +21,8 @@ import com.jiuwenswarm.plugin.settings.JiuwenSwarmSettings
 object ContextCollector {
 
     /** Returns a formatted context block, or null if there is nothing useful to inject. */
-    fun collect(project: Project): String? {
-        // ── Phase 1: gather all IntelliJ-API data under ReadAction ───────��──
+    fun collect(project: Project, mentionedPaths: List<String> = emptyList()): String? {
+        // ── Phase 1: gather all IntelliJ-API data under ReadAction ──────────
         val ideData = ReadAction.compute<IdeData?, Throwable> { readIdeData(project) }
         // ── Phase 2: project tree (VirtualFile traversal — ReadAction) ──────
         val settings = JiuwenSwarmSettings.instance()
@@ -35,9 +36,13 @@ object ContextCollector {
         } else null
         // ── Phase 3: git (subprocess — must run outside ReadAction) ─────────
         val gitInfo = GitContextProvider.collect(project)
+        // ── Phase 4: project rules (.jiuwenswarm/instructions.md etc.) ──────
+        val projectRules = collectProjectRules(project)
+        // ── Phase 5: @-mentioned files ──────────────────────────────────────
+        val mentionedText = mentionedPaths.takeIf { it.isNotEmpty() }?.let { collectMentionedFiles(it) }
 
         // If we have nothing at all, return null (no context to inject)
-        if (ideData == null && projectTree == null && gitInfo == null) return null
+        if (ideData == null && projectTree == null && gitInfo == null && projectRules == null && mentionedText == null) return null
 
         return buildString {
             appendLine("<!-- IDE Context -->")
@@ -86,8 +91,82 @@ object ContextCollector {
                 appendLine(git)
             }
 
+            // Project rules
+            projectRules?.let { rules ->
+                appendLine()
+                appendLine("Project rules:")
+                appendLine(rules)
+            }
+
+            // @-mentioned files
+            mentionedText?.let { mt ->
+                appendLine()
+                appendLine(mt)
+            }
+
             appendLine("<!-- End IDE Context -->")
         }.trim()
+    }
+
+    /** Reads the first project-rules file found at the project root. */
+    private fun collectProjectRules(project: Project): String? {
+        val base = project.basePath ?: return null
+        val candidates = listOf(
+            File(base, ".jiuwenswarm/instructions.md"),
+            File(base, ".jiuwenswarm/rules.md"),
+            File(base, "AGENTS.md"),
+        )
+        for (f in candidates) {
+            if (f.exists() && f.canRead()) {
+                val content = f.readText().trim()
+                if (content.isNotEmpty()) return content
+            }
+        }
+        return null
+    }
+
+    /** Reads each @-mentioned file and returns their contents as a formatted block. */
+    private fun collectMentionedFiles(paths: List<String>): String? {
+        val parts = mutableListOf<String>()
+        for (p in paths) {
+            val f = File(p)
+            if (f.exists() && f.canRead()) {
+                val ext = f.extension.ifBlank { "text" }
+                parts += "@$p:"
+                parts += "```$ext"
+                parts += f.readText().trimEnd()
+                parts += "```"
+            }
+        }
+        return parts.takeIf { it.isNotEmpty() }?.joinToString("\n")
+    }
+
+    /** Returns a flat list of workspace files for @-mention autocomplete (max 500). */
+    fun gatherWorkspaceFiles(project: Project): List<Map<String, String>> {
+        val base = project.basePath ?: return emptyList()
+        val results = mutableListOf<Map<String, String>>()
+        val baseFile = File(base)
+        collectFilesFlat(baseFile, baseFile, results, 500)
+        return results
+    }
+
+    private fun collectFilesFlat(
+        dir: File,
+        root: File,
+        out: MutableList<Map<String, String>>,
+        limit: Int,
+    ) {
+        if (out.size >= limit) return
+        val entries = dir.listFiles() ?: return
+        for (e in entries.sortedBy { it.name }) {
+            if (out.size >= limit) break
+            if (SKIP_DIRS.contains(e.name) || e.name.startsWith(".")) continue
+            if (e.isDirectory) {
+                collectFilesFlat(e, root, out, limit)
+            } else {
+                out += mapOf("name" to e.name, "path" to e.path, "rel" to e.relativeTo(root).path)
+            }
+        }
     }
 
     private val SKIP_DIRS = setOf(

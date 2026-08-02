@@ -260,13 +260,15 @@ class ChatPanel(
                     val mode = msg.get("mode")?.asString ?: "code.plan"
                     val rid = msg.get("requestId")?.asString ?: return
                     val mediaItems = msg.getAsJsonArray("media_items")
+                    val mentionedPaths = msg.getAsJsonArray("mentionedPaths")
+                        ?.mapNotNull { it.asString } ?: emptyList()
                     lastRequestId = rid
                     // Clear snapshots from previous turn; rewind is no longer valid once user sends a new message
                     currentTurnSnapshots.clear()
                     lastTurnSnapshots = emptyMap()
                     dispatchToWebview(mapOf("type" to "rewindable", "enabled" to false))
                     debug("SEND  → requestId=$rid mode=$mode content=${content.take(60)} media=${mediaItems?.size() ?: 0}")
-                    val ideContext = ContextCollector.collect(project)
+                    val ideContext = ContextCollector.collect(project, mentionedPaths)
                     if (!service.session.sendChat(content, mode, rid, ideContext, mediaItems)) {
                         debug("SEND  → FAILED (no session or disconnected)")
                         dispatchToWebview(mapOf(
@@ -438,6 +440,10 @@ class ChatPanel(
                 "stop" -> {
                     debug("ACTION→ stop (chat.interrupt)")
                     service.session.interrupt()
+                }
+                "files_request" -> {
+                    val files = ContextCollector.gatherWorkspaceFiles(project)
+                    dispatchToWebview(mapOf("type" to "files", "files" to files))
                 }
             }
         } catch (e: Exception) {

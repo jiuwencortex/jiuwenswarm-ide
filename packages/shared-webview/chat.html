@@ -997,6 +997,36 @@
   .ss-chip .todo-wait { color: #9ca3af; }
   :root[data-theme="light"] .ss-chip { color: #4f4f4f; }
 
+  /* ── @-mention popup ── */
+  #input-row { position: relative; }
+  #mention-popup {
+    position: absolute;
+    bottom: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    max-height: 200px;
+    overflow-y: auto;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    z-index: 100;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+  }
+  #mention-popup.hidden { display: none; }
+  .mention-item {
+    padding: 5px 10px;
+    cursor: pointer;
+    font-size: 12px;
+    font-family: var(--font-mono);
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .mention-item:hover, .mention-item.active { background: var(--accent); color: #fff; }
+  .mention-item .mi-rel { color: var(--text-muted); font-size: 11px; margin-left: 6px; }
+  .mention-item.active .mi-rel { color: rgba(255,255,255,0.7); }
+
   /* ── Mini bar charts (tokens/turn + duration/turn) ── */
   #mini-charts {
     display: none;
@@ -1379,6 +1409,7 @@
 <div id="input-area">
   <div id="attachment-preview"></div>
   <div id="input-row">
+    <div id="mention-popup" class="hidden"></div>
     <textarea id="input" placeholder="Enter to send, Shift+Enter for new line" rows="1" disabled></textarea>
     <button id="send-btn" disabled title="Send (Enter)">↑</button>
   </div>
@@ -1500,6 +1531,10 @@ let state = {
     turnDurations: [],  // ms per turn (for chart)
     outcomes: [],       // outcome string per turn (for chart colours)
   },
+  mentionFiles: [],    // [{name, path, rel}] — populated by host on 'files' message
+  pendingMentions: [], // paths the user @-mentioned in the current input
+  mentionQuery: '',    // current @-token being typed
+  mentionActive: -1,   // keyboard-selected index in mention popup (-1 = none)
 };
 var _historyPendingAssistant = null; // assistant turn being assembled from history records
 
@@ -1555,6 +1590,9 @@ function handleHostMessage(msg) {
         inp.dispatchEvent(new Event('input'));
         inp.focus();
       }
+      break;
+    case 'files':
+      state.mentionFiles = msg.files || [];
       break;
     case 'session_deleted':
       state.sessions = state.sessions.filter(function(s) {
@@ -3042,8 +3080,85 @@ function appendError(rid, errorText) {
 // ─────────────────────────────────────────────
 const inputEl = document.getElementById('input');
 const sendBtn = document.getElementById('send-btn');
+const mentionPopupEl = document.getElementById('mention-popup');
+
+function getMentionMatches() {
+  var q = state.mentionQuery.toLowerCase();
+  return state.mentionFiles.filter(function(f) {
+    return f.rel.toLowerCase().includes(q) || f.name.toLowerCase().includes(q);
+  }).slice(0, 20);
+}
+
+function renderMentionPopup(matches) {
+  if (!matches.length) { hideMentionPopup(); return; }
+  mentionPopupEl.innerHTML = matches.map(function(f, i) {
+    var active = i === state.mentionActive ? ' active' : '';
+    return '<div class="mention-item' + active + '" data-path="' + f.path.replace(/"/g, '&quot;') + '">' +
+      f.name + '<span class="mi-rel">' + f.rel.replace(/</g, '&lt;') + '</span></div>';
+  }).join('');
+  mentionPopupEl.classList.remove('hidden');
+  // Scroll active item into view
+  var activeEl = mentionPopupEl.querySelector('.active');
+  if (activeEl) activeEl.scrollIntoView({ block: 'nearest' });
+  // Click handler
+  mentionPopupEl.onclick = function(e) {
+    var item = e.target.closest('.mention-item');
+    if (item) selectMention({ path: item.dataset.path, name: item.dataset.path.split('/').pop(), rel: '' });
+  };
+}
+
+function hideMentionPopup() {
+  mentionPopupEl.classList.add('hidden');
+  mentionPopupEl.innerHTML = '';
+  state.mentionActive = -1;
+}
+
+function selectMention(file) {
+  // Replace the @query in the textarea with @rel-path + space
+  var val = inputEl.value;
+  var pos = inputEl.selectionStart;
+  var before = val.substring(0, pos);
+  var after  = val.substring(pos);
+  var replaced = before.replace(/@([^\s@]*)$/, '@' + file.rel + ' ');
+  inputEl.value = replaced + after;
+  var newPos = replaced.length;
+  inputEl.setSelectionRange(newPos, newPos);
+  // Track this path so submitMessage can forward it to the host
+  if (!state.pendingMentions.includes(file.path)) {
+    state.pendingMentions.push(file.path);
+  }
+  hideMentionPopup();
+  inputEl.focus();
+}
 
 inputEl.addEventListener('keydown', function(e) {
+  // When mention popup is open, intercept navigation keys
+  if (!mentionPopupEl.classList.contains('hidden')) {
+    const items = mentionPopupEl.querySelectorAll('.mention-item');
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      state.mentionActive = Math.min(state.mentionActive + 1, items.length - 1);
+      renderMentionPopup(getMentionMatches());
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      state.mentionActive = Math.max(state.mentionActive - 1, 0);
+      renderMentionPopup(getMentionMatches());
+      return;
+    }
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      var idx = state.mentionActive >= 0 ? state.mentionActive : 0;
+      var matches = getMentionMatches();
+      if (matches[idx]) selectMention(matches[idx]);
+      return;
+    }
+    if (e.key === 'Escape') {
+      hideMentionPopup();
+      return;
+    }
+  }
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
     submitMessage();
@@ -3055,6 +3170,24 @@ inputEl.addEventListener('input', function() {
   this.style.height = Math.min(this.scrollHeight, 160) + 'px';
   sendBtn.disabled = !this.value.trim() || !state.connected || state.streaming;
   send({ type: 'input_changed', content: this.value });
+
+  // @-mention detection: find last '@...' token before cursor
+  var val = this.value.substring(0, this.selectionStart);
+  var atMatch = val.match(/@([^\s@]*)$/);
+  if (atMatch) {
+    state.mentionQuery = atMatch[1];
+    state.mentionActive = 0;
+    // Request file list from host the first time
+    if (state.mentionFiles.length === 0) send({ type: 'files_request' });
+    var matches = getMentionMatches();
+    if (matches.length > 0) {
+      renderMentionPopup(matches);
+    } else {
+      hideMentionPopup();
+    }
+  } else {
+    hideMentionPopup();
+  }
 });
 
 sendBtn.addEventListener('click', function() {
@@ -3095,6 +3228,11 @@ function submitMessage() {
     model: state.activeModel,
     requestId: requestId,
   };
+  // Attach @-mentioned file paths so the host can inject their contents into context
+  if (state.pendingMentions.length) {
+    msg.mentionedPaths = state.pendingMentions.slice();
+    state.pendingMentions = [];
+  }
   // Attach images if any
   if (state.attachments.length) {
     msg.media_items = state.attachments.map(function(att) {

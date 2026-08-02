@@ -20,8 +20,10 @@ export interface CollectedContext {
  * Collects IDE context (active file path, language, selection, diagnostics,
  * other open files, project tree, and git status) and formats it as a structured
  * text block to prepend to outgoing chat messages.
+ *
+ * @param mentionedPaths - explicit file paths the user @-mentioned in their message
  */
-export function collectContext(): CollectedContext {
+export function collectContext(mentionedPaths: string[] = []): CollectedContext {
   const editor = vscode.window.activeTextEditor;
 
   const filePath = editor?.document.fileName;
@@ -46,6 +48,12 @@ export function collectContext(): CollectedContext {
   // Git context
   const gitInfo = filePath ? collectGitContext(filePath) : undefined;
 
+  // Project rules (.jiuwenswarm/instructions.md, .jiuwenswarm/rules.md, or AGENTS.md)
+  const projectRules = collectProjectRules();
+
+  // Mentioned files (@-mentions from the user's message)
+  const mentionedFilesText = mentionedPaths.length > 0 ? collectMentionedFiles(mentionedPaths) : undefined;
+
   // Nothing meaningful if everything is empty
   const emptyMetrics = {
     byteLength: 0,
@@ -55,7 +63,7 @@ export function collectContext(): CollectedContext {
     projectTreeFilesCount: projectTreeResult?.fileCount ?? 0,
   };
 
-  if (!filePath && !selection && diagnostics.length === 0 && otherOpenFiles.length === 0 && !projectTree && !gitInfo) {
+  if (!filePath && !selection && diagnostics.length === 0 && otherOpenFiles.length === 0 && !projectTree && !gitInfo && !projectRules && !mentionedFilesText) {
     return { metrics: emptyMetrics };
   }
 
@@ -90,6 +98,15 @@ export function collectContext(): CollectedContext {
   if (gitInfo) {
     lines.push('');
     lines.push(gitInfo);
+  }
+  if (projectRules) {
+    lines.push('');
+    lines.push('Project rules:');
+    lines.push(projectRules);
+  }
+  if (mentionedFilesText) {
+    lines.push('');
+    lines.push(mentionedFilesText);
   }
   lines.push('<!-- End IDE Context -->');
   const text = lines.join('\n');
@@ -214,6 +231,87 @@ function collectGitContext(filePath: string): string | undefined {
     return result;
   } catch {
     return undefined;
+  }
+}
+
+/** Reads the first project-rules file found at the workspace root. */
+function collectProjectRules(): string | undefined {
+  const folders = vscode.workspace.workspaceFolders;
+  if (!folders || folders.length === 0) return undefined;
+  const root = folders[0].uri.fsPath;
+  const candidates = [
+    path.join(root, '.jiuwenswarm', 'instructions.md'),
+    path.join(root, '.jiuwenswarm', 'rules.md'),
+    path.join(root, 'AGENTS.md'),
+  ];
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) {
+        const content = fs.readFileSync(candidate, 'utf-8').trim();
+        if (content) return content;
+      }
+    } catch {
+      // skip unreadable files
+    }
+  }
+  return undefined;
+}
+
+/** Reads each @-mentioned file and returns their contents as a formatted block. */
+function collectMentionedFiles(paths: string[]): string | undefined {
+  const parts: string[] = [];
+  for (const p of paths) {
+    try {
+      if (fs.existsSync(p)) {
+        const content = fs.readFileSync(p, 'utf-8');
+        const ext = path.extname(p).replace('.', '') || 'text';
+        parts.push(`@${p}:`);
+        parts.push('```' + ext);
+        parts.push(content.trimEnd());
+        parts.push('```');
+      }
+    } catch {
+      // skip unreadable files
+    }
+  }
+  return parts.length > 0 ? parts.join('\n') : undefined;
+}
+
+/** Returns all files visible in the workspace for @-mention autocomplete. */
+export function gatherWorkspaceFiles(): Array<{ name: string; path: string; rel: string }> {
+  const folders = vscode.workspace.workspaceFolders;
+  if (!folders || folders.length === 0) return [];
+  const root = folders[0].uri.fsPath;
+  const results: Array<{ name: string; path: string; rel: string }> = [];
+  const counter = { count: 0 };
+  collectFiles(root, root, results, counter, 500);
+  return results;
+}
+
+function collectFiles(
+  dir: string,
+  root: string,
+  out: Array<{ name: string; path: string; rel: string }>,
+  counter: { count: number },
+  limit: number,
+): void {
+  if (counter.count >= limit) return;
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const e of entries) {
+    if (counter.count >= limit) break;
+    if (SKIP_DIRS.has(e.name) || e.name.startsWith('.')) continue;
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) {
+      collectFiles(full, root, out, counter, limit);
+    } else {
+      out.push({ name: e.name, path: full, rel: path.relative(root, full) });
+      counter.count++;
+    }
   }
 }
 

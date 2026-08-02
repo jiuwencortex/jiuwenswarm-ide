@@ -4,7 +4,7 @@ import * as path from 'path';
 import { WsClient, WsStatus } from '../client/WsClient';
 import { SessionManager } from '../client/SessionManager';
 import { JiuwenMessage, ExtToWebviewMsg, makeRequest, SessionMetrics } from '../client/protocol';
-import { collectContext, estimateTokens } from '../context/ContextCollector';
+import { collectContext, estimateTokens, gatherWorkspaceFiles } from '../context/ContextCollector';
 import { StatusBar } from './StatusBar';
 import * as DiffApplier from '../editor/DiffApplier';
 import { runCommand, extractCommand } from '../terminal/TerminalManager';
@@ -133,6 +133,7 @@ export class ChatPanel implements vscode.Disposable {
         const mode = (msg.mode as string) || 'code.plan';
         const rid = msg.requestId as string;
         const mediaItems = msg.media_items as unknown[] | undefined;
+        const mentionedPaths = (msg.mentionedPaths as string[] | undefined) || [];
         if (!rid) return;
         this.lastRequestId = rid;
         // Clear snapshots from previous turn; rewind is no longer valid
@@ -144,7 +145,7 @@ export class ChatPanel implements vscode.Disposable {
         }
         this.debug(`SEND→ requestId=${rid} mode=${mode} content=${content.substring(0, 60)}`);
         this.latestInput = content;
-        const ideContext = collectContext();
+        const ideContext = collectContext(mentionedPaths);
         this.updateMetrics(content, ideContext.metrics, mediaItems?.length ?? 0);
         if (!this.session.sendChat(content, mode, rid, ideContext.text || undefined, mediaItems)) {
           this.debug('SEND→ FAILED (no session or disconnected)');
@@ -249,6 +250,12 @@ export class ChatPanel implements vscode.Disposable {
         this.debug('ACTION→ stop (chat.interrupt)');
         const msg = makeRequest('chat.interrupt', {});
         this.ws.send(msg);
+        break;
+      }
+
+      case 'files_request': {
+        const files = gatherWorkspaceFiles();
+        this.postToWebview({ type: 'files', files });
         break;
       }
     }
