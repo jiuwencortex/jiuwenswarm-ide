@@ -886,7 +886,7 @@
     font-size: 10px;
     color: var(--text-dim);
     white-space: nowrap;
-    margin-left: 10px;
+    margin-left: 12px;
   }
   #model-wrap {
     position: relative;
@@ -1285,7 +1285,6 @@
   <div id="token-row">
     <div id="token-bar-wrap"><div id="token-bar-fill"></div></div>
     <span id="token-counter"></span>
-    <span id="mem-chip"></span>
   </div>
   <input type="file" id="image-input" accept="image/png,image/jpeg,image/webp,image/gif" multiple style="display:none">
   <div id="input-meta">
@@ -1314,6 +1313,7 @@
       </button>
       <div id="model-dropdown"></div>
     </div>
+    <span id="mem-chip"></span>
   </div>
 </div>
 
@@ -1380,7 +1380,6 @@ let state = {
   contextUsagePercent: null, // server-reported context occupancy (0-100, null = unknown)
   contextTokensUsed: 0,   // live context occupancy (tokens_used from context.usage)
   lastTokenTotal: 0,      // last token total passed to renderTokenCounter (for re-render)
-  hasTurn: false,         // true once the first user turn has been sent
   chartsCollapsed: false, // true when the tokens/duration mini-charts are collapsed
   sessionStats: {
     totalTurns: 0,
@@ -2173,7 +2172,6 @@ function handleJiuwenEvent(evt) {
 
 // Called when we send a message — create a user turn and an empty assistant turn
 function beginTurn(requestId, userContent) {
-  state.hasTurn = true;
   const msgs = document.getElementById('messages');
 
   // User message
@@ -2595,18 +2593,11 @@ function renderTokenCounter(total) {
 function renderMemoryChip(msg) {
   var el = document.getElementById('mem-chip');
   if (!el) return;
-  // Memory only means something once the first turn has been sent
-  if (!state.hasTurn) {
-    el.textContent = '';
-    el.style.display = 'none';
-    return;
-  }
   var rss = msg.rssMb || 0;
   var total = msg.totalMb || 0;
   var avail = msg.availableMb || 0;
   if (rss <= 0 && total <= 0) {
     el.textContent = '';
-    el.style.display = 'none';
     return;
   }
   var text = 'mem ' + fmtMb(rss);
@@ -3092,7 +3083,6 @@ function clearMessages() {
   // New session starts with an empty context window — reset the token bar
   state.contextTokensUsed = 0;
   state.contextUsagePercent = null;
-  state.hasTurn = false;
   updateTokenBar();
   state.hostMetrics = {
     contextBytes: 0,
