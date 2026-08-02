@@ -1277,6 +1277,8 @@ let state = {
     hasCost: false,
     attachmentsCount: 0,
   },
+  contextWindow: 0,       // model context window limit (from chat.usage_summary)
+  contextUsagePercent: null, // server-reported context occupancy (0-100, null = unknown)
   sessionStats: {
     totalTurns: 0,
     totalErrors: 0,
@@ -2014,7 +2016,14 @@ function handleJiuwenEvent(evt) {
     // Token data is inside payload.metadata for this event type
     updateUsage(rid, payload.metadata || payload);
   } else if (et === 'chat.usage_summary') {
-    // Authoritative turn total; per-turn display already handled by chat.usage_metadata above
+    // Authoritative turn total; also capture context window / occupancy for the token bar
+    if (typeof payload.context_window_tokens === 'number' && payload.context_window_tokens > 0) {
+      state.contextWindow = payload.context_window_tokens;
+    }
+    if (typeof payload.usage_percent === 'number') {
+      state.contextUsagePercent = payload.usage_percent;
+    }
+    updateTokenBar();
   } else if (et === 'chat.final') {
     finalizeTurn(rid, payload);
   } else if (et === 'chat.processing_status' && payload.is_processing === false) {
@@ -2310,18 +2319,8 @@ function updateUsage(rid, payload) {
   pt.costUsd      += cost;
 
   if (inTok || outTok) {
-    let usageEl = pt.containerEl.querySelector('.usage-line');
-    if (!usageEl) {
-      usageEl = document.createElement('div');
-      usageEl.className = 'usage-line';
-      pt.containerEl.appendChild(usageEl);
-    }
     const total = pt.inputTokens + pt.outputTokens;
-    let label = fmtTok(total) + ' tok';
-    if (pt.llmCallCount > 1) label += ' · ' + pt.llmCallCount + ' calls';
-    if (pt.costUsd > 0) label += ' · $' + pt.costUsd.toFixed(3);
-    usageEl.textContent = label;
-    document.getElementById('token-counter').textContent = fmtTok(total) + ' tok';
+    document.getElementById('token-counter').textContent = fmtTok(state.sessionStats.totalTokens + total) + ' tok';
   }
 }
 
@@ -2371,16 +2370,15 @@ function finalizeTurn(rid, payload) {
     let footerHtml =
       '<span class="stat-badge" style="background:' + outcomeColor + '">' +
       outcome.replace(/_/g, ' ') + '</span>';
-    if (totalTok)           footerHtml += '<span class="stat-chip">'          + fmtTok(totalTok)      + ' tok</span>';
+    if (totalTok)           footerHtml += '<span class="stat-chip" title="input / output tokens">' + fmtTok(pt.inputTokens) + ' in · ' + fmtTok(pt.outputTokens) + ' out tok</span>';
     if (pt.llmCallCount > 1) footerHtml += '<span class="stat-chip">'         + pt.llmCallCount       + ' LLM calls</span>';
     if (pt.toolCallCount)   footerHtml += '<span class="stat-chip">'          + pt.toolCallCount      + ' tools</span>';
-    if (ttftMs !== null)    footerHtml += '<span class="stat-chip stat-chip-dim" title="Time from send to first response token">first token ' + fmtMs(ttftMs) + '</span>';
+    footerHtml += '<span class="stat-chip" title="total duration · time from send to first response token">' + (durationMs !== null ? 'latency ' + fmtMs(durationMs) : '') + (ttftMs !== null ? ' · first token ' + fmtMs(ttftMs) : '') + '</span>';
     if (pt.toolErrorCount) {
       const errSummary = pt.toolErrors.map(function(e) { return '• ' + escapeHtml(e); }).join('\n');
       footerHtml += '<span class="stat-chip stat-chip-warn" style="cursor:pointer;text-decoration:underline dotted rgba(245,158,11,0.5)" onclick="var n=this.nextElementSibling;n.style.display=n.style.display===\'none\'?\'block\':\'none\'">' + pt.toolErrorCount + ' tool err \u25BE</span>';
       footerHtml += '<div class="tool-error-detail" style="display:none;margin-top:4px;padding:4px 8px;background:rgba(245,158,11,0.1);border-radius:4px;font-size:11px;white-space:pre-wrap;line-height:1.4">' + errSummary + '</div>';
     }
-    footerHtml += '<span class="stat-chip">' + fmtMs(durationMs) + '</span>';
     footer.innerHTML = footerHtml;
 
     var copyBtn = document.createElement('button');
@@ -2432,7 +2430,7 @@ function appendError(rid, errorText) {
     footer.className = 'turn-stats';
     footer.innerHTML =
       '<span class="stat-badge" style="background:#ef4444">error</span>' +
-      (totalTok ? '<span class="stat-chip">' + fmtTok(totalTok) + ' tok</span>' : '') +
+      (totalTok ? '<span class="stat-chip" title="input / output tokens">' + fmtTok(pt.inputTokens) + ' in · ' + fmtTok(pt.outputTokens) + ' out tok</span>' : '') +
       '<span class="stat-chip">' + fmtMs(durationMs) + '</span>';
     pt.containerEl.appendChild(footer);
 
@@ -2614,8 +2612,13 @@ function resendMessage(btn) {
 
 function updateTokenBar() {
   var total = state.hostMetrics.sessionTokens || state.sessionStats.totalTokens;
-  var limit = 128000;
-  var pct = Math.min(100, Math.round(total / limit * 100));
+  var limit = state.contextWindow || 128000;
+  var pct;
+  if (state.contextUsagePercent != null) {
+    pct = Math.min(100, Math.round(state.contextUsagePercent));
+  } else {
+    pct = Math.min(100, Math.round(total / limit * 100));
+  }
   var wrap = document.getElementById('token-bar-wrap');
   var fill = document.getElementById('token-bar-fill');
   if (!wrap || !fill) return;
