@@ -2281,9 +2281,14 @@ function updateUsage(rid, payload) {
   const pt = state.pendingTurns[rid];
   if (!pt) return;
 
-  const inTok  = payload.input_tokens  || payload.cache_read_input_tokens || 0;
-  const outTok = payload.output_tokens || 0;
-  const cost   = payload.cost_usd || 0;
+  // Server nests token data under payload.usage_metadata; tolerate a flat payload too.
+  const meta = (payload.usage_metadata && typeof payload.usage_metadata === 'object')
+    ? payload.usage_metadata
+    : payload;
+
+  const inTok  = (meta.input_tokens  || 0) + (meta.cache_tokens || 0);
+  const outTok = meta.output_tokens || 0;
+  const cost   = meta.total_cost || meta.cost_usd || 0;
 
   pt.llmCallCount++;
   pt.inputTokens  += inTok;

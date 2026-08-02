@@ -411,7 +411,7 @@ export class ChatPanel implements vscode.Disposable {
     const usage = (payload.usage as Record<string, unknown>) || {};
     const input = (usage.input_tokens as number) || 0;
     const output = (usage.output_tokens as number) || 0;
-    const cost = (usage.cost_usd as number) || 0;
+    const cost = (usage.total_cost as number) || (usage.cost_usd as number) || 0;
     this.sessionTokens += input + output;
     if (cost > 0) {
       this.sessionCostUsd += cost;
