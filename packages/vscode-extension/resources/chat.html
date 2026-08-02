@@ -1362,8 +1362,10 @@ let state = {
     hasCost: false,
     attachmentsCount: 0,
   },
-  contextWindow: 0,       // model context window limit (from chat.usage_summary)
+  contextWindow: 0,       // model context window limit (from chat.usage_summary / context.usage)
   contextUsagePercent: null, // server-reported context occupancy (0-100, null = unknown)
+  contextTokensUsed: 0,   // live context occupancy (tokens_used from context.usage)
+  lastTokenTotal: 0,      // last token total passed to renderTokenCounter (for re-render)
   chartsCollapsed: false, // true when the tokens/duration mini-charts are collapsed
   sessionStats: {
     totalTurns: 0,
@@ -2114,6 +2116,21 @@ function handleJiuwenEvent(evt) {
       state.contextUsagePercent = payload.usage_percent;
     }
     updateTokenBar();
+  } else if (et === 'context.usage') {
+    // Context occupancy arrives DURING the turn (streamed per token batch), unlike
+    // chat.usage_summary which only arrives at turn end. Capture the live window so
+    // the ctx label and token bar reflect the real limit immediately.
+    if (typeof payload.context_max === 'number' && payload.context_max > 0) {
+      state.contextWindow = payload.context_max;
+    }
+    if (typeof payload.tokens_used === 'number') {
+      state.contextTokensUsed = payload.tokens_used;
+    }
+    if (typeof payload.rate === 'number') {
+      state.contextUsagePercent = payload.rate;
+    }
+    renderTokenCounter(state.lastTokenTotal);
+    updateTokenBar();
   } else if (et === 'chat.final') {
     finalizeTurn(rid, payload);
   } else if (et === 'chat.processing_status' && payload.is_processing === false) {
@@ -2295,7 +2312,6 @@ function appendToolResult(rid, payload) {
 
   // Index-based matching: results arrive in call order
   var targetCard = pt.toolCards[pt.toolResultIdx];
-  pt.toolResultIdx++;
 
   const statusEl = targetCard.querySelector('.tool-status');
   const raw = payload.result
@@ -2310,12 +2326,19 @@ function appendToolResult(rid, payload) {
   const toolName = targetCard.dataset.toolName || 'tool';
 
   // exit_plan_mode is intercepted BEFORE execution by PlanApprovalInterruptRail and
-  // suspended with an empty-error result (success=False data=None error=''); the runtime
+  // suspended with a rail hand-off error like
+  //   {"error": "[AgentModeRail] exit_plan_mode can only be called in plan mode."}
+  // (or the legacy empty-error shape success=False data=None error=''); the runtime
   // then emits chat.ask_user_question. This is a hand-off, not a real failure:
   // show "awaiting approval" and do NOT consume the result index — the real result
-  // (after the user approves/rejects) will update this same card in place.
+  // (after the user approves/rejects) updates this same card in place.
+  const RAIL_ERR_RE = /\[AgentModeRail\] exit_plan_mode can only be called in plan mode/i;
+  const railErrorIn = function (x) {
+    if (typeof x === 'string') return RAIL_ERR_RE.test(x);
+    return !!(x && typeof x === 'object' && typeof x.error === 'string' && RAIL_ERR_RE.test(x.error));
+  };
   const suspended = toolName === 'exit_plan_mode' &&
-    /^success=False\s+data=None\s+error=''?$/.test(result.trim());
+    (railErrorIn(raw) || railErrorIn(payload.raw_output) || /^success=False\s+data=None\s+error=''?$/.test(result.trim()));
   if (suspended) {
     if (statusEl) {
       statusEl.innerHTML = '<span style="color:#eab308">⏸ awaiting approval</span>';
@@ -2323,6 +2346,8 @@ function appendToolResult(rid, payload) {
     scrollToBottom();
     return;
   }
+
+  pt.toolResultIdx++;
 
   // Plan-approval outcomes on exit_plan_mode (approve → executes; reject → skipped)
   // are not tool errors even when the payload carries success=False.
@@ -2363,8 +2388,18 @@ function getActivePendingTurn() {
 // + source). We reuse the original turn requestId so the resumed stream keeps mapping
 // into the same pending turn.
 function renderAskUserQuestion(rid, payload) {
-  const pt = state.pendingTurns[rid] || getActivePendingTurn();
+  // The interrupt question carries its OWN request_id (the suspended tool's id),
+  // different from the original chat.send id. chat.final for the original turn is
+  // emitted BEFORE the user answers and deletes that key — so register the same
+  // pending turn under THIS id too. The resumed stream echoes this id and needs a
+  // live pending turn to map into, otherwise the continuation never displays.
+  let pt = state.pendingTurns[rid];
+  if (!pt) {
+    pt = getActivePendingTurn();
+    if (pt) state.pendingTurns[rid] = pt;
+  }
   if (!pt) return;
+  pt.questionAnswered = false;
 
   const q = (payload.questions && payload.questions[0]) || payload;
   const options = q.options || [];
@@ -2412,6 +2447,7 @@ function renderAskUserQuestion(rid, payload) {
 }
 
 function sendAnswerForInterrupt(pt, rid, source, optionValue) {
+  pt.questionAnswered = true;
   const statusEl = pt.pendingQuestion ? pt.pendingQuestion.querySelector('.question-status') : null;
   if (statusEl) statusEl.textContent = 'Answer sent — waiting for the agent to continue…';
   send({
@@ -2517,6 +2553,7 @@ function updateUsage(rid, payload) {
 }
 
 function renderTokenCounter(total) {
+  state.lastTokenTotal = total;
   var el = document.getElementById('token-counter');
   if (!el) return;
   var text = fmtTok(total) + ' tok';
@@ -2546,6 +2583,15 @@ function finalizeTurn(rid, payload) {
         s.innerHTML = '';
       }
     });
+
+    // Premature final: when an interrupt question is awaiting an answer, the server
+    // emits chat.final for the original turn BEFORE the user responds. Don't finalize
+    // then — the resumed stream (keyed by the question's request_id) continues this
+    // same turn and will produce the real final.
+    if (pt.pendingQuestion && !pt.questionAnswered) {
+      scrollToBottom();
+      return;
+    }
 
     // ── Live metrics ──
     pt.hasFinal = true;
@@ -2593,6 +2639,11 @@ function finalizeTurn(rid, payload) {
 
     updateSessionStats(outcome, totalTok, durationMs, pt.llmCallCount, pt.costUsd, ttftMs);
     delete state.pendingTurns[rid];
+    // An interrupted turn is registered under BOTH the original send id and the
+    // question's request_id — purge every key that still maps to this finalized turn.
+    Object.keys(state.pendingTurns).forEach(function(k) {
+      if (state.pendingTurns[k] === pt) delete state.pendingTurns[k];
+    });
   }
   setStreaming(false);
   scrollToBottom();
@@ -2816,13 +2867,15 @@ function updateTokenBar() {
   var pct;
   if (state.contextUsagePercent != null) {
     pct = Math.min(100, Math.round(state.contextUsagePercent));
+  } else if (state.contextTokensUsed > 0) {
+    pct = Math.min(100, Math.round(state.contextTokensUsed / limit * 100));
   } else {
     pct = Math.min(100, Math.round(total / limit * 100));
   }
   var wrap = document.getElementById('token-bar-wrap');
   var fill = document.getElementById('token-bar-fill');
   if (!wrap || !fill) return;
-  if (total > 0) {
+  if (total > 0 || state.contextTokensUsed > 0) {
     wrap.classList.add('visible');
     fill.style.width = pct + '%';
     fill.style.background = pct > 80 ? '#ef4444' : pct > 60 ? '#f59e0b' : 'var(--accent)';
