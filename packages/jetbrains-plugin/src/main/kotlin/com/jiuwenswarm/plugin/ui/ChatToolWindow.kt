@@ -104,6 +104,8 @@ class ChatPanel(
 
     val component: JComponent get() = browser.component
 
+    private var memoryTimer: java.util.Timer? = null
+
     init {
         jsQuery = JBCefJSQuery.create(browser as JBCefBrowserBase)
         jsQuery.addHandler { request ->
@@ -126,8 +128,36 @@ class ChatPanel(
         service.session.addSessionListener(::onSessionChange)
         service.ws.addMessageListener(::onJiuwenMessage)
 
+        // Poll server memory usage and stream it to the webview chip
+        startMemoryPolling()
+
         // Load the chat HTML
         loadChatHtml()
+    }
+
+    private fun startMemoryPolling() {
+        stopMemoryPolling()
+        memoryTimer = java.util.Timer("jiuwenswarm-memory", true)
+        memoryTimer?.schedule(object : java.util.TimerTask() {
+            override fun run() {
+                try {
+                    val (rss, total, available) = service.session.getMemoryUsage()
+                    dispatchToWebview(mapOf(
+                        "type" to "memory",
+                        "rssMb" to rss,
+                        "totalMb" to total,
+                        "availableMb" to available,
+                    ))
+                } catch (_: Exception) {
+                    // memory.compute may be unavailable; silently ignore
+                }
+            }
+        }, 0L, 10_000L)
+    }
+
+    private fun stopMemoryPolling() {
+        memoryTimer?.cancel()
+        memoryTimer = null
     }
 
     // ──────────────────────────────────────────
@@ -646,6 +676,7 @@ class ChatPanel(
 
     // ──────────────────────────────────────────
     override fun dispose() {
+        stopMemoryPolling()
         service.ws.removeStatusListener(::onStatusChange)
         service.session.removeSessionListener(::onSessionChange)
         service.ws.removeMessageListener(::onJiuwenMessage)

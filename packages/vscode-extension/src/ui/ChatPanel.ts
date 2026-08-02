@@ -26,6 +26,7 @@ export class ChatPanel implements vscode.Disposable {
   private hasCost = false;
   private latestInput = '';
   private latestContextMetrics: SessionMetrics = this.emptyMetrics();
+  private memoryTimer?: NodeJS.Timeout;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -74,6 +75,7 @@ export class ChatPanel implements vscode.Disposable {
     this.panelDisposables.push(
       this.panel.webview.onDidReceiveMessage((raw) => this.handleWebviewMessage(raw)),
       this.panel.onDidDispose(() => {
+        this.stopMemoryPolling();
         this.panelDisposables.forEach((d) => d.dispose());
         this.panelDisposables = [];
         this.pendingWebviewMessages = [];
@@ -86,6 +88,7 @@ export class ChatPanel implements vscode.Disposable {
       this.sendCurrentStatus();
     }
     this.refreshMetrics();
+    this.startMemoryPolling();
   }
 
   postToWebview(msg: ExtToWebviewMsg): void {
@@ -98,6 +101,7 @@ export class ChatPanel implements vscode.Disposable {
   }
 
   dispose(): void {
+    this.stopMemoryPolling();
     this.panelDisposables.forEach((d) => d.dispose());
     this.panelDisposables = [];
     this.disposables.forEach((d) => d.dispose());
@@ -681,6 +685,39 @@ export class ChatPanel implements vscode.Disposable {
       sessionCostUsd: 0,
       hasCost: false,
     });
+  }
+
+  // ──────────────────────────────────────────
+  // Memory polling
+  // ──────────────────────────────────────────
+  private startMemoryPolling(): void {
+    this.stopMemoryPolling();
+    this.pollMemory();
+    this.memoryTimer = setInterval(() => this.pollMemory(), 10000);
+  }
+
+  private stopMemoryPolling(): void {
+    if (this.memoryTimer) {
+      clearInterval(this.memoryTimer);
+      this.memoryTimer = undefined;
+    }
+  }
+
+  private async pollMemory(): Promise<void> {
+    if (!this.panel || !this.ws.isConnected()) return;
+    try {
+      const usage = await this.session.getMemoryUsage();
+      if (this.panel) {
+        this.postToWebview({
+          type: 'memory',
+          rssMb: usage.rss_mb,
+          totalMb: usage.total_mb,
+          availableMb: usage.available_mb,
+        });
+      }
+    } catch {
+      // memory.compute may be unavailable; silently ignore
+    }
   }
 
   private emptyMetrics(): SessionMetrics {

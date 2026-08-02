@@ -119,6 +119,16 @@ export class SessionManager {
     return this.ws.send(msg);
   }
 
+  /** Fetch current process & system memory usage (MB). */
+  async getMemoryUsage(): Promise<{ rss_mb: number; total_mb: number; available_mb: number }> {
+    const payload = await this.request('memory.compute', {});
+    return {
+      rss_mb: (payload.rss_mb as number) || 0,
+      total_mb: (payload.total_mb as number) || 0,
+      available_mb: (payload.available_mb as number) || 0,
+    };
+  }
+
   /** List available skills */
   async listSkills(): Promise<Record<string, unknown>[]> {
     const payload = await this.request('skills.list', {});

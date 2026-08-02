@@ -30,6 +30,7 @@ export type ExtToWebviewMsg =
   | { type: 'disconnected' }
   | { type: 'reconnecting' }
   | { type: 'metrics'; metrics: SessionMetrics }
+  | { type: 'memory'; rssMb: number; totalMb: number; availableMb: number }
   | { type: 'sessions'; sessions: SessionInfo[] }
   | { type: 'session_deleted'; sessionId: string }
   | { type: 'skills'; skills: SkillEntry[] }

@@ -881,6 +881,13 @@
     color: var(--text-dim);
     white-space: nowrap;
   }
+  #mem-chip {
+    flex-shrink: 0;
+    font-size: 10px;
+    color: var(--text-dim);
+    white-space: nowrap;
+    margin-left: 10px;
+  }
   #model-wrap {
     position: relative;
     margin-left: auto;
@@ -1278,6 +1285,7 @@
   <div id="token-row">
     <div id="token-bar-wrap"><div id="token-bar-fill"></div></div>
     <span id="token-counter"></span>
+    <span id="mem-chip"></span>
   </div>
   <input type="file" id="image-input" accept="image/png,image/jpeg,image/webp,image/gif" multiple style="display:none">
   <div id="input-meta">
@@ -1372,6 +1380,7 @@ let state = {
   contextUsagePercent: null, // server-reported context occupancy (0-100, null = unknown)
   contextTokensUsed: 0,   // live context occupancy (tokens_used from context.usage)
   lastTokenTotal: 0,      // last token total passed to renderTokenCounter (for re-render)
+  hasTurn: false,         // true once the first user turn has been sent
   chartsCollapsed: false, // true when the tokens/duration mini-charts are collapsed
   sessionStats: {
     totalTurns: 0,
@@ -1488,6 +1497,9 @@ function handleHostMessage(msg) {
       state.activeModel = msg.model;
       if (msg.models) { state.models = msg.models; }
       updateModelDisplay(state.models, state.activeModel);
+      break;
+    case 'memory':
+      renderMemoryChip(msg);
       break;
   }
 }
@@ -2161,6 +2173,7 @@ function handleJiuwenEvent(evt) {
 
 // Called when we send a message — create a user turn and an empty assistant turn
 function beginTurn(requestId, userContent) {
+  state.hasTurn = true;
   const msgs = document.getElementById('messages');
 
   // User message
@@ -2579,6 +2592,34 @@ function renderTokenCounter(total) {
   el.textContent = text;
 }
 
+function renderMemoryChip(msg) {
+  var el = document.getElementById('mem-chip');
+  if (!el) return;
+  // Memory only means something once the first turn has been sent
+  if (!state.hasTurn) {
+    el.textContent = '';
+    el.style.display = 'none';
+    return;
+  }
+  var rss = msg.rssMb || 0;
+  var total = msg.totalMb || 0;
+  var avail = msg.availableMb || 0;
+  if (rss <= 0 && total <= 0) {
+    el.textContent = '';
+    el.style.display = 'none';
+    return;
+  }
+  var text = 'mem ' + fmtMb(rss);
+  el.textContent = text;
+  el.title = 'Server memory \u2014 RSS ' + fmtMb(rss) + ' of ' + fmtMb(total) + ' total, ' + fmtMb(avail) + ' available';
+  el.style.display = '';
+}
+
+function fmtMb(mb) {
+  if (mb >= 1024) return (mb / 1024).toFixed(1) + ' GB';
+  return Math.round(mb) + ' MB';
+}
+
 function finalizeTurn(rid, payload) {
   const pt = state.pendingTurns[rid];
   if (pt) {
@@ -2637,6 +2678,7 @@ function finalizeTurn(rid, payload) {
     if (totalTok)           footerHtml += '<span class="stat-chip" title="input / output tokens">toks in ' + fmtTok(pt.inputTokens) + ' · out ' + fmtTok(pt.outputTokens) + '</span>';
     if (pt.llmCallCount > 1) footerHtml += '<span class="stat-chip">'         + pt.llmCallCount       + ' LLM calls</span>';
     if (pt.toolCallCount)   footerHtml += '<span class="stat-chip">'          + pt.toolCallCount      + ' tools</span>';
+    if (pt.costUsd > 0)     footerHtml += '<span class="stat-chip" title="cumulative LLM cost this turn">' + fmtUsd(pt.costUsd) + '</span>';
     footerHtml += '<span class="stat-chip" title="total duration · time from send to first response token">' + (durationMs !== null ? 'dur ' + fmtMs(durationMs) : '') + (ttftMs !== null ? ' · first ' + fmtMs(ttftMs) : '') + '</span>';
     if (pt.toolErrorCount) {
       const errSummary = pt.toolErrors.map(function(e) { return '• ' + escapeHtml(e); }).join('\n');
@@ -2823,6 +2865,12 @@ function fmtBytes(n) {
 
 function fmtMs(ms) {
   return ms >= 1000 ? (ms / 1000).toFixed(1) + 's' : ms + 'ms';
+}
+
+function fmtUsd(v) {
+  if (v == null || v <= 0) return '';
+  if (v >= 0.01) return '$' + v.toFixed(2);
+  return '$' + v.toPrecision(2);
 }
 
 function classifyError(text) {
@@ -3044,6 +3092,7 @@ function clearMessages() {
   // New session starts with an empty context window — reset the token bar
   state.contextTokensUsed = 0;
   state.contextUsagePercent = null;
+  state.hasTurn = false;
   updateTokenBar();
   state.hostMetrics = {
     contextBytes: 0,

@@ -73,6 +73,18 @@ class SessionManager(
     }
 
     /**
+     * Fetches current process and system memory usage (MB) from the server.
+     * Returns a triple (rss_mb, total_mb, available_mb).
+     */
+    fun getMemoryUsage(): Triple<Double, Double, Double> {
+        val payload = request("memory.compute", emptyMap())
+        val rss = payload.get("rss_mb")?.asDouble ?: 0.0
+        val total = payload.get("total_mb")?.asDouble ?: 0.0
+        val available = payload.get("available_mb")?.asDouble ?: 0.0
+        return Triple(rss, total, available)
+    }
+
+    /**
      * Returns the list of available skills registered with the jiuwenswarm instance.
      * Each [JsonObject] contains at minimum "skill_id" and "name".
      * Throws if the server does not support the skills.list method.
