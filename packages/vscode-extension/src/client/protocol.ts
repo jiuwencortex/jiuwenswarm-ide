@@ -72,6 +72,7 @@ export type WebviewToExtMsg =
   | { type: 'ready' }
   | { type: 'input_changed'; content: string }
   | { type: 'send'; content: string; mode: string; requestId: string; media_items?: unknown[] }
+  | { type: 'answer'; requestId: string; answers: unknown[]; source: string; mode: string }
   | { type: 'new_session' }
   | { type: 'switch_session'; sessionId: string }
   | { type: 'delete_session'; sessionId: string }

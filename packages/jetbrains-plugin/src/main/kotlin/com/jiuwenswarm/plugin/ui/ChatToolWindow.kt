@@ -248,6 +248,21 @@ class ChatPanel(
                         debug("SEND  → OK")
                     }
                 }
+                "answer" -> {
+                    val rid = msg.get("requestId")?.asString ?: return
+                    val answers = msg.get("answers")?.asJsonArray ?: return
+                    if (answers.size() == 0) return
+                    val source = msg.get("source")?.asString ?: "confirm_interrupt"
+                    val mode = msg.get("mode")?.asString ?: "code.plan"
+                    debug("ANSWER→ requestId=$rid source=$source options=${answers.size()}")
+                    if (!service.session.sendAnswer(rid, answers, source, mode)) {
+                        dispatchToWebview(mapOf(
+                            "type" to "error",
+                            "message" to "Not connected or no active session",
+                            "requestId" to rid
+                        ))
+                    }
+                }
                 "toggle_debug" -> {
                     debugEnabled = msg.get("enabled")?.asBoolean ?: false
                     debug("Debug mode toggled: $debugEnabled")

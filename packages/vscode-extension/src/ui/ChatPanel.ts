@@ -151,6 +151,19 @@ export class ChatPanel implements vscode.Disposable {
         break;
       }
 
+      case 'answer': {
+        const rid = msg.requestId as string;
+        const answers = msg.answers as unknown[] | undefined;
+        const source = (msg.source as string) || 'confirm_interrupt';
+        const mode = (msg.mode as string) || 'code.plan';
+        if (!rid || !Array.isArray(answers) || answers.length === 0) return;
+        this.debug(`ANSWER→ requestId=${rid} source=${source} options=${answers.length}`);
+        if (!this.session.sendAnswer(rid, answers, source, mode)) {
+          this.postToWebview({ type: 'error', message: 'Not connected or no active session', requestId: rid });
+        }
+        break;
+      }
+
       case 'new_session': {
         if (!this.ws.isConnected()) {
           this.postToWebview({ type: 'error', message: 'Not connected' });

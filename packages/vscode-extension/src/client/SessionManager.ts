@@ -94,6 +94,31 @@ export class SessionManager {
     return this.ws.send(msg);
   }
 
+  /**
+   * Fire-and-forget interrupt-resume answer (e.g. plan approval for exit_plan_mode).
+   * [requestId] is the id of the original chat.send that triggered the interrupt; the
+   * server resumes that suspended turn. We reuse it as msg.id so the resumed stream
+   * keeps mapping to the same pending turn in the webview.
+   */
+  sendAnswer(
+    requestId: string,
+    answers: unknown[],
+    source: string,
+    mode: string,
+  ): boolean {
+    const sid = this._sessionId;
+    if (!sid) return false;
+    const msg = makeRequest('chat.send', {
+      session_id: sid,
+      request_id: requestId,
+      answers,
+      source,
+      mode,
+    }, this.channelId);
+    msg.id = requestId;
+    return this.ws.send(msg);
+  }
+
   /** List available skills */
   async listSkills(): Promise<Record<string, unknown>[]> {
     const payload = await this.request('skills.list', {});

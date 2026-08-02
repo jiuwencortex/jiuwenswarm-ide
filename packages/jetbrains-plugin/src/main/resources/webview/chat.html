@@ -638,6 +638,46 @@
   }
   .tool-header.open ~ .tool-body { display: block; }
   .tool-body.result { color: var(--text); border-top: 1px solid var(--tool-border); }
+
+  /* Plan-approval / ask-user interrupt card */
+  .question-card {
+    border: 1px solid var(--tool-border);
+    border-left: 3px solid #eab308;
+    background: rgba(234,179,8,0.08);
+    border-radius: var(--radius);
+    margin: 8px 0;
+    padding: 10px 12px;
+  }
+  .question-title { font-size: 12px; font-weight: 600; color: #eab308; margin-bottom: 4px; }
+  .question-text { font-size: 12px; color: var(--text); margin-bottom: 8px; line-height: 1.5; }
+  .question-plan {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 180px;
+    overflow-y: auto;
+    background: rgba(0,0,0,0.25);
+    border-radius: 4px;
+    padding: 8px;
+    margin-bottom: 8px;
+  }
+  .question-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .question-btn {
+    background: #eab308;
+    color: #1a1a1a;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .question-btn:hover:not(:disabled) { filter: brightness(1.1); }
+  .question-btn:disabled { opacity: 0.5; cursor: default; }
+  .question-card.answered { border-left-color: var(--accent); }
+  .question-status { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
   /* ── History loading indicator ── */
   #history-loading {
     display: flex;
@@ -835,7 +875,12 @@
     font-size: 10px;
     color: var(--text-dim);
   }
-  #token-counter { color: var(--text-dim); }
+  #token-counter {
+    flex-shrink: 0;
+    font-size: 10px;
+    color: var(--text-dim);
+    white-space: nowrap;
+  }
   #model-wrap {
     position: relative;
     margin-left: auto;
@@ -1081,15 +1126,25 @@
     outline: none;
   }
 
-  /* ── Token usage bar ── */
+  /* ── Token usage bar (blue/red line + trailing token counter) ── */
+  #token-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 2px;
+  }
   #token-bar-wrap {
     display: none;
     height: 2px;
+    flex: 1 1 auto;
+    min-width: 0;
     background: var(--bg3);
     border-radius: 1px;
     overflow: hidden;
   }
   #token-bar-wrap.visible { display: block; }
+  /* Counter trails the bar on the same line; hidden while the bar is hidden */
+  #token-bar-wrap:not(.visible) ~ #token-counter { visibility: hidden; }
   #token-bar-fill {
     height: 100%;
     border-radius: 1px;
@@ -1214,7 +1269,10 @@
     <textarea id="input" placeholder="Enter to send, Shift+Enter for new line" rows="1" disabled></textarea>
     <button id="send-btn" disabled title="Send (Enter)">↑</button>
   </div>
-  <div id="token-bar-wrap"><div id="token-bar-fill"></div></div>
+  <div id="token-row">
+    <div id="token-bar-wrap"><div id="token-bar-fill"></div></div>
+    <span id="token-counter"></span>
+  </div>
   <input type="file" id="image-input" accept="image/png,image/jpeg,image/webp,image/gif" multiple style="display:none">
   <div id="input-meta">
     <!-- Attach button — leftmost -->
@@ -1242,8 +1300,6 @@
       </button>
       <div id="model-dropdown"></div>
     </div>
-    <!-- Token counter — right side -->
-    <span id="token-counter"></span>
   </div>
 </div>
 
@@ -2029,6 +2085,10 @@ function handleJiuwenEvent(evt) {
     appendToolResult(rid, payload);
   } else if (et === 'chat.tool_update') {
     appendToolUpdate(rid, payload);
+  } else if (et === 'chat.ask_user_question') {
+    // Plan approval / confirm interrupt — renders an inline Approve/Reject card.
+    // Answering resumes the suspended tool via chat.send (interrupt-resume form).
+    renderAskUserQuestion(rid, payload);
   } else if (et === 'chat.usage_metadata') {
     // Token data is inside payload.metadata for this event type
     updateUsage(rid, payload.metadata || payload);
@@ -2225,12 +2285,40 @@ function appendToolResult(rid, payload) {
   pt.toolResultIdx++;
 
   const statusEl = targetCard.querySelector('.tool-status');
-  const result = payload.tool_result || payload.content || payload.result || '';
-  const isError = payload.is_error || /^(Error|success=False|error=')/.test(String(result));
+  const raw = payload.result
+    || payload.tool_result
+    || payload.content
+    || payload.output
+    || payload.raw_output
+    || payload.text
+    || payload.message
+    || '';
+  const result = String(raw);
+  const toolName = targetCard.dataset.toolName || 'tool';
+
+  // exit_plan_mode is intercepted BEFORE execution by PlanApprovalInterruptRail and
+  // suspended with an empty-error result (success=False data=None error=''); the runtime
+  // then emits chat.ask_user_question. This is a hand-off, not a real failure:
+  // show "awaiting approval" and do NOT consume the result index — the real result
+  // (after the user approves/rejects) will update this same card in place.
+  const suspended = toolName === 'exit_plan_mode' &&
+    /^success=False\s+data=None\s+error=''?$/.test(result.trim());
+  if (suspended) {
+    if (statusEl) {
+      statusEl.innerHTML = '<span style="color:#eab308">⏸ awaiting approval</span>';
+    }
+    scrollToBottom();
+    return;
+  }
+
+  // Plan-approval outcomes on exit_plan_mode (approve → executes; reject → skipped)
+  // are not tool errors even when the payload carries success=False.
+  const isError = toolName === 'exit_plan_mode'
+    ? (payload.is_error === true)
+    : (payload.is_error || /^(Error|success=False|error=')/.test(result));
   if (isError) {
     pt.toolErrorCount++;
-    var toolName = targetCard.dataset.toolName || 'tool';
-    var errMsg = String(result).replace(/^success=False\s+data=None\s+error='/g, '').replace(/'$/g, '').trim();
+    var errMsg = result.replace(/^success=False\s+data=None\s+error='/g, '').replace(/'$/g, '').trim();
     pt.toolErrors = pt.toolErrors || [];
     pt.toolErrors.push(toolName + ': ' + (errMsg || 'Unknown error'));
   }
@@ -2243,9 +2331,83 @@ function appendToolResult(rid, payload) {
 
   const resultEl = document.createElement('div');
   resultEl.className = 'tool-body result';
-  resultEl.textContent = 'Result\n' + truncate(String(result), 500);
+  resultEl.textContent = 'Result\n' + truncate(result || '(no output)', 500);
   targetCard.appendChild(resultEl);
   scrollToBottom();
+}
+
+function getActivePendingTurn() {
+  const keys = Object.keys(state.pendingTurns);
+  for (let i = keys.length - 1; i >= 0; i--) {
+    const t = state.pendingTurns[keys[i]];
+    if (!t.hasFinal) return t;
+  }
+  return null;
+}
+
+// Renders the plan-approval / ask-user interrupt as an inline card. Answering resumes
+// the suspended tool via the interrupt-resume form of chat.send (answers + request_id
+// + source). We reuse the original turn requestId so the resumed stream keeps mapping
+// into the same pending turn.
+function renderAskUserQuestion(rid, payload) {
+  const pt = state.pendingTurns[rid] || getActivePendingTurn();
+  if (!pt) return;
+
+  const q = (payload.questions && payload.questions[0]) || payload;
+  const options = q.options || [];
+  const header = payload.header || q.header ||
+    (payload.source === 'confirm_interrupt' ? 'Exit Plan and Execute' : 'Question');
+  const question = payload.question || q.question || q.message || '';
+  const source = payload.source || q.source || 'confirm_interrupt';
+
+  // Waiting for the user — stop the typing animation
+  if (pt.typingEl) {
+    pt.typingEl.remove();
+    pt.typingEl = null;
+  }
+
+  const card = document.createElement('div');
+  card.className = 'question-card';
+
+  let html = '<div class="question-title">' + escapeHtml(header) + '</div>';
+  if (question) html += '<div class="question-text">' + escapeHtml(question) + '</div>';
+  if (payload.plan_content) {
+    html += '<div class="question-plan">' + escapeHtml(String(payload.plan_content)) + '</div>';
+  }
+  html += '<div class="question-actions">';
+  options.forEach(function(opt, idx) {
+    const label = opt.display || opt.label || opt.value || ('Option ' + (idx + 1));
+    const value = opt.value === undefined ? label : opt.value;
+    html += '<button class="question-btn" data-value="' + escapeHtml(String(value)) + '">' +
+      escapeHtml(String(label)) + '</button>';
+  });
+  html += '</div>';
+  html += '<div class="question-status"></div>';
+  card.innerHTML = html;
+
+  card.querySelectorAll('.question-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      card.querySelectorAll('.question-btn').forEach(function(b) { b.disabled = true; });
+      card.classList.add('answered');
+      sendAnswerForInterrupt(pt, rid, source, btn.dataset.value);
+    });
+  });
+
+  pt.streamEl.appendChild(card);
+  pt.pendingQuestion = card;
+  scrollToBottom();
+}
+
+function sendAnswerForInterrupt(pt, rid, source, optionValue) {
+  const statusEl = pt.pendingQuestion ? pt.pendingQuestion.querySelector('.question-status') : null;
+  if (statusEl) statusEl.textContent = 'Answer sent — waiting for the agent to continue…';
+  send({
+    type: 'answer',
+    mode: state.mode,
+    requestId: rid,
+    source: source,
+    answers: [{ selected_options: [optionValue], custom_input: '' }],
+  });
 }
 
 // ─────────────────────────────────────────────

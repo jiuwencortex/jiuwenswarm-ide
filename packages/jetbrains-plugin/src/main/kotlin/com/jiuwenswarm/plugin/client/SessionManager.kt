@@ -164,6 +164,35 @@ class SessionManager(
         return ws.send(msg)
     }
 
+    /**
+     * Fire-and-forget interrupt-resume answer (e.g. plan approval for exit_plan_mode).
+     * [requestId] is the id of the original chat.send that triggered the interrupt; the
+     * server resumes that suspended turn. We reuse it as msg.id so the resumed stream
+     * keeps mapping to the same pending turn in the webview.
+     */
+    fun sendAnswer(
+        requestId: String,
+        answers: com.google.gson.JsonArray,
+        source: String,
+        mode: String,
+    ): Boolean {
+        val sid = sessionId ?: return false
+        val msg = buildJsonObject {
+            addProperty("id", requestId)
+            addProperty("type", "req")
+            addProperty("channel_id", channelId)
+            addProperty("method", "chat.send")
+            add("params", buildJsonObject {
+                addProperty("session_id", sid)
+                addProperty("request_id", requestId)
+                add("answers", answers)
+                addProperty("source", source)
+                addProperty("mode", mode)
+            })
+        }
+        return ws.send(msg)
+    }
+
     fun interrupt() {
         val msg = buildJsonObject {
             addProperty("id", java.util.UUID.randomUUID().toString())
