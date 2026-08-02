@@ -1283,8 +1283,8 @@
     <button id="send-btn" disabled title="Send (Enter)">↑</button>
   </div>
   <div id="token-row">
-    <div id="token-bar-wrap"><div id="token-bar-fill"></div></div>
-    <span id="token-counter"></span>
+    <div id="token-bar-wrap" title="Context occupancy (ctx) — how full the model's context window is right now"><div id="token-bar-fill"></div></div>
+    <span id="token-counter" title="Context occupancy (ctx) — tokens used / context window right now; total session tokens are in the stats bar above"></span>
   </div>
   <input type="file" id="image-input" accept="image/png,image/jpeg,image/webp,image/gif" multiple style="display:none">
   <div id="input-meta">
@@ -2583,11 +2583,19 @@ function renderTokenCounter(total) {
   state.lastTokenTotal = total;
   var el = document.getElementById('token-counter');
   if (!el) return;
-  var text = fmtTok(total) + ' tok';
-  if (state.contextWindow > 0) text += ' \u00B7 ctx ' + fmtTok(state.contextWindow);
-  var pct = contextUsagePct();
-  if (pct != null) text += ' (' + pct + '%)';
-  el.textContent = text;
+  // Bottom line: context occupancy only (total session tokens are shown in the stats bar up top)
+  if (state.contextWindow > 0) {
+    var ctxUsed = state.contextTokensUsed;
+    var pct = contextUsagePct();
+    if (ctxUsed <= 0 && pct != null) ctxUsed = Math.round(state.contextWindow * pct / 100);
+    if (ctxUsed > 0) {
+      var text = 'ctx ' + fmtTok(ctxUsed) + ' / ' + fmtTok(state.contextWindow);
+      if (pct != null) text += ' (' + pct + '%)';
+    } else {
+      text = 'ctx ' + fmtTok(state.contextWindow);
+    }
+    el.textContent = text;
+  }
 }
 
 function renderMemoryChip(msg) {
@@ -2926,23 +2934,21 @@ function updateTokenBar() {
     pct = Math.min(100, Math.round(state.contextUsagePercent));
   } else if (state.contextTokensUsed > 0 && limit > 0) {
     pct = Math.min(100, Math.round(state.contextTokensUsed / limit * 100));
-  } else if (limit > 0) {
-    pct = Math.min(100, Math.round(total / limit * 100));
   } else {
-    pct = state.contextTokensUsed > 0 ? 100 : 6;
+    pct = null;
   }
   var wrap = document.getElementById('token-bar-wrap');
   var fill = document.getElementById('token-bar-fill');
   if (!wrap || !fill) return;
-  if (total > 0 || state.contextTokensUsed > 0) {
-    wrap.classList.add('visible');
-    pct = Math.max(pct, 6);
-    fill.style.width = pct + '%';
-    fill.style.background = pct > 80 ? '#ef4444' : pct > 60 ? '#f59e0b' : 'var(--accent)';
-  } else {
+  if (pct == null) {
     fill.style.width = '0%';
     wrap.classList.remove('visible');
+    return;
   }
+  wrap.classList.add('visible');
+  pct = Math.max(pct, 6);
+  fill.style.width = pct + '%';
+  fill.style.background = pct > 80 ? '#ef4444' : pct > 60 ? '#f59e0b' : 'var(--accent)';
 }
 
 function renderHostMetrics() {
