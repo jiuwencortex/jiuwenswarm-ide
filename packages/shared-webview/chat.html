@@ -2365,10 +2365,10 @@ function finalizeTurn(rid, payload) {
     let footerHtml =
       '<span class="stat-badge" style="background:' + outcomeColor + '">' +
       outcome.replace(/_/g, ' ') + '</span>';
-    if (totalTok)           footerHtml += '<span class="stat-chip" title="input / output tokens">' + fmtTok(pt.inputTokens) + ' in · ' + fmtTok(pt.outputTokens) + ' out tok</span>';
+    if (totalTok)           footerHtml += '<span class="stat-chip" title="input / output tokens">toks: ' + fmtTok(pt.inputTokens) + ' in · ' + fmtTok(pt.outputTokens) + ' out</span>';
     if (pt.llmCallCount > 1) footerHtml += '<span class="stat-chip">'         + pt.llmCallCount       + ' LLM calls</span>';
     if (pt.toolCallCount)   footerHtml += '<span class="stat-chip">'          + pt.toolCallCount      + ' tools</span>';
-    footerHtml += '<span class="stat-chip" title="total duration · time from send to first response token">' + (durationMs !== null ? 'latency ' + fmtMs(durationMs) : '') + (ttftMs !== null ? ' · first token ' + fmtMs(ttftMs) : '') + '</span>';
+    footerHtml += '<span class="stat-chip" title="total duration · time from send to first response token">' + (durationMs !== null ? 'lat ' + fmtMs(durationMs) : '') + (ttftMs !== null ? ' · first tok ' + fmtMs(ttftMs) : '') + '</span>';
     if (pt.toolErrorCount) {
       const errSummary = pt.toolErrors.map(function(e) { return '• ' + escapeHtml(e); }).join('\n');
       footerHtml += '<span class="stat-chip stat-chip-warn" style="cursor:pointer;text-decoration:underline dotted rgba(245,158,11,0.5)" onclick="var n=this.nextElementSibling;n.style.display=n.style.display===\'none\'?\'block\':\'none\'">' + pt.toolErrorCount + ' tool err \u25BE</span>';
@@ -2425,7 +2425,7 @@ function appendError(rid, errorText) {
     footer.className = 'turn-stats';
     footer.innerHTML =
       '<span class="stat-badge" style="background:#ef4444">error</span>' +
-      (totalTok ? '<span class="stat-chip" title="input / output tokens">' + fmtTok(pt.inputTokens) + ' in · ' + fmtTok(pt.outputTokens) + ' out tok</span>' : '') +
+      (totalTok ? '<span class="stat-chip" title="input / output tokens">toks: ' + fmtTok(pt.inputTokens) + ' in · ' + fmtTok(pt.outputTokens) + ' out</span>' : '') +
       '<span class="stat-chip">' + fmtMs(durationMs) + '</span>';
     pt.containerEl.appendChild(footer);
 
