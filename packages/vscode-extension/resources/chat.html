@@ -2910,14 +2910,22 @@ function finalizeTurn(rid, payload) {
     if (pt.cacheTokens > 0) tokTip += '\nCache Tokens: ' + fmtTok(pt.cacheTokens);
     if (ctxPct != null) tokTip += '\nContext Usage: ' + ctxPct + '%';
 
-    var callsTip = 'LLM Calls: ' + pt.llmCallCount;
-    if (modelsUsed.length) modelsUsed.forEach(function(m) { callsTip += '\nModel: ' + m; });
-
-    var toolsTip = 'Tools: ' + pt.toolCallCount;
-    toolsUsed.forEach(function(t) { toolsTip += '\n' + t; });
-    if (pt.toolErrors && pt.toolErrors.length) {
-      toolsTip += '\nFailed:';
-      pt.toolErrors.forEach(function(e) { toolsTip += '\n' + e; });
+    // Combined "LLM Calls · Tools" bubble — one chip, one tooltip
+    var actChips = [];
+    var actTip = '';
+    if (pt.llmCallCount > 0) {
+      actChips.push(pt.llmCallCount + ' LLM Call' + (pt.llmCallCount !== 1 ? 's' : ''));
+      actTip += 'LLM Calls: ' + pt.llmCallCount;
+      if (modelsUsed.length) modelsUsed.forEach(function(m) { actTip += '\nModel: ' + m; });
+    }
+    if (pt.toolCallCount) {
+      actChips.push(pt.toolCallCount + ' Tool' + (pt.toolCallCount !== 1 ? 's' : ''));
+      actTip += (actTip ? '\n\n' : '') + 'Tools: ' + pt.toolCallCount;
+      toolsUsed.forEach(function(t) { actTip += '\n' + t; });
+      if (pt.toolErrors && pt.toolErrors.length) {
+        actTip += '\nFailed:';
+        pt.toolErrors.forEach(function(e) { actTip += '\n' + e; });
+      }
     }
 
     var costTip = 'Cost: ' + fmtUsd(pt.costUsd);
@@ -2935,8 +2943,7 @@ function finalizeTurn(rid, payload) {
       '<span class="stat-badge" style="background:' + outcomeColor + '" data-tooltip="' + escapeHtml(outcomeTip) + '">' +
       outcome.replace(/_/g, ' ') + '</span>';
     if (totalTok)           footerHtml += '<span class="stat-chip" data-tooltip="' + escapeHtml(tokTip) + '">Toks In ' + fmtTok(pt.inputTokens) + ' · Out ' + fmtTok(pt.outputTokens) + '</span>';
-    if (pt.llmCallCount > 1) footerHtml += '<span class="stat-chip" data-tooltip="' + escapeHtml(callsTip) + '">' + pt.llmCallCount + ' LLM Calls</span>';
-    if (pt.toolCallCount)   footerHtml += '<span class="stat-chip" data-tooltip="' + escapeHtml(toolsTip) + '">' + pt.toolCallCount + ' Tool' + (pt.toolCallCount !== 1 ? 's' : '') + '</span>';
+    if (actChips.length)    footerHtml += '<span class="stat-chip" data-tooltip="' + escapeHtml(actTip) + '">' + actChips.join(' \u00B7 ') + '</span>';
     if (pt.costUsd > 0)     footerHtml += '<span class="stat-chip" data-tooltip="' + escapeHtml(costTip) + '">' + fmtUsd(pt.costUsd) + '</span>';
     uniqErrorCats.forEach(function(cat) {
       footerHtml += '<span class="stat-chip" style="color:#ef4444;border-color:rgba(239,68,68,0.4)" data-tooltip="error category">' + escapeHtml(cat) + '</span>';
