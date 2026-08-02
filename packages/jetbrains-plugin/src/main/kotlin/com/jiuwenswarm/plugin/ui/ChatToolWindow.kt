@@ -485,13 +485,17 @@ class ChatPanel(
         }
     }
 
-    /** Extract token counts from chat.usage_metadata and update the service for the status bar. */
+    /** Extract token counts from chat.usage_summary and update the service for the status bar.
+     *  Token data is nested under payload.usage for this event type.
+     *  Per-turn incremental display is handled in the webview via chat.usage_metadata.
+     */
     private fun trackTokenUsage(event: JsonObject) {
         val et = event.get("event_type")?.asString ?: return
-        if (et != "chat.usage_metadata" && et != "chat.usage_summary") return
+        if (et != "chat.usage_summary") return
         val payload = event.getAsJsonObject("payload") ?: return
-        val input   = payload.get("input_tokens")?.asInt  ?: payload.get("cache_read_input_tokens")?.asInt ?: 0
-        val output  = payload.get("output_tokens")?.asInt ?: 0
+        val usage   = payload.getAsJsonObject("usage") ?: return
+        val input   = usage.get("input_tokens")?.asInt  ?: 0
+        val output  = usage.get("output_tokens")?.asInt ?: 0
         service.lastTokenCount += input + output
         // Refresh the status bar widget so the new count appears immediately
         ApplicationManager.getApplication().invokeLater {

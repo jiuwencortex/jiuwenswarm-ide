@@ -937,9 +937,10 @@
     flex-shrink: 0;
   }
   #session-stats-bar.visible { display: flex; }
-  .ss-chip { color: var(--text-dim); white-space: nowrap; }
+  .ss-chip { color: #b8b8b8; white-space: nowrap; }
   .ss-chip b { color: var(--text); font-weight: 600; }
   .ss-chip-err b { color: #ef4444; }
+  :root[data-theme="light"] .ss-chip { color: #4f4f4f; }
 
   /* ── Mini bar charts (tokens/turn + duration/turn) ── */
   #mini-charts {
@@ -1996,8 +1997,11 @@ function handleJiuwenEvent(evt) {
     appendToolResult(rid, payload);
   } else if (et === 'chat.tool_update') {
     appendToolUpdate(rid, payload);
-  } else if (et === 'chat.usage_metadata' || et === 'chat.usage_summary') {
-    updateUsage(rid, payload);
+  } else if (et === 'chat.usage_metadata') {
+    // Token data is inside payload.metadata for this event type
+    updateUsage(rid, payload.metadata || payload);
+  } else if (et === 'chat.usage_summary') {
+    // Authoritative turn total; per-turn display already handled by chat.usage_metadata above
   } else if (et === 'chat.final') {
     finalizeTurn(rid, payload);
   } else if (et === 'chat.processing_status' && payload.is_processing === false) {
@@ -2632,7 +2636,7 @@ function renderStatsBar() {
   var s = state.sessionStats;
   var el = document.getElementById('session-stats-bar');
   if (!el) return;
-  var avgLat  = fmtMs(Math.round(_avg(s.latencies)));
+  var avgLat  = s.latencies.length ? fmtMs(Math.round(_avg(s.latencies))) : '\u2014';
   var avgTtft = s.ttfts.length ? fmtMs(Math.round(_avg(s.ttfts))) : '\u2014';
   var html =
     '<span class="ss-chip">Turns <b>' + s.totalTurns + '</b></span>' +

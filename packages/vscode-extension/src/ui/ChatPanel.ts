@@ -400,16 +400,18 @@ export class ChatPanel implements vscode.Disposable {
     return null;
   }
 
-  /** Extract token counts from chat.usage_metadata / chat.usage_summary events. */
+  /** Extract token counts from chat.usage_summary events.
+   *  Token data is nested under payload.usage for this event type.
+   *  Per-turn incremental display is handled in the webview via chat.usage_metadata.
+   */
   private trackTokenUsage(event: Record<string, unknown>): void {
     const et = event.event_type as string;
-    if (et !== 'chat.usage_metadata' && et !== 'chat.usage_summary') return;
+    if (et !== 'chat.usage_summary') return;
     const payload = (event.payload as Record<string, unknown>) || {};
-    const input = (payload.input_tokens as number)
-      || (payload.cache_read_input_tokens as number)
-      || 0;
-    const output = (payload.output_tokens as number) || 0;
-    const cost = (payload.cost_usd as number) || 0;
+    const usage = (payload.usage as Record<string, unknown>) || {};
+    const input = (usage.input_tokens as number) || 0;
+    const output = (usage.output_tokens as number) || 0;
+    const cost = (usage.cost_usd as number) || 0;
     this.sessionTokens += input + output;
     if (cost > 0) {
       this.sessionCostUsd += cost;

@@ -2010,8 +2010,11 @@ function handleJiuwenEvent(evt) {
     appendToolResult(rid, payload);
   } else if (et === 'chat.tool_update') {
     appendToolUpdate(rid, payload);
-  } else if (et === 'chat.usage_metadata' || et === 'chat.usage_summary') {
-    updateUsage(rid, payload);
+  } else if (et === 'chat.usage_metadata') {
+    // Token data is inside payload.metadata for this event type
+    updateUsage(rid, payload.metadata || payload);
+  } else if (et === 'chat.usage_summary') {
+    // Authoritative turn total; per-turn display already handled by chat.usage_metadata above
   } else if (et === 'chat.final') {
     finalizeTurn(rid, payload);
   } else if (et === 'chat.processing_status' && payload.is_processing === false) {
