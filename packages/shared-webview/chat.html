@@ -992,6 +992,9 @@
   .ss-chip { color: #b8b8b8; white-space: nowrap; }
   .ss-chip b { color: var(--text); font-weight: 600; }
   .ss-chip-err b { color: #ef4444; }
+  .ss-chip .todo-ok   { color: #4ec9b0; }
+  .ss-chip .todo-run  { color: #eab308; }
+  .ss-chip .todo-wait { color: #9ca3af; }
   :root[data-theme="light"] .ss-chip { color: #4f4f4f; }
 
   /* ── Mini bar charts (tokens/turn + duration/turn) ── */
@@ -1164,6 +1167,22 @@
     transition: width 0.3s ease, background 0.3s ease;
     width: 0%;
   }
+  /* Near-compaction / active-compaction chip on the token row */
+  #ctx-warning {
+    display: none;
+    flex-shrink: 0;
+    font-size: 10px;
+    font-weight: 600;
+    color: #f59e0b;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: rgba(245,158,11,0.12);
+    border: 1px solid rgba(245,158,11,0.35);
+    white-space: nowrap;
+  }
+  #ctx-warning.visible { display: inline-block; }
+  #ctx-warning.warn-high { color: #ef4444; background: rgba(239,68,68,0.12); border-color: rgba(239,68,68,0.4); }
+  #ctx-warning.compacting { color: #8b5cf6; background: rgba(139,92,246,0.12); border-color: rgba(139,92,246,0.4); }
 
   /* ── Rewind bar (shown after agent edits files) ── */
   #rewind-bar {
@@ -1285,6 +1304,7 @@
   <div id="token-row">
     <div id="token-bar-wrap" title="Context occupancy (ctx) — how full the model's context window is right now"><div id="token-bar-fill"></div></div>
     <span id="token-counter" title="Context occupancy (ctx) — tokens used / context window right now; total session tokens are in the stats bar above"></span>
+    <span id="ctx-warning"></span>
   </div>
   <input type="file" id="image-input" accept="image/png,image/jpeg,image/webp,image/gif" multiple style="display:none">
   <div id="input-meta">
@@ -1371,6 +1391,10 @@ let state = {
   contextUsagePercent: null, // server-reported context occupancy (0-100, null = unknown)
   contextTokensUsed: 0,   // live context occupancy (tokens_used from context.usage)
   lastTokenTotal: 0,      // last token total passed to renderTokenCounter (for re-render)
+  modelName: null,        // active model name (from chat.usage_summary)
+  compacting: false,      // true while a context compaction is running (context.compression_state)
+  compactionPhase: null,  // phase string while compacting (e.g. 'l0_to_l1')
+  todoStats: { completed: 0, inProgress: 0, pending: 0 }, // live TODO checkbox counts
   chartsCollapsed: false, // true when the tokens/duration mini-charts are collapsed
   sessionStats: {
     totalTurns: 0,
@@ -1378,6 +1402,8 @@ let state = {
     totalTokens: 0,
     totalLlmCalls: 0,
     totalCostUsd: 0,
+    totalToolCalls: 0,
+    toolCallsByTool: {},  // tool name -> call count (for the tools chip)
     latencies: [],      // ms per completed turn
     ttfts: [],          // ms time-to-first-token per turn
     turnTokens: [],     // total tokens per turn (for chart)
@@ -2119,7 +2145,32 @@ function handleJiuwenEvent(evt) {
     if (typeof payload.usage_percent === 'number') {
       state.contextUsagePercent = payload.usage_percent;
     }
+    if (typeof payload.model === 'string' && payload.model) {
+      state.modelName = payload.model;
+    }
     updateTokenBar();
+  } else if (et === 'context.compression_state') {
+    // Auto-compaction lifecycle — the trigger is silent server-side, surface it here
+    state.compacting = !!payload && (payload.status === 'started' || payload.status === 'running');
+    if (state.compacting) {
+      state.compactionPhase = (payload && payload.phase) || '';
+    } else if (payload && payload.status === 'completed') {
+      // Tokens were freed — the next context.usage/usage_summary refreshes the bar
+      state.compactionPhase = null;
+    }
+    updateTokenBar();
+  } else if (et === 'todo.updated') {
+    // Live TODO checkbox summary (statuses: pending / in_progress / completed)
+    var todos = (payload && Array.isArray(payload.todos)) ? payload.todos : [];
+    var counts = { completed: 0, inProgress: 0, pending: 0 };
+    for (var ti = 0; ti < todos.length; ti++) {
+      var t = todos[ti] || {};
+      if (t.status === 'completed') counts.completed++;
+      else if (t.status === 'in_progress') counts.inProgress++;
+      else counts.pending++;
+    }
+    state.todoStats = counts;
+    renderStatsBar();
   } else if (et === 'context.usage') {
     // Context occupancy arrives DURING the turn (streamed per token batch), unlike
     // chat.usage_summary which only arrives at turn end. Capture the live window so
@@ -2283,11 +2334,16 @@ function appendToolCall(rid, payload) {
   card.className = 'tool-card';
   card.dataset.toolName = toolName;
 
+  // Tool activity tracking: session-level count + per-tool tally for the Tools chip
+  state.sessionStats.totalToolCalls++;
+  var tb = state.sessionStats.toolCallsByTool;
+  tb[toolName] = (tb[toolName] || 0) + 1;
+
   const header = document.createElement('div');
   header.className = 'tool-header';
   header.innerHTML =
     '<span style="opacity:0.6">⚙</span>' +
-    '<span class="tool-name">' + escapeHtml(toolName) + '</span>' +
+    '<span class="tool-name" title="' + escapeHtml(toolName) + '">' + escapeHtml(friendlyToolName(toolName)) + '</span>' +
     '<span class="tool-status"><span class="tool-spinner">◌</span> running</span>';
   header.onclick = function() { header.classList.toggle('open'); };
 
@@ -2923,12 +2979,48 @@ function updateTokenBar() {
   if (pct == null) {
     fill.style.width = '0%';
     wrap.classList.remove('visible');
+  } else {
+    wrap.classList.add('visible');
+    pct = Math.max(pct, 6);
+    fill.style.width = pct + '%';
+    fill.style.background = pct > 80 ? '#ef4444' : pct > 60 ? '#f59e0b' : 'var(--accent)';
+  }
+  updateCtxWarning();
+}
+
+// Near-compaction warning + active-compaction chip on the token row.
+// Thresholds track the silent server-side auto-compaction trigger so the user
+// gets advance notice instead of the context being compacted with no feedback.
+function updateCtxWarning() {
+  var el = document.getElementById('ctx-warning');
+  if (!el) return;
+  if (state.compacting) {
+    el.textContent = '⟳ compacting' + (state.compactionPhase ? ' (' + state.compactionPhase + ')' : '');
+    el.classList.add('visible');
+    el.classList.add('compacting');
+    el.title = 'Auto-compaction is running — context is being summarized to free room';
     return;
   }
-  wrap.classList.add('visible');
-  pct = Math.max(pct, 6);
-  fill.style.width = pct + '%';
-  fill.style.background = pct > 80 ? '#ef4444' : pct > 60 ? '#f59e0b' : 'var(--accent)';
+  el.classList.remove('compacting');
+  var pct = contextUsagePct();
+  if (pct == null) {
+    el.textContent = '';
+    el.classList.remove('visible');
+    return;
+  }
+  if (pct >= 85) {
+    el.textContent = '⚠ compact imminent';
+    el.classList.add('visible', 'warn-high');
+    el.title = 'Context at ' + pct + '% — the auto-compaction trigger will fire soon';
+  } else if (pct >= 70) {
+    el.textContent = '⚠ nearing compact';
+    el.classList.add('visible');
+    el.classList.remove('warn-high');
+    el.title = 'Context at ' + pct + '% — approaching the auto-compaction trigger';
+  } else {
+    el.textContent = '';
+    el.classList.remove('visible', 'warn-high');
+  }
 }
 
 function _avg(arr) {
@@ -2967,6 +3059,25 @@ function renderStatsBar() {
     '<span class="ss-chip">Avg duration <b>' + avgLat + '</b></span>' +
     '<span class="ss-chip">Avg first token <b>' + avgTtft + '</b></span>';
   if (s.totalCostUsd > 0) html += '<span class="ss-chip">Cost <b>$' + s.totalCostUsd.toFixed(3) + '</b></span>';
+  // TODO checkbox progress (from todo.updated) — ✓ completed / ◐ in progress / ☐ pending
+  var td = state.todoStats;
+  if (td && (td.completed || td.inProgress || td.pending)) {
+    html += '<span class="ss-chip" title="TODO list progress — ✓ completed · ◐ in progress · ☐ pending">' +
+      '<b class="todo-ok">✓' + td.completed + '</b> ' +
+      '<b class="todo-run">◐' + td.inProgress + '</b> ' +
+      '<b class="todo-wait">☐' + td.pending + '</b></span>';
+  }
+  // Tool activity (from chat.tool_call) — session count + per-tool breakdown in tooltip
+  if (s.totalToolCalls > 0) {
+    var toolTip = Object.keys(s.toolCallsByTool || {}).map(function(k) {
+      return friendlyToolName(k) + ': ' + s.toolCallsByTool[k];
+    }).join('\n');
+    html += '<span class="ss-chip" title="Tool activity this session:\n' + escapeHtml(toolTip) + '">Tools <b>' + s.totalToolCalls + '</b></span>';
+  }
+  // Model badge (from chat.usage_summary) — mirrors the CLI /status model line
+  if (state.modelName) {
+    html = '<span class="ss-chip" title="Active model">Model <b>' + escapeHtml(state.modelName) + '</b></span>' + html;
+  }
   if (s.totalTurns >= 2) html += '<button class="charts-toggle" onclick="toggleCharts()" title="' + (state.chartsCollapsed ? 'Show charts' : 'Hide charts') + '">' + (state.chartsCollapsed ? '\u25B8' : '\u25BE') + '</button>';
   el.innerHTML = html;
   el.classList.add('visible');
@@ -3051,11 +3162,16 @@ function clearMessages() {
   // Reset live session metrics
   state.sessionStats = {
     totalTurns: 0, totalErrors: 0, totalTokens: 0, totalLlmCalls: 0, totalCostUsd: 0,
+    totalToolCalls: 0, toolCallsByTool: {},
     latencies: [], ttfts: [], turnTokens: [], turnDurations: [], outcomes: [],
   };
   // New session starts with an empty context window — reset the token bar
   state.contextTokensUsed = 0;
   state.contextUsagePercent = null;
+  state.compacting = false;
+  state.compactionPhase = null;
+  state.modelName = null;
+  state.todoStats = { completed: 0, inProgress: 0, pending: 0 };
   updateTokenBar();
   var ssBar = document.getElementById('session-stats-bar');
   if (ssBar) { ssBar.innerHTML = ''; ssBar.classList.remove('visible'); }
@@ -3096,6 +3212,23 @@ function escapeHtml(str) {
 function truncate(str, max) {
   if (str.length <= max) return str;
   return str.slice(0, max) + '\n… [truncated]';
+}
+
+// Friendly display names — mirrors the openjiuwen CLI tool_display.py mapping
+var _FRIENDLY_TOOL_NAMES = {
+  read_file: 'Read', write_file: 'Write', edit_file: 'Edit', str_replace_editor: 'Edit',
+  bash: 'Bash', run_command: 'Bash', grep: 'Grep', glob: 'Glob', ls: 'LS', list_dir: 'LS',
+  todo_create: 'TodoWrite', todo_modify: 'TodoWrite', todo_list: 'TodoList',
+  web_search: 'WebSearch', web_free_search: 'WebSearch', web_fetch: 'WebFetch', web_fetch_webpage: 'WebFetch',
+  image_ocr: 'ImageOCR', visual_question_answering: 'VisionQA',
+  audio_transcription: 'AudioTranscribe', audio_question_answering: 'AudioQA', audio_metadata: 'AudioMetadata',
+};
+
+function friendlyToolName(name) {
+  var n = name || '';
+  if (_FRIENDLY_TOOL_NAMES[n]) return _FRIENDLY_TOOL_NAMES[n];
+  // fallback: snake_case -> Title Case
+  return n.replace(/_/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); });
 }
 
 function formatToolInput(name, input) {
