@@ -955,8 +955,26 @@
   .mini-chart { flex: 1; min-width: 0; }
   .mini-chart-label { font-size: 10px; color: var(--text-dim); margin-bottom: 3px; }
   .mini-bars { display: flex; align-items: flex-end; gap: 2px; height: 28px; }
-  .mini-bar { flex: 1; min-width: 3px; border-radius: 1px 1px 0 0; transition: opacity 0.15s; }
+  .mini-bar { position: relative; flex: 1; min-width: 3px; border-radius: 1px 1px 0 0; transition: opacity 0.15s; }
   .mini-bar:hover { opacity: 0.7; cursor: default; }
+  .mini-bar:hover::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 4px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg3);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 6px;
+    font-size: 10px;
+    line-height: 1.4;
+    white-space: pre;
+    z-index: 50;
+    pointer-events: none;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+  }
   .charts-toggle {
     margin-left: auto;
     background: none;
@@ -2332,8 +2350,16 @@ function updateUsage(rid, payload) {
 
   if (inTok || outTok) {
     const total = pt.inputTokens + pt.outputTokens;
-    document.getElementById('token-counter').textContent = fmtTok(state.sessionStats.totalTokens + total) + ' tok';
+    renderTokenCounter(state.sessionStats.totalTokens + total);
   }
+}
+
+function renderTokenCounter(total) {
+  var el = document.getElementById('token-counter');
+  if (!el) return;
+  var text = fmtTok(total) + ' tok';
+  if (state.contextWindow > 0) text += ' \u00B7 ctx ' + fmtTok(state.contextWindow);
+  el.textContent = text;
 }
 
 function finalizeTurn(rid, payload) {
@@ -2646,8 +2672,7 @@ function updateTokenBar() {
 
 function renderHostMetrics() {
   var m = state.hostMetrics || {};
-  var tokenCounterEl = document.getElementById('token-counter');
-  if (tokenCounterEl && m.sessionTokens) tokenCounterEl.textContent = fmtTok(m.sessionTokens) + ' tok';
+  if (m.sessionTokens) renderTokenCounter(m.sessionTokens);
   renderStatsBar();
   updateTokenBar();
 }
@@ -2694,7 +2719,7 @@ function renderStatsBar() {
     '<span class="ss-chip">Avg First Token <b>' + avgTtft + '</b></span>' +
     '<span class="ss-chip" title="' + fmtBytes(m.contextBytes || 0) + ' injected IDE context, plus current input">Ctx Size <b>' + fmtTok(m.promptEstimatedTokens || 0) + ' est tok</b></span>' +
     '<span class="ss-chip">Cost <b>' + costLabel + '</b></span>' +
-    '<button class="charts-toggle" onclick="toggleCharts()" title="' + (state.chartsCollapsed ? 'Show charts' : 'Hide charts') + '">' + (state.chartsCollapsed ? '\u25B8' : '\u25BE') + '</button>';
+    (s.totalTurns >= 2 ? '<button class="charts-toggle" onclick="toggleCharts()" title="' + (state.chartsCollapsed ? 'Show charts' : 'Hide charts') + '">' + (state.chartsCollapsed ? '\u25B8' : '\u25BE') + '</button>' : '');
   el.innerHTML = html;
   el.classList.add('visible');
 }
@@ -2726,13 +2751,11 @@ function renderMiniCharts() {
       var col = outcomeColor[s.outcomes[i]] || '#6b7280';
       var pctOfMax = Math.round(v / maxVal * 100);
       var ttft = s.ttfts[i];
-      var lines = [
-        'Turn ' + (i + 1),
-        (isTokens ? 'Tokens: ' + fmtTok(v) : 'Duration: ' + fmtMs(v)) + ' (' + pctOfMax + '% of max)'
-      ];
-      if (!isTokens && ttft != null) lines.push('First token: ' + fmtMs(ttft));
-      lines.push('Status: ' + (s.outcomes[i] || 'unknown'));
-      return '<div class="mini-bar" style="height:' + pct + '%;background:' + col + '" title="' + lines.join('\n') + '"></div>';
+      var tip = 'Turn ' + (i + 1) + '\n' +
+        (isTokens ? 'Tokens: ' + fmtTok(v) : 'Duration: ' + fmtMs(v)) + ' (' + pctOfMax + '% of max)' +
+        (!isTokens && ttft != null ? '\nFirst token: ' + fmtMs(ttft) : '') +
+        '\nStatus: ' + (s.outcomes[i] || 'unknown');
+      return '<div class="mini-bar" style="height:' + pct + '%;background:' + col + '" data-tip="' + tip + '"></div>';
     }).join('');
   }
   var maxTok = Math.max.apply(null, s.turnTokens.concat([1]));
