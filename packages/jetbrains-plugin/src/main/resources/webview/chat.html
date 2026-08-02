@@ -1055,7 +1055,7 @@
     color: var(--text-muted);
     border-radius: 10px;
     padding: 1px 8px;
-    font-size: 10px;
+    font-size: 9px;
     cursor: pointer;
     white-space: nowrap;
     line-height: 1.5;
@@ -1109,6 +1109,26 @@
   .traj-gap { display: flex; align-items: center; gap: 8px; color: var(--text-dim); font-size: 10px; margin: 3px 0; }
   .traj-gap::before, .traj-gap::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 
+  /* ── Custom hover tooltip (native title= is unreliable in JCEF) ── */
+  .custom-tooltip {
+    position: fixed;
+    display: none;
+    z-index: 2147483647;
+    background: #333;
+    color: #eee;
+    font-size: 11px;
+    line-height: 1.5;
+    padding: 5px 9px;
+    border-radius: 5px;
+    max-width: 440px;
+    max-height: 320px;
+    overflow: auto;
+    white-space: pre;
+    pointer-events: none;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.45);
+    border: 1px solid rgba(255,255,255,0.18);
+  }
+
   /* ── Turn stats footer ── */
   .turn-stats {
     display: flex;
@@ -1123,7 +1143,7 @@
     padding: 1px 7px;
     border-radius: 10px;
     color: #fff;
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 600;
     text-transform: capitalize;
   }
@@ -1133,7 +1153,7 @@
     background: var(--bg3);
     color: var(--text-dim);
     border: 1px solid var(--border);
-    font-size: 10px;
+    font-size: 9px;
   }
   .stat-chip-warn { color: #f59e0b; border-color: rgba(245,158,11,0.4); }
   .stat-chip-dim  { opacity: 0.55; }
@@ -2351,6 +2371,14 @@ function beginTurn(requestId, userContent) {
     inputTokens: 0,
     outputTokens: 0,
     costUsd: 0,
+    cacheTokens: 0,
+    inputCost: 0,
+    outputCost: 0,
+    ttftMsSum: 0,
+    tpotMsSum: 0,
+    ttftCount: 0,
+    tpotCount: 0,
+    models: {},
     toolErrors: [],
     errorCategories: [],
     // TraceHound-style per-turn tracking
@@ -2730,6 +2758,13 @@ function updateUsage(rid, payload) {
   pt.inputTokens  += inTok;
   pt.outputTokens += outTok;
   pt.costUsd      += cost;
+  pt.cacheTokens  += meta.cache_tokens || 0;
+  pt.inputCost    += meta.input_cost || 0;
+  pt.outputCost   += meta.output_cost || 0;
+  if (meta.model_name) pt.models[meta.model_name] = true;
+  // TTFT / TPOT live at the outer usage_metadata level (perf_metrics), not inside usage_metadata
+  if (typeof payload.ttft_ms === 'number' && payload.ttft_ms > 0) { pt.ttftMsSum += payload.ttft_ms; pt.ttftCount++; }
+  if (typeof payload.tpot_ms === 'number' && payload.tpot_ms > 0) { pt.tpotMsSum += payload.tpot_ms; pt.tpotCount++; }
 
   if (inTok || outTok) {
     const total = pt.inputTokens + pt.outputTokens;
@@ -2840,6 +2875,16 @@ function finalizeTurn(rid, payload) {
     const ttftMs      = pt.firstTokenTime ? pt.firstTokenTime - pt.startTime : null;
     const uniqErrorCats  = (pt.errorCategories || []).filter(function(v, i, a) { return a.indexOf(v) === i; });
 
+    // Derived values for chip tooltips
+    const toolsUsed = (pt.events || []).filter(function(e) { return e.type === 'tool_call' && e.label; })
+      .map(function(e) { return e.label; })
+      .filter(function(v, i, a) { return a.indexOf(v) === i; });
+    const modelsUsed = Object.keys(pt.models || {});
+    const avgTtft = pt.ttftCount ? Math.round(pt.ttftMsSum / pt.ttftCount) : null;
+    const avgTpot = pt.tpotCount ? Math.round(pt.tpotMsSum / pt.tpotCount) : null;
+    const ctxPct = contextUsagePct();
+    const respLen = pt.textContent.trim().length;
+
     const outcomeColors = {
       completed:             '#2563eb',
       completed_with_issues: '#f59e0b',
@@ -2849,22 +2894,57 @@ function finalizeTurn(rid, payload) {
     };
     const outcomeColor = outcomeColors[outcome] || '#6b7280';
 
+    // Tooltips: one value per line, consistent title-case labels
+    var outcomeTip = titleCase(outcome.replace(/_/g, ' '));
+    outcomeTip += '\nTurn: ' + (state.sessionStats.totalTurns + 1);
+    outcomeTip += '\nTime: ' + fmtTimeOfDay(pt.startTime);
+    if (respLen > 0) outcomeTip += '\nResponse: ' + respLen.toLocaleString() + ' chars';
+    if (pt.toolErrorCount) outcomeTip += '\nTool Failures: ' + pt.toolErrorCount;
+    if (uniqErrorCats.length) {
+      outcomeTip += '\nError Categories:';
+      uniqErrorCats.forEach(function(c) { outcomeTip += '\n' + c; });
+    }
+
+    var tokTip = 'Input Tokens: ' + fmtTok(pt.inputTokens);
+    tokTip += '\nOutput Tokens: ' + fmtTok(pt.outputTokens);
+    if (pt.cacheTokens > 0) tokTip += '\nCache Tokens: ' + fmtTok(pt.cacheTokens);
+    if (ctxPct != null) tokTip += '\nContext Usage: ' + ctxPct + '%';
+
+    var callsTip = 'LLM Calls: ' + pt.llmCallCount;
+    if (modelsUsed.length) modelsUsed.forEach(function(m) { callsTip += '\nModel: ' + m; });
+
+    var toolsTip = 'Tools: ' + pt.toolCallCount;
+    toolsUsed.forEach(function(t) { toolsTip += '\n' + t; });
+    if (pt.toolErrors && pt.toolErrors.length) {
+      toolsTip += '\nFailed:';
+      pt.toolErrors.forEach(function(e) { toolsTip += '\n' + e; });
+    }
+
+    var costTip = 'Cost: ' + fmtUsd(pt.costUsd);
+    if (pt.inputCost > 0) costTip += '\nInput: ' + fmtUsd(pt.inputCost);
+    if (pt.outputCost > 0) costTip += '\nOutput: ' + fmtUsd(pt.outputCost);
+
+    var durTip = 'Total Duration: ' + fmtMs(durationMs);
+    if (ttftMs != null) durTip += '\nAvg First Token (Harness): ' + fmtMs(ttftMs);
+    if (avgTtft != null) durTip += '\nAvg First Token (Model): ' + fmtMs(avgTtft);
+    if (avgTpot != null) durTip += '\nAvg Between Tokens (Model): ' + fmtMs(avgTpot);
+
     const footer = document.createElement('div');
     footer.className = 'turn-stats';
     let footerHtml =
-      '<span class="stat-badge" style="background:' + outcomeColor + '">' +
+      '<span class="stat-badge" style="background:' + outcomeColor + '" data-tooltip="' + escapeHtml(outcomeTip) + '">' +
       outcome.replace(/_/g, ' ') + '</span>';
-    if (totalTok)           footerHtml += '<span class="stat-chip" title="input / output tokens">toks in ' + fmtTok(pt.inputTokens) + ' · out ' + fmtTok(pt.outputTokens) + '</span>';
-    if (pt.llmCallCount > 1) footerHtml += '<span class="stat-chip">'         + pt.llmCallCount       + ' LLM calls</span>';
-    if (pt.toolCallCount)   footerHtml += '<span class="stat-chip">'          + pt.toolCallCount      + ' tools</span>';
-    if (pt.costUsd > 0)     footerHtml += '<span class="stat-chip" title="cumulative LLM cost this turn">' + fmtUsd(pt.costUsd) + '</span>';
+    if (totalTok)           footerHtml += '<span class="stat-chip" data-tooltip="' + escapeHtml(tokTip) + '">Toks In ' + fmtTok(pt.inputTokens) + ' · Out ' + fmtTok(pt.outputTokens) + '</span>';
+    if (pt.llmCallCount > 1) footerHtml += '<span class="stat-chip" data-tooltip="' + escapeHtml(callsTip) + '">' + pt.llmCallCount + ' LLM Calls</span>';
+    if (pt.toolCallCount)   footerHtml += '<span class="stat-chip" data-tooltip="' + escapeHtml(toolsTip) + '">' + pt.toolCallCount + ' Tool' + (pt.toolCallCount !== 1 ? 's' : '') + '</span>';
+    if (pt.costUsd > 0)     footerHtml += '<span class="stat-chip" data-tooltip="' + escapeHtml(costTip) + '">' + fmtUsd(pt.costUsd) + '</span>';
     uniqErrorCats.forEach(function(cat) {
-      footerHtml += '<span class="stat-chip" style="color:#ef4444;border-color:rgba(239,68,68,0.4)" title="error category">' + escapeHtml(cat) + '</span>';
+      footerHtml += '<span class="stat-chip" style="color:#ef4444;border-color:rgba(239,68,68,0.4)" data-tooltip="error category">' + escapeHtml(cat) + '</span>';
     });
-    footerHtml += '<span class="stat-chip" title="total duration · time from send to first response token">' + (durationMs !== null ? 'dur ' + fmtMs(durationMs) : '') + (ttftMs !== null ? ' · first ' + fmtMs(ttftMs) : '') + '</span>';
+    footerHtml += '<span class="stat-chip" data-tooltip="' + escapeHtml(durTip) + '">' + (durationMs !== null ? 'Dur ' + fmtMs(durationMs) : '') + '</span>';
     if (pt.toolErrorCount) {
       const errSummary = pt.toolErrors.map(function(e) { return '• ' + escapeHtml(e); }).join('\n');
-      footerHtml += '<span class="stat-chip stat-chip-warn" style="cursor:pointer;text-decoration:underline dotted rgba(245,158,11,0.5)" onclick="var n=this.nextElementSibling;n.style.display=n.style.display===\'none\'?\'block\':\'none\'">' + pt.toolErrorCount + ' tool err \u25BE</span>';
+      footerHtml += '<span class="stat-chip stat-chip-warn" style="cursor:pointer;text-decoration:underline dotted rgba(245,158,11,0.5)" onclick="var n=this.nextElementSibling;n.style.display=n.style.display===\'none\'?\'block\':\'none\'">' + pt.toolErrorCount + ' Tool Err \u25BE</span>';
       footerHtml += '<div class="tool-error-detail" style="display:none;margin-top:4px;padding:4px 8px;background:rgba(245,158,11,0.1);border-radius:4px;font-size:11px;white-space:pre-wrap;line-height:1.4">' + errSummary + '</div>';
     }
     footer.innerHTML = footerHtml;
@@ -2924,13 +3004,17 @@ function appendError(rid, errorText) {
     // Render error turn stats footer
     const durationMs = Date.now() - pt.startTime;
     const totalTok   = pt.inputTokens + pt.outputTokens;
+    const errTtftMs  = pt.firstTokenTime ? pt.firstTokenTime - pt.startTime : null;
+    var errDurTip = 'total duration ' + fmtMs(durationMs) + (errTtftMs !== null ? ' \u00B7 time to first token ' + fmtMs(errTtftMs) : '');
+    var errTokTip = 'input / output tokens' + (pt.cacheTokens > 0 ? ' \u00B7 cache ' + fmtTok(pt.cacheTokens) : '');
+    var errBadgeTip = 'Error\nTurn: ' + (state.sessionStats.totalTurns + 1) + '\nTime: ' + fmtTimeOfDay(pt.startTime) + '\n' + errorText;
     const footer = document.createElement('div');
     footer.className = 'turn-stats';
     footer.innerHTML =
-      '<span class="stat-badge" style="background:#ef4444">error</span>' +
-      (totalTok ? '<span class="stat-chip" title="input / output tokens">toks in ' + fmtTok(pt.inputTokens) + ' · out ' + fmtTok(pt.outputTokens) + '</span>' : '') +
-      '<span class="stat-chip" style="color:#ef4444;border-color:rgba(239,68,68,0.4)" title="error category">' + escapeHtml(cat) + '</span>' +
-      '<span class="stat-chip">' + fmtMs(durationMs) + '</span>';
+      '<span class="stat-badge" style="background:#ef4444" data-tooltip="' + escapeHtml(errBadgeTip) + '">error</span>' +
+      (totalTok ? '<span class="stat-chip" data-tooltip="' + escapeHtml(errTokTip) + '">Toks In ' + fmtTok(pt.inputTokens) + ' · Out ' + fmtTok(pt.outputTokens) + '</span>' : '') +
+      '<span class="stat-chip" style="color:#ef4444;border-color:rgba(239,68,68,0.4)" data-tooltip="error category">' + escapeHtml(cat) + '</span>' +
+      '<span class="stat-chip" data-tooltip="' + escapeHtml(errDurTip) + '">' + fmtMs(durationMs) + '</span>';
     pt.containerEl.appendChild(footer);
     insertTrajectoryToggle(footer, pt.containerEl, (pt.events || []).length);
 
@@ -3064,6 +3148,23 @@ function fmtUsd(v) {
   return '$' + v.toPrecision(2);
 }
 
+function titleCase(s) {
+  return String(s || '').split(' ').map(function(w) {
+    return w ? w.charAt(0).toUpperCase() + w.slice(1) : w;
+  }).join(' ');
+}
+
+/** 24-hour time-of-day (HH:mm:ss). The webview cannot reliably read the OS clock format,
+ *  so this always uses the 24-hour cycle the user requested. */
+function fmtTimeOfDay(ts) {
+  var d = new Date(ts);
+  try {
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  } catch (_) {
+    return d.toLocaleTimeString();
+  }
+}
+
 function classifyError(text) {
   var t = (text || '').toLowerCase();
   if (/auth|unauthorized|forbidden|api.?key/.test(t))         return 'api_auth';
@@ -3097,12 +3198,21 @@ var TRAJ_EVENT_META = {
   final:        { icon: '\u{1F4AC}', label: 'Response' },
 };
 
+function trajectoryBreakdown(events) {
+  var counts = {};
+  (events || []).forEach(function(e) { counts[e.type] = (counts[e.type] || 0) + 1; });
+  return Object.keys(counts).map(function(k) {
+    return k.replace(/_/g, ' ') + ': ' + counts[k];
+  }).join('\n');
+}
+
 function makeTrajectoryToggle(containerEl, count) {
   if (!containerEl || !count) return null;
   var btn = document.createElement('button');
   btn.className = 'traj-toggle';
-  btn.textContent = '\u25B8 ' + count + ' events';
-  btn.title = 'Show / hide this turn\u2019s event timeline';
+  btn.textContent = '\u25B8 ' + count + ' Events';
+  var bd = trajectoryBreakdown(containerEl.__events);
+  btn.setAttribute('data-tooltip', 'Show / hide this turn\u2019s event timeline' + (bd ? '\n' + bd : ''));
   btn.onclick = function() { toggleTrajectory(containerEl); };
   return btn;
 }
@@ -3465,6 +3575,45 @@ function scrollToBottom() {
   const msgs = document.getElementById('messages');
   msgs.scrollTop = msgs.scrollHeight;
 }
+
+// ─────────────────────────────────────────────
+// Custom hover tooltips (native title= is unreliable in JetBrains' JCEF)
+// ─────────────────────────────────────────────
+var _tipEl = null;
+function showHoverTooltip(target) {
+  var text = target.getAttribute('data-tooltip');
+  if (!text) return;
+  if (!_tipEl) {
+    _tipEl = document.createElement('div');
+    _tipEl.className = 'custom-tooltip';
+    document.body.appendChild(_tipEl);
+  }
+  _tipEl.textContent = text;
+  _tipEl.style.display = 'block';
+  var rect = target.getBoundingClientRect();
+  var tw = _tipEl.offsetWidth;
+  var th = _tipEl.offsetHeight;
+  var x = Math.max(4, Math.min(rect.left + rect.width / 2 - tw / 2, window.innerWidth - tw - 4));
+  var y = rect.top - th - 8;
+  if (y < 4) y = rect.bottom + 8;
+  _tipEl.style.left = Math.round(x) + 'px';
+  _tipEl.style.top = Math.round(y) + 'px';
+}
+function hideHoverTooltip() {
+  if (_tipEl) _tipEl.style.display = 'none';
+}
+document.addEventListener('mouseover', function(e) {
+  var t = (e.target && e.target.closest)
+    ? e.target.closest('.stat-badge[data-tooltip], .stat-chip[data-tooltip], .traj-toggle[data-tooltip]')
+    : null;
+  if (t) showHoverTooltip(t);
+});
+document.addEventListener('mouseout', function(e) {
+  var t = (e.target && e.target.closest)
+    ? e.target.closest('.stat-badge[data-tooltip], .stat-chip[data-tooltip], .traj-toggle[data-tooltip]')
+    : null;
+  if (t) hideHoverTooltip();
+});
 
 function generateId() {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
