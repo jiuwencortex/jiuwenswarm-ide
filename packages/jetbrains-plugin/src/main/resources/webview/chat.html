@@ -2286,7 +2286,8 @@ function updateUsage(rid, payload) {
     ? payload.usage_metadata
     : payload;
 
-  const inTok  = (meta.input_tokens  || 0) + (meta.cache_tokens || 0);
+  // cache_tokens is a subset of input_tokens (cached portion of the prompt) — do not add.
+  const inTok  = meta.input_tokens  || meta.cache_tokens || 0;
   const outTok = meta.output_tokens || 0;
   const cost   = meta.total_cost || meta.cost_usd || 0;
 
@@ -2641,7 +2642,7 @@ function renderStatsBar() {
     '<span class="ss-chip">Tokens <b>' + fmtTok(s.totalTokens) + '</b></span>' +
     '<span class="ss-chip">LLM calls <b>' + s.totalLlmCalls + '</b></span>' +
     '<span class="ss-chip">Avg latency <b>' + avgLat + '</b></span>' +
-    '<span class="ss-chip">Avg TTFT <b>' + avgTtft + '</b></span>';
+    '<span class="ss-chip">Avg First Token <b>' + avgTtft + '</b></span>';
   if (s.totalCostUsd > 0) html += '<span class="ss-chip">Cost <b>$' + s.totalCostUsd.toFixed(3) + '</b></span>';
   el.innerHTML = html;
   el.classList.add('visible');

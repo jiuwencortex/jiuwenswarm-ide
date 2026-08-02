@@ -2299,7 +2299,8 @@ function updateUsage(rid, payload) {
     ? payload.usage_metadata
     : payload;
 
-  const inTok  = (meta.input_tokens  || 0) + (meta.cache_tokens || 0);
+  // cache_tokens is a subset of input_tokens (cached portion of the prompt) — do not add.
+  const inTok  = meta.input_tokens  || meta.cache_tokens || 0;
   const outTok = meta.output_tokens || 0;
   const cost   = meta.total_cost || meta.cost_usd || 0;
 
@@ -2674,7 +2675,7 @@ function renderStatsBar() {
     '<span class="ss-chip">Tokens <b>' + fmtTok(sessionTokens) + '</b></span>' +
     '<span class="ss-chip">LLM calls <b>' + s.totalLlmCalls + '</b></span>' +
     '<span class="ss-chip">Avg latency <b>' + avgLat + '</b></span>' +
-    '<span class="ss-chip">Avg TTFT <b>' + avgTtft + '</b></span>' +
+    '<span class="ss-chip">Avg First Token <b>' + avgTtft + '</b></span>' +
     '<span class="ss-chip" title="' + fmtBytes(m.contextBytes || 0) + ' injected IDE context, plus current input">Ctx Size <b>' + fmtTok(m.promptEstimatedTokens || 0) + ' est tok</b></span>' +
     '<span class="ss-chip">Cost <b>' + costLabel + '</b></span>';
   el.innerHTML = html;
