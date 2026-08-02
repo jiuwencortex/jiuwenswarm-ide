@@ -1048,6 +1048,67 @@
     box-shadow: 0 3px 10px rgba(0,0,0,0.35);
   }
 
+  /* ── Per-turn trajectory (TraceHound-style event timeline) ── */
+  .traj-toggle {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: 10px;
+    padding: 1px 8px;
+    font-size: 10px;
+    cursor: pointer;
+    white-space: nowrap;
+    line-height: 1.5;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .traj-toggle:hover { color: var(--text); border-color: var(--text-muted); }
+  .traj-toggle.open { color: var(--accent); border-color: var(--accent); }
+  .trajectory { display: none; margin-top: 6px; }
+  .trajectory.visible { display: block; }
+  .traj-row {
+    border: 1px solid var(--border);
+    border-left: 2px solid #6b7280;
+    border-radius: 4px;
+    margin-bottom: 4px;
+    background: var(--bg);
+    overflow: hidden;
+  }
+  .traj-row.user       { border-left-color: #569cd6; }
+  .traj-row.reasoning  { border-left-color: #8b5cf6; }
+  .traj-row.tool_call  { border-left-color: #f59e0b; }
+  .traj-row.tool_update{ border-left-color: #d97706; }
+  .traj-row.tool_result{ border-left-color: #10b981; }
+  .traj-row.usage      { border-left-color: #ec4899; }
+  .traj-row.error      { border-left-color: #ef4444; }
+  .traj-row.final      { border-left-color: #6366f1; }
+  .traj-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 8px;
+    font-size: 11px;
+    color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+  }
+  .traj-header .traj-label { font-weight: 600; color: var(--text); font-family: var(--font-mono); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .traj-header .traj-time { margin-left: auto; font-size: 10px; color: var(--text-dim); flex-shrink: 0; }
+  .traj-body {
+    display: none;
+    padding: 5px 8px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--text-muted);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 200px;
+    overflow-y: auto;
+    border-top: 1px solid var(--border);
+  }
+  .traj-header.open + .traj-body { display: block; }
+  .traj-gap { display: flex; align-items: center; gap: 8px; color: var(--text-dim); font-size: 10px; margin: 3px 0; }
+  .traj-gap::before, .traj-gap::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
   /* ── Turn stats footer ── */
   .turn-stats {
     display: flex;
@@ -2216,6 +2277,19 @@ function handleJiuwenEvent(evt) {
     if (hDoneEl) hDoneEl.remove();
     _historyPendingAssistant = null;
     state.historyLoading = false;
+    // Add trajectory toggles to every restored turn that has recorded events
+    document.querySelectorAll('#messages .msg').forEach(function(el) {
+      if (!el.__events || !el.__events.length) return;
+      var footerEl = el.querySelector('.turn-stats');
+      if (!footerEl) {
+        footerEl = document.createElement('div');
+        footerEl.className = 'turn-stats';
+        el.appendChild(footerEl);
+      }
+      if (!footerEl.querySelector('.traj-toggle')) {
+        footerEl.insertBefore(makeTrajectoryToggle(el, el.__events.length), footerEl.children[0]);
+      }
+    });
   } else if (et === 'chat.error') {
     appendError(rid, payload.error || 'Unknown error');
   }
@@ -2279,7 +2353,11 @@ function beginTurn(requestId, userContent) {
     costUsd: 0,
     toolErrors: [],
     errorCategories: [],
+    // TraceHound-style per-turn tracking
+    events: [],          // ordered event log for the trajectory timeline
   };
+
+  state.pendingTurns[requestId].events.push({ type: 'user', t: Date.now(), detail: userContent });
 
   scrollToBottom();
 }
@@ -2327,6 +2405,11 @@ function appendThinking(rid, text) {
     pt.thinkingHeader = header;
   }
   pt.thinkingEl.textContent += text;
+  // Accumulate reasoning chunks into a single timeline entry
+  pt.events = pt.events || [];
+  var lastE = pt.events[pt.events.length - 1];
+  if (lastE && lastE.type === 'reasoning') lastE.detail += text;
+  else pt.events.push({ type: 'reasoning', t: Date.now(), detail: text });
   scrollToBottom();
 }
 
@@ -2369,6 +2452,8 @@ function appendToolCall(rid, payload) {
   pt.streamEl.appendChild(card);
   pt.toolCards.push(card);
   pt.toolCallCount++;
+  pt.events = pt.events || [];
+  pt.events.push({ type: 'tool_call', t: Date.now(), label: toolName, detail: 'Arguments\n' + formatToolInput(toolName, toolInput) });
   scrollToBottom();
 }
 
@@ -2380,6 +2465,8 @@ function appendToolUpdate(rid, payload) {
   if (statusEl) {
     statusEl.innerHTML = '<span class="tool-spinner">◌</span> running';
   }
+  pt.events = pt.events || [];
+  pt.events.push({ type: 'tool_update', t: Date.now(), label: targetCard.dataset.toolName || 'tool', detail: payload.status || 'in_progress' });
 }
 
 function appendToolResult(rid, payload) {
@@ -2435,6 +2522,8 @@ function appendToolResult(rid, payload) {
     var errMsg = result.replace(/^success=False\s+data=None\s+error='/g, '').replace(/'$/g, '').trim();
     pt.toolErrors = pt.toolErrors || [];
     pt.toolErrors.push(toolName + ': ' + (errMsg || 'Unknown error'));
+    pt.errorCategories = pt.errorCategories || [];
+    pt.errorCategories.push(classifyError(errMsg || result));
   }
 
   if (statusEl) {
@@ -2447,6 +2536,15 @@ function appendToolResult(rid, payload) {
   resultEl.className = 'tool-body result';
   resultEl.textContent = 'Result\n' + truncate(result || '(no output)', 500);
   targetCard.appendChild(resultEl);
+  pt.events = pt.events || [];
+  pt.events.push({
+    type: 'tool_result',
+    t: Date.now(),
+    label: toolName,
+    isError: isError,
+    icon: isError ? '\u274C' : '\u2705',
+    detail: isError ? (errMsg || result) : result,
+  });
   scrollToBottom();
 }
 
@@ -2539,10 +2637,16 @@ function sendAnswerForInterrupt(pt, rid, source, optionValue) {
 // History rendering (session restore)
 // ─────────────────────────────────────────────
 function renderHistoryMessage(payload) {
-  var role = payload.role;
-  var content = payload.content || '';
-  var innerType = payload.event_type;
-  var evtPayload = payload.event_payload || {};
+  // Backend wraps each history record under payload.message; older flows send it flat.
+  var rec = (payload && typeof payload.message === 'object' && payload.message !== null)
+    ? payload.message
+    : (payload || {});
+  var role = rec.role;
+  var content = rec.content || '';
+  var innerType = rec.event_type;
+  var evtPayload = rec.event_payload || {};
+  var recTs = rec.timestamp;
+  var evtT = typeof recTs === 'number' ? (recTs > 1000000000000 ? recTs : recTs * 1000) : Date.now();
   var msgs = document.getElementById('messages');
 
   // Remove loading indicator on first real message
@@ -2562,6 +2666,7 @@ function renderHistoryMessage(payload) {
     if (!_historyPendingAssistant) {
       var aEl = document.createElement('div');
       aEl.className = 'msg';
+      aEl.__events = [];
       var hdrEl = document.createElement('div');
       hdrEl.className = 'msg-header assistant';
       hdrEl.textContent = 'JiuwenSwarm';
@@ -2573,7 +2678,7 @@ function renderHistoryMessage(payload) {
       _historyPendingAssistant = { containerEl: aEl, bodyEl: bdyEl };
     }
     if (innerType === 'chat.tool_call') {
-      var toolName = evtPayload.tool_name || payload.tool_name || 'tool';
+      var toolName = evtPayload.tool_name || rec.tool_name || 'tool';
       var toolInput = evtPayload.tool_input || evtPayload.input || evtPayload.arguments || {};
       var card = document.createElement('div');
       card.className = 'tool-card';
@@ -2592,11 +2697,15 @@ function renderHistoryMessage(payload) {
       card.appendChild(hdr);
       card.appendChild(bdy);
       _historyPendingAssistant.bodyEl.appendChild(card);
+      _historyPendingAssistant.containerEl.__events.push({
+        type: 'tool_call', t: evtT, label: toolName, detail: 'Arguments\n' + bdy.textContent.replace('Arguments\n', ''),
+      });
     } else if (!innerType || innerType === 'chat.final') {
       if (content.trim()) {
         var textEl = document.createElement('div');
         textEl.innerHTML = renderMarkdown(content);
         _historyPendingAssistant.bodyEl.appendChild(textEl);
+        _historyPendingAssistant.containerEl.__events.push({ type: 'final', t: evtT, detail: content });
       }
     }
     scrollToBottom();
@@ -2626,6 +2735,17 @@ function updateUsage(rid, payload) {
     const total = pt.inputTokens + pt.outputTokens;
     renderTokenCounter(state.sessionStats.totalTokens + total);
   }
+
+  pt.events = pt.events || [];
+  pt.events.push({
+    type: 'usage',
+    t: Date.now(),
+    label: meta.model_name || state.modelName || 'LLM',
+    detail: 'in ' + (inTok || 0).toLocaleString() + ' / out ' + (outTok || 0).toLocaleString() +
+      ' = ' + (inTok + outTok).toLocaleString() + ' tok' +
+      ((meta.cache_tokens || 0) > 0 ? ' \u00B7 cache ' + meta.cache_tokens.toLocaleString() : '') +
+      (cost > 0 ? ' \u00B7 ' + fmtUsd(cost) : ''),
+  });
 }
 
 function contextUsagePct() {
@@ -2715,6 +2835,7 @@ function finalizeTurn(rid, payload) {
     const outcome     = classifyOutcome(pt);
     const totalTok    = pt.inputTokens + pt.outputTokens;
     const ttftMs      = pt.firstTokenTime ? pt.firstTokenTime - pt.startTime : null;
+    const uniqErrorCats  = (pt.errorCategories || []).filter(function(v, i, a) { return a.indexOf(v) === i; });
 
     const outcomeColors = {
       completed:             '#2563eb',
@@ -2734,6 +2855,9 @@ function finalizeTurn(rid, payload) {
     if (pt.llmCallCount > 1) footerHtml += '<span class="stat-chip">'         + pt.llmCallCount       + ' LLM calls</span>';
     if (pt.toolCallCount)   footerHtml += '<span class="stat-chip">'          + pt.toolCallCount      + ' tools</span>';
     if (pt.costUsd > 0)     footerHtml += '<span class="stat-chip" title="cumulative LLM cost this turn">' + fmtUsd(pt.costUsd) + '</span>';
+    uniqErrorCats.forEach(function(cat) {
+      footerHtml += '<span class="stat-chip" style="color:#ef4444;border-color:rgba(239,68,68,0.4)" title="error category">' + escapeHtml(cat) + '</span>';
+    });
     footerHtml += '<span class="stat-chip" title="total duration · time from send to first response token">' + (durationMs !== null ? 'dur ' + fmtMs(durationMs) : '') + (ttftMs !== null ? ' · first ' + fmtMs(ttftMs) : '') + '</span>';
     if (pt.toolErrorCount) {
       const errSummary = pt.toolErrors.map(function(e) { return '• ' + escapeHtml(e); }).join('\n');
@@ -2751,6 +2875,9 @@ function finalizeTurn(rid, payload) {
     footer.appendChild(copyBtn);
 
     pt.containerEl.appendChild(footer);
+    insertTrajectoryToggle(footer, pt.containerEl, (pt.events || []).length);
+
+    pt.containerEl.__events = pt.events || [];
 
     updateSessionStats(outcome, totalTok, durationMs, pt.llmCallCount, pt.costUsd, ttftMs);
     delete state.pendingTurns[rid];
@@ -2774,6 +2901,8 @@ function appendError(rid, errorText) {
     pt.hasError = true;
     var cat = classifyError(errorText);
     pt.errorCategories.push(cat);
+    pt.events = pt.events || [];
+    pt.events.push({ type: 'error', t: Date.now(), detail: errorText });
 
     var errorEl = document.createElement('div');
     errorEl.className = 'error-msg';
@@ -2797,8 +2926,12 @@ function appendError(rid, errorText) {
     footer.innerHTML =
       '<span class="stat-badge" style="background:#ef4444">error</span>' +
       (totalTok ? '<span class="stat-chip" title="input / output tokens">toks in ' + fmtTok(pt.inputTokens) + ' · out ' + fmtTok(pt.outputTokens) + '</span>' : '') +
+      '<span class="stat-chip" style="color:#ef4444;border-color:rgba(239,68,68,0.4)" title="error category">' + escapeHtml(cat) + '</span>' +
       '<span class="stat-chip">' + fmtMs(durationMs) + '</span>';
     pt.containerEl.appendChild(footer);
+    insertTrajectoryToggle(footer, pt.containerEl, (pt.events || []).length);
+
+    pt.containerEl.__events = pt.events || [];
 
     updateSessionStats('error', totalTok, durationMs, pt.llmCallCount, pt.costUsd,
       pt.firstTokenTime ? pt.firstTokenTime - pt.startTime : null);
@@ -2949,6 +3082,79 @@ function classifyOutcome(pt) {
   return 'completed';
 }
 
+// ── Per-turn trajectory (TraceHound-style event timeline) ──
+var TRAJ_EVENT_META = {
+  user:         { icon: '\u{1F9D1}', label: 'User' },
+  reasoning:    { icon: '\u{1F914}', label: 'Reasoning' },
+  tool_call:    { icon: '\u{1F527}', label: 'Tool' },
+  tool_update:  { icon: '\u23F3',   label: 'Tool update' },
+  tool_result:  { icon: '\u2705',   label: 'Result' },
+  usage:        { icon: '\u26A1',   label: 'LLM call' },
+  error:        { icon: '\u{1F6A8}', label: 'Error' },
+  final:        { icon: '\u{1F4AC}', label: 'Response' },
+};
+
+function makeTrajectoryToggle(containerEl, count) {
+  if (!containerEl || !count) return null;
+  var btn = document.createElement('button');
+  btn.className = 'traj-toggle';
+  btn.textContent = '\u25B8 ' + count + ' events';
+  btn.title = 'Show / hide this turn\u2019s event timeline';
+  btn.onclick = function() { toggleTrajectory(containerEl); };
+  return btn;
+}
+
+/** Insert the trajectory toggle as the 2nd bubble in a turn-stats footer (right after the outcome badge). */
+function insertTrajectoryToggle(footerEl, containerEl, count) {
+  var btn = makeTrajectoryToggle(containerEl, count);
+  if (!btn) return;
+  if (footerEl.querySelector('.traj-toggle')) return;
+  footerEl.insertBefore(btn, footerEl.children[1] || null);
+}
+
+function toggleTrajectory(containerEl) {
+  var traj = containerEl.querySelector('.trajectory');
+  var btn = containerEl.querySelector('.traj-toggle');
+  if (!traj) {
+    traj = document.createElement('div');
+    traj.className = 'trajectory';
+    traj.innerHTML = renderTrajectory(containerEl.__events || []);
+    containerEl.appendChild(traj);
+  }
+  var visible = traj.classList.toggle('visible');
+  if (btn) btn.classList.toggle('open', visible);
+  if (visible) scrollToBottom();
+}
+
+function renderTrajectory(events) {
+  if (!events || !events.length) return '';
+  var firstT = events[0].t;
+  var prevT = firstT;
+  var out = '';
+  for (var i = 0; i < events.length; i++) {
+    var e = events[i];
+    var gap = e.t - prevT;
+    if (gap > 30000) {
+      out += '<div class="traj-gap">' + fmtMs(gap) + ' idle</div>';
+    }
+    prevT = e.t;
+    var meta = TRAJ_EVENT_META[e.type] || { icon: '\u2022', label: e.type || '' };
+    var icon = e.icon || meta.icon;
+    var label = escapeHtml(meta.label + (e.label ? ': ' + e.label : ''));
+    var content = e.detail ? escapeHtml(e.detail) : '';
+    var elapsed = e.t - firstT;
+    out += '<div class="traj-row ' + escapeHtml(e.type) + '">' +
+      '<div class="traj-header" onclick="this.classList.toggle(\'open\')">' +
+      '<span>' + icon + '</span>' +
+      '<span class="traj-label">' + label + '</span>' +
+      '<span class="traj-time">+' + fmtMs(elapsed) + '</span>' +
+      '</div>' +
+      (content ? '<div class="traj-body">' + content + '</div>' : '') +
+      '</div>';
+  }
+  return out;
+}
+
 function copyMessageContent(btn) {
   var msg = btn.closest('.msg');
   var stream = msg ? msg.querySelector('.stream') : null;
@@ -3076,13 +3282,20 @@ function renderStatsBar() {
   var m = state.hostMetrics || {};
   var el = document.getElementById('session-stats-bar');
   if (!el) return;
+  // Only show the stats bar once the first turn has completed
+  if (s.totalTurns < 1) {
+    el.classList.remove('visible');
+    el.innerHTML = '';
+    return;
+  }
   var avgLat  = s.latencies.length ? fmtMs(Math.round(_avg(s.latencies))) : '\u2014';
   var ttftArr = s.ttfts.filter(function(x) { return x != null; });
   var avgTtft = ttftArr.length ? fmtMs(Math.round(_avg(ttftArr))) : '\u2014';
   var sessionTokens = m.sessionTokens || s.totalTokens;
-  var costLabel = m.hasCost
-    ? '$' + Number(m.sessionCostUsd || 0).toFixed(3)
-    : (s.totalCostUsd > 0 ? '$' + s.totalCostUsd.toFixed(3) : '\u2014');
+  var showCost = (m.hasCost && Number(m.sessionCostUsd || 0) > 0) || s.totalCostUsd > 0;
+  var costLabel = showCost
+    ? '$' + (m.hasCost ? Number(m.sessionCostUsd || 0) : s.totalCostUsd).toFixed(3)
+    : '';
   var html =
     '<span class="ss-chip">Turns <b>' + s.totalTurns + '</b></span>' +
     (s.totalErrors ? '<span class="ss-chip ss-chip-err">Errors <b>' + s.totalErrors + '</b></span>' : '') +
@@ -3090,8 +3303,10 @@ function renderStatsBar() {
     '<span class="ss-chip">LLM calls <b>' + s.totalLlmCalls + '</b></span>' +
     '<span class="ss-chip">Avg duration <b>' + avgLat + '</b></span>' +
     '<span class="ss-chip">Avg first token <b>' + avgTtft + '</b></span>' +
-    '<span class="ss-chip" title="' + fmtBytes(m.contextBytes || 0) + ' injected IDE context, plus current input">Ctx Size <b>' + fmtTok(m.promptEstimatedTokens || 0) + ' est tok</b></span>' +
-    '<span class="ss-chip">Cost <b>' + costLabel + '</b></span>';
+    (m.contextBytes || m.promptEstimatedTokens
+      ? '<span class="ss-chip" title="' + fmtBytes(m.contextBytes || 0) + ' injected IDE context, plus current input">Ctx Size <b>' + fmtTok(m.promptEstimatedTokens || 0) + ' est tok</b></span>'
+      : '') +
+    (showCost ? '<span class="ss-chip">Cost <b>' + costLabel + '</b></span>' : '');
   // TODO checkbox progress (from todo.updated) — ✓ completed / ◐ in progress / ☐ pending
   var td = state.todoStats;
   if (td && (td.completed || td.inProgress || td.pending)) {
@@ -3100,18 +3315,9 @@ function renderStatsBar() {
       '<b class="todo-run">◐' + td.inProgress + '</b> ' +
       '<b class="todo-wait">☐' + td.pending + '</b></span>';
   }
-  // Tool activity (from chat.tool_call) — session count + per-tool breakdown in tooltip
-  if (s.totalToolCalls > 0) {
-    var toolTip = Object.keys(s.toolCallsByTool || {}).map(function(k) {
-      return friendlyToolName(k) + ': ' + s.toolCallsByTool[k];
-    }).join('\n');
-    html += '<span class="ss-chip" title="Tool activity this session:\n' + escapeHtml(toolTip) + '">Tools <b>' + s.totalToolCalls + '</b></span>';
+  if (s.totalTurns >= 2) {
+    html += '<button class="charts-toggle" onclick="toggleCharts()" title="' + (state.chartsCollapsed ? 'Show charts' : 'Hide charts') + '">' + (state.chartsCollapsed ? '\u25B8' : '\u25BE') + '</button>';
   }
-  // Model badge (from chat.usage_summary) — mirrors the CLI /status model line
-  if (state.modelName) {
-    html = '<span class="ss-chip" title="Active model">Model <b>' + escapeHtml(state.modelName) + '</b></span>' + html;
-  }
-  html += (s.totalTurns >= 2 ? '<button class="charts-toggle" onclick="toggleCharts()" title="' + (state.chartsCollapsed ? 'Show charts' : 'Hide charts') + '">' + (state.chartsCollapsed ? '\u25B8' : '\u25BE') + '</button>' : '');
   el.innerHTML = html;
   el.classList.add('visible');
 }
