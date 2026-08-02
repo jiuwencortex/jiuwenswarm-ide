@@ -3008,6 +3008,10 @@ function clearMessages() {
     totalTurns: 0, totalErrors: 0, totalTokens: 0, totalLlmCalls: 0, totalCostUsd: 0,
     latencies: [], ttfts: [], turnTokens: [], turnDurations: [], outcomes: [],
   };
+  // New session starts with an empty context window — reset the token bar
+  state.contextTokensUsed = 0;
+  state.contextUsagePercent = null;
+  updateTokenBar();
   var ssBar = document.getElementById('session-stats-bar');
   if (ssBar) { ssBar.innerHTML = ''; ssBar.classList.remove('visible'); }
   var mc = document.getElementById('mini-charts');
