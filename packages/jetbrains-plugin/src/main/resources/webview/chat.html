@@ -867,31 +867,6 @@
     padding: 0;
   }
 
-  /* ── Shortcut hint chips ── */
-  #input-hints {
-    display: flex;
-    gap: 4px;
-    padding: 0 2px 4px 2px;
-    transition: opacity 0.15s;
-  }
-  #input-hints.hidden { opacity: 0; pointer-events: none; }
-  .hint-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-    padding: 2px 7px;
-    font-size: 11px;
-    color: var(--text-muted);
-    background: var(--bg2);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    cursor: pointer;
-    user-select: none;
-    transition: color 0.12s, border-color 0.12s;
-  }
-  .hint-chip:hover { color: var(--accent); border-color: var(--accent); }
-  .hint-chip .hc-key { font-weight: 700; font-family: var(--font-mono); }
-
   /* Mode on left, token counter on right */
   #input-meta {
     display: flex;
@@ -1078,17 +1053,6 @@
   .skill-item:hover, .skill-item.active { background: var(--accent); color: #fff; }
   .skill-item .sk-desc { color: var(--text-muted); font-size: 11px; margin-left: 6px; }
   .skill-item.active .sk-desc { color: rgba(255,255,255,0.7); }
-  /* ── Command mode badge (!) ── */
-  #cmd-mode-badge {
-    display: inline-block;
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--accent);
-    margin-left: 6px;
-    letter-spacing: 0.02em;
-  }
-  #cmd-mode-badge.hidden { display: none; }
-
   /* ── Mini bar charts (tokens/turn + duration/turn) ── */
   #mini-charts {
     display: none;
@@ -1507,22 +1471,16 @@
 
 <div id="input-area">
   <div id="attachment-preview"></div>
-  <div id="input-hints">
-    <span class="hint-chip" onclick="insertPrefix('@')" title="Mention a file"><span class="hc-key">@</span> Files</span>
-    <span class="hint-chip" onclick="insertPrefix('#')" title="Trigger a skill"><span class="hc-key">#</span> Skills</span>
-    <span class="hint-chip" onclick="insertPrefix('!')" title="Run a command"><span class="hc-key">!</span> Command</span>
-  </div>
   <div id="input-row">
     <div id="mention-popup" class="hidden"></div>
     <div id="skill-popup" class="hidden"></div>
-    <textarea id="input" placeholder="Enter to send  ·  Shift+Enter for new line" rows="1" disabled></textarea>
+    <textarea id="input" placeholder="@ files · # skills · ! command — Enter to send" rows="1" disabled></textarea>
     <button id="send-btn" disabled title="Send (Enter)">↑</button>
   </div>
   <div id="token-row">
     <div id="token-bar-wrap" title="Context occupancy (ctx) — how full the model's context window is right now"><div id="token-bar-fill"></div></div>
     <span id="token-counter" title="Context occupancy (ctx) — tokens used / context window right now; total session tokens are in the stats bar above"></span>
     <span id="ctx-warning"></span>
-    <span id="cmd-mode-badge" class="hidden">⚡ cmd</span>
   </div>
   <input type="file" id="image-input" accept="image/png,image/jpeg,image/webp,image/gif" multiple style="display:none">
   <div id="input-meta">
@@ -1643,7 +1601,6 @@ let state = {
   mentionActive: -1,   // keyboard-selected index in mention popup (-1 = none)
   skillQuery: '',      // current #-token being typed
   skillActive: -1,     // keyboard-selected index in skill popup (-1 = none)
-  cmdMode: false,      // true when input starts with '!' (command mode)
   gitBranch: null,     // current git branch name (null = not a git repo)
   gitChangedCount: 0,  // number of uncommitted changes
 };
@@ -2107,8 +2064,19 @@ function retrySkills() {
 }
 
 function updateSkills(skills) {
-  if (!state.showSkills) return;
   state.skills = skills || [];
+  // If the user currently has a '#' token in the input, refresh the skill picker popup
+  // now that data has arrived (skills load asynchronously on first '#' keystroke).
+  if (inputEl && state.skills.length > 0) {
+    var cursorVal = inputEl.value.substring(0, inputEl.selectionStart || inputEl.value.length);
+    var pendingHash = cursorVal.match(/#([^\s#]*)$/);
+    if (pendingHash) {
+      state.skillQuery = pendingHash[1];
+      state.skillActive = 0;
+      renderSkillPopup(getSkillMatches());
+    }
+  }
+  if (!state.showSkills) return;
   var el = document.getElementById('skills-list');
   if (!el) return;
   if (!state.skills.length) {
@@ -3208,19 +3176,6 @@ const inputEl = document.getElementById('input');
 const sendBtn = document.getElementById('send-btn');
 const mentionPopupEl = document.getElementById('mention-popup');
 const skillPopupEl  = document.getElementById('skill-popup');
-const cmdBadgeEl    = document.getElementById('cmd-mode-badge');
-const inputHintsEl  = document.getElementById('input-hints');
-
-function insertPrefix(ch) {
-  if (!state.connected || state.streaming) return;
-  var pos = inputEl.selectionStart;
-  var val = inputEl.value;
-  inputEl.value = val.substring(0, pos) + ch + val.substring(pos);
-  var newPos = pos + 1;
-  inputEl.setSelectionRange(newPos, newPos);
-  inputEl.focus();
-  inputEl.dispatchEvent(new Event('input'));
-}
 
 function getMentionMatches() {
   var q = state.mentionQuery.toLowerCase();
@@ -3385,15 +3340,6 @@ inputEl.addEventListener('input', function() {
   sendBtn.disabled = !this.value.trim() || !state.connected || state.streaming;
   send({ type: 'input_changed', content: this.value });
 
-  // Show shortcut hints only when the input is empty
-  if (inputHintsEl) {
-    if (this.value.length > 0) {
-      inputHintsEl.classList.add('hidden');
-    } else {
-      inputHintsEl.classList.remove('hidden');
-    }
-  }
-
   var val = this.value.substring(0, this.selectionStart);
 
   // @-mention detection: find last '@...' token before cursor
@@ -3430,17 +3376,6 @@ inputEl.addEventListener('input', function() {
   } else {
     hideSkillPopup();
   }
-
-  // !-command mode: input starts with '!'
-  var cmdMode = this.value.startsWith('!');
-  if (cmdMode !== state.cmdMode) {
-    state.cmdMode = cmdMode;
-    if (cmdMode) {
-      cmdBadgeEl.classList.remove('hidden');
-    } else {
-      cmdBadgeEl.classList.add('hidden');
-    }
-  }
 });
 
 sendBtn.addEventListener('click', function() {
@@ -3474,8 +3409,6 @@ function submitMessage() {
   if (raw.startsWith('!')) {
     var cmd = raw.substring(1).trim();
     content = cmd ? 'Run: `' + cmd + '`' : raw;
-    state.cmdMode = false;
-    cmdBadgeEl.classList.add('hidden');
   }
 
   const requestId = generateId();
@@ -3513,7 +3446,6 @@ function submitMessage() {
   hideSkillPopup();
   inputEl.value = '';
   inputEl.style.height = 'auto';
-  if (inputHintsEl) inputHintsEl.classList.remove('hidden');
 }
 
 function setStreaming(yes) {
