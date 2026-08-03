@@ -714,6 +714,7 @@ class ChatPanel(
                     "type" to "connected",
                     "sessionId" to sid,
                     "sessionTitle" to service.session.sessionTitle,
+                    "defaultMode" to service.settings.defaultMode,
                 ))
                 // Then fetch models in background and send a second update with model list
                 ApplicationManager.getApplication().executeOnPooledThread {
@@ -733,6 +734,7 @@ class ChatPanel(
                             "sessionTitle" to service.session.sessionTitle,
                             "models" to modelList,
                             "activeModel" to activeModel,
+                            "defaultMode" to service.settings.defaultMode,
                         ))
                     } catch (_: Exception) {
                         debug("STATUS→ models.list failed, staying with basic connected state")
@@ -745,6 +747,7 @@ class ChatPanel(
                     "sessionId" to null,
                     "sessionTitle" to "JiuwenSwarm",
                     "needsSession" to true,
+                    "defaultMode" to service.settings.defaultMode,
                 ))
             s == WsStatus.RECONNECTING ->
                 dispatchToWebview(mapOf("type" to "reconnecting"))

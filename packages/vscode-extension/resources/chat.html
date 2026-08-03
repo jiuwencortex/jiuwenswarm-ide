@@ -1503,7 +1503,7 @@
     <div id="mention-popup" class="hidden"></div>
     <div id="skill-popup" class="hidden"></div>
     <div id="prompt-popup" class="hidden"></div>
-    <textarea id="input" placeholder="@ files · # skills · ! prompts — Enter to send" rows="1" disabled></textarea>
+    <textarea id="input" placeholder="@ files · # skills · ! prompts — Enter to send · Shift+Enter for new line" rows="1" disabled></textarea>
     <button id="send-btn" disabled title="Send (Enter)">↑</button>
   </div>
   <div id="token-row">
@@ -1588,6 +1588,7 @@ let state = {
   pendingTurns: {},
   lastUserEl: null,
   mode: 'code.plan',
+  modeCustomized: false, // true once the user has manually picked a mode
   themeMode: 'auto',   // 'auto' | 'dark' | 'light'
   attachments: [],     // { filename, mimeType, base64Data, previewUrl }
   rewindable: false,   // true when last turn edited files and rewind is available
@@ -1647,6 +1648,7 @@ function handleHostMessage(msg) {
       state.models = msg.models || [];
       state.activeModel = msg.activeModel || null;
       if (msg.models) updateModelDisplay(msg.models, msg.activeModel);
+      if (msg.defaultMode && !state.modeCustomized) applyMode(msg.defaultMode);
       break;
     case 'disconnected':
       setConnected(false);
@@ -2253,6 +2255,7 @@ function selectMode(mode) {
     closeModeDropdown();
     return;
   }
+  state.modeCustomized = true;
   applyMode(mode);
   closeModeDropdown();
 }
@@ -2279,6 +2282,7 @@ function closeModal() {
 }
 function confirmModeSwitch() {
   if (pendingModeSwitch) {
+    state.modeCustomized = true;
     applyMode(pendingModeSwitch);
     // Request new session after mode switch
     send({ type: 'new_session' });
