@@ -10,24 +10,29 @@ Open **Settings → Extensions → JiuwenSwarm** (or search `jiuwenswarm` in the
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `jiuwenswarm.host` | `localhost` | Hostname or IP of the JiuwenSwarm WebSocket server |
+| `jiuwenswarm.host` | `127.0.0.1` | Hostname or IP of the JiuwenSwarm WebSocket server |
 | `jiuwenswarm.port` | `19000` | Port — connects to `ws://host:port/ws` |
 | `jiuwenswarm.channelId` | `ide` | Client identifier shown in server logs and traces |
 | `jiuwenswarm.autoConnect` | `true` | Open the WebSocket when VS Code starts |
-| **`jiuwenswarm.defaultMode`** | `code.plan` | Mode applied when a new session is created (`code.plan` / `code.normal` / `code.team`). Applied to the UI on every connection and can be overridden per-session by the mode selector. |
+| **`jiuwenswarm.defaultMode`** | `code.plan` | Declared default mode for the mode selector (`code.plan` / `code.normal` / `code.team`). The chat panel always starts in **Plan & Execute**; switch per-session with the mode pill. |
 | `jiuwenswarm.approveEdits` | `false` | Require explicit approval before applying any agent file edit |
+| `jiuwenswarm.runCommandsInTerminal` | `true` | Run `bash` / `run_command` tool calls in a JiuwenSwarm terminal so you can watch live output |
+| `jiuwenswarm.useDiffViewer` | `false` | Show VS Code's built-in diff viewer and ask **Accept / Reject** before applying each file edit |
 | `jiuwenswarm.loadHistoryOnSwitch` | `true` | Fetch and display past messages when switching to an existing session |
+| `jiuwenswarm.keepAlive.enabled` | `true` | Send periodic WebSocket ping frames to keep the connection alive and detect drops early |
+| `jiuwenswarm.keepAlive.interval` | `30` | Seconds between keep-alive pings (5–300) |
 | `jiuwenswarm.rewindEnabled` | `true` | Snapshot files before agent edits; show the rewind bar after each turn |
 | `jiuwenswarm.projectTree.enabled` | `true` | Prepend a 2-level directory listing of the workspace root to every message |
 | `jiuwenswarm.projectTree.maxFiles` | `200` | Max entries in the project tree listing (10–2000) |
+| `jiuwenswarm.gitEnabled` | `false` | Show **Commit** / **Push** buttons below the message list (requires a git repository) |
 
-Settings take effect immediately. Reload the VS Code window if prompted after a settings change.
+Connection settings (host, port, channel ID, auto-connect, keep-alive) are read when the extension activates; changing them prompts you to reload the window. Behaviour toggles (approval, diff viewer, terminal, rewind, project tree, git) are applied live as you use them.
 
 ---
 
 ## Opening the Panel
 
-Click the **JiuwenSwarm** icon in the Activity Bar, or press **Ctrl+Shift+J** / **⌘⇧J**. The panel opens as a sidebar webview. It can be moved to the right sidebar or any other view container via drag-and-drop.
+Open **JiuwenSwarm: Open Chat** from the command palette or press **Ctrl+Shift+J** / **⌘⇧J**. The panel opens as a webview panel beside the current editor and can be dragged into any editor group.
 
 A session is created automatically on first connect. The header shows the session title and live connection state.
 
@@ -41,7 +46,7 @@ A session is created automatically on first connect. The header shows the sessio
 
 | Element | Description |
 |---------|-------------|
-| Status dot | Green = connected; spinning = connecting; orange = reconnecting; red = disconnected. Click to reconnect when disconnected. |
+| Status dot | Grey until the first connection, then green = connected, yellow (pulsing) = reconnecting, red = disconnected. To reconnect after a disconnect, click the status-bar item (`$(circle-slash) JiuwenSwarm`) or use **New**. |
 | Session title | Name of the active session |
 | **New** button | Start a fresh session: reconnects the WebSocket and clears the message list |
 | **⚙** menu | Sessions, Skills, Theme (Auto/Dark/Light), Debug log |
@@ -58,7 +63,7 @@ The mode pill in the bottom input bar controls how the agent works:
 | **Execute** | `code.normal` | Agent edits files and runs commands without a planning phase. Best for clear, contained tasks. |
 | **Team Coding** | `code.team` | A leader agent breaks the task into parallel sub-tasks and assigns them to specialist agents simultaneously. Best for large decomposable work. |
 
-Click the mode pill to open the dropdown. If the current session already has messages, switching mode asks for confirmation and starts a new session. The default mode at startup comes from `jiuwenswarm.defaultMode`.
+Click the mode pill to open the dropdown. If the current session already has messages, switching mode asks for confirmation and starts a new session. The mode pill starts in **Plan & Execute**.
 
 ---
 
@@ -114,9 +119,9 @@ Each completed turn consists of:
 
 - **Your message** — right-aligned bubble.
 - **Thinking block** — when the model uses extended reasoning, a collapsible **Thinking…** section appears before the response. Click the arrow to expand or collapse.
-- **Agent response** — full Markdown rendering: headings, bold/italic, syntax-highlighted code blocks, tables, lists.
+- **Agent response** — text streams in as it is generated. When a session's history is reloaded, assistant messages are rendered with bold/italic, fenced code blocks, and clickable file links.
 - **Tool call cards** — every tool the agent invokes appears as an inline card with:
-  - Tool icon and name (`📝 str_replace_editor`, `💻 bash`, `🔍 web_search`, `🔧 mcp_tool`, etc.)
+  - Tool icon and friendly name (a gear icon plus a label like `Edit`, `Bash`, `WebSearch`, `TodoWrite`; the raw tool id such as `str_replace_editor` is shown in the card's tooltip)
   - Live spinner → checkmark or ✕ on completion
   - Collapsible **Inputs** section (parameters sent to the tool)
   - Collapsible **Output** section (result returned by the tool)
@@ -125,18 +130,20 @@ Each completed turn consists of:
 
 ## Stats Bar and Metrics
 
-Below the message list, a stats bar displays session-level metrics that update after each turn:
+A stats bar between the header and the message list shows session-level metrics that update after each turn (it appears once the first turn completes):
 
 - **Turns** — total completed turns in the session
+- **Errors** — turns that ended in an error
 - **Tokens** — cumulative token count (input + output)
-- **Cost** — estimated USD cost (shown when the server reports pricing)
-- **Tool calls** — total tool invocations; click the chip to see a per-tool breakdown
+- **LLM calls** — cumulative model invocations
 - **Avg latency** — mean response time across turns
 - **TTFT** — mean time-to-first-token
+- **Cost** — estimated USD cost (shown when the server reports pricing)
+- **TODO** — live agent todo progress (✓ completed / ◐ in progress / ☐ pending), when the agent reports one
 
-Click the bar chart icon on the right to toggle **mini charts** — bar graphs showing tokens and duration per turn.
+The bar chart icon (right side of the stats bar, shown after two or more turns) toggles **mini charts** — bar graphs of tokens and duration per turn. Hover a bar to see that turn's details.
 
-A **context bar** below the input shows how full the active model's context window is (0–100%). The bar turns orange above 80%, red above 95%.
+In the input area at the bottom, a **context bar** shows how full the active model's context window is (0–100%). It turns orange above 60% and red above 80%; a warning chip appears as the context approaches the server's auto-compaction threshold.
 
 ---
 
@@ -185,7 +192,7 @@ Active file: /Users/mishka/project/src/api/handler.py  (python)
 Cursor line: 87
 
 Selected code:
-```python
+```
 def handle_request(req):
     result = blocking_call(req)
     return result
@@ -229,12 +236,6 @@ Plain identifiers in backticks (no `/` and no `:N`) are not linkified as files. 
 
 ---
 
-## Symbol Navigation
-
-PascalCase (`` `MyClass` ``) and SCREAMING_SNAKE_CASE (`` `MAX_RETRIES` ``) identifiers in backticks appear as purple links. Clicking uses `vscode.executeWorkspaceSymbolProvider` to find the symbol and opens the first result. Common acronyms (API, HTTP, JSON, TODO, etc.) are excluded.
-
----
-
 ## Actions and Keyboard Shortcuts
 
 | Action | Win / Linux | Mac |
@@ -244,17 +245,17 @@ PascalCase (`` `MyClass` ``) and SCREAMING_SNAKE_CASE (`` `MAX_RETRIES` ``) iden
 | New session (command palette) | — | — |
 | Fix with JiuwenSwarm (lightbulb) | `Ctrl+.` | `⌘.` |
 
-**Open / focus** — opens the JiuwenSwarm sidebar. If already open, focuses the input field.
+**Open / focus** — opens the JiuwenSwarm panel. If already open, brings it to the front.
 
 **Send selection** (`Ctrl+Shift+E` / `⌘⇧E` or right-click → **Send Selection to JiuwenSwarm**) — opens the panel and pre-fills the input with the selected code:
 
-```
+````
 [File: handler.py]
-```python
+```
 def handle_request(req):
     ...
 ```
-```
+````
 
 Add your question and press Enter.
 
@@ -271,7 +272,7 @@ VS Code shows a lightbulb 💡 next to any line that has an error or warning. Ji
 3. Select **Fix with JiuwenSwarm**.
 4. The chat panel opens with the error message and ±7 lines of surrounding code pre-filled:
 
-```
+````
 Fix this error in handler.py:
 
 Error:
@@ -282,7 +283,7 @@ def handle_request(req):
     result = blocking_call(req)
     return result
 ```
-```
+````
 
 5. Press Enter to send.
 
@@ -292,17 +293,21 @@ Works for any language VS Code has diagnostics for — TypeScript, Python, Java,
 
 ## File Edit Workflow
 
-When the agent calls `str_replace_editor`, `write_file`, or `create_file`, the extension applies the edit to the workspace using Node.js `fs` operations. A notification toast confirms each applied change.
+When the agent calls `str_replace_editor`, `write_file`, or `create_file`, the extension applies the edit to the workspace and a notification toast confirms each applied change.
 
 ### With approval
 
 Enable `jiuwenswarm.approveEdits` in settings to see an **Approve / Reject** prompt before every file change. Clicking **Reject** discards the edit; clicking **Approve** writes it to disk.
 
+### With the diff viewer
+
+Enable `jiuwenswarm.useDiffViewer` to review every proposed edit in VS Code's built-in diff viewer before it is applied, then choose **Accept** or **Reject**.
+
 ---
 
 ## Terminal Integration
 
-Agent shell commands (`bash`, `run_command`) run in a **JiuwenSwarm** terminal created by `vscode.window.createTerminal()`. The terminal is created on the first command and reused. If you close it, a new one is created on the next command.
+Agent shell commands (`bash`, `run_command`) run in a **JiuwenSwarm** terminal created by `vscode.window.createTerminal()`. The terminal is created on the first command and reused for subsequent commands; it is disposed when the extension deactivates. Disable `jiuwenswarm.runCommandsInTerminal` to skip running commands locally (the agent still runs them on the server).
 
 ---
 
@@ -320,7 +325,7 @@ Before the agent's first edit to a file in a given turn, the extension snapshots
 
 ### Using rewind
 
-Click **⟲ Undo changes**. The extension restores every snapshotted file. Files that did not exist before the turn are deleted. A notification toast confirms each restored file.
+Click **⟲ Undo changes**. The extension restores every snapshotted file. Files that did not exist before the turn are deleted.
 
 A status line confirms the result:
 
@@ -338,6 +343,18 @@ A status line confirms the result:
 | New session | Bar cleared |
 
 Disable via `jiuwenswarm.rewindEnabled` in settings.
+
+---
+
+## Git Quick Actions
+
+Enable `jiuwenswarm.gitEnabled` in settings to show a toolbar below the message list with two buttons:
+
+**Commit** — opens an input box pre-filled with your last sent message as the commit message (prefixed with "AI: "). Confirming runs `git add -u && git commit -m <message>`. The git bar updates after commit.
+
+**Push** — runs `git push` in the background. Status updates on completion.
+
+The git bar shows the current branch and the number of uncommitted files. It updates after each agent turn and only appears inside a git repository.
 
 ---
 
@@ -428,7 +445,7 @@ Click **⚙ → Debug log** to open a scrollable log panel below the message lis
 - Action dispatches (list_sessions, list_skills, toggle_skill, etc.)
 - File edit tool calls (tool name and parameters)
 
-The panel keeps the most recent 500 lines. Toggle off to hide; the log clears on the next enable.
+The panel keeps the most recent 500 lines. Toggle off to hide the panel; use **Clear** to empty the log (its content persists across toggles).
 
 ---
 

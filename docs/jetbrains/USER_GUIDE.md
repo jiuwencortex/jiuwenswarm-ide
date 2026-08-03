@@ -46,7 +46,7 @@ A session is created automatically on first connect. The header shows the sessio
 
 | Element | Description |
 |---------|-------------|
-| Status dot | Green = connected; spinning = connecting; orange = reconnecting; red = disconnected. Click to reconnect when disconnected. |
+| Status dot | Grey until the first connection, then green = connected, yellow (pulsing) = reconnecting, red = disconnected. To reconnect after a disconnect, click the status-bar widget (`○ JiuwenSwarm`) or use **New**. |
 | Session title | Name of the active session |
 | **New** button | Start a fresh session: reconnects the WebSocket and clears the message list |
 | **⚙** menu | Sessions, Skills, Theme (Auto/Dark/Light), Debug log |
@@ -119,9 +119,9 @@ Each completed turn consists of:
 
 - **Your message** — right-aligned bubble.
 - **Thinking block** — when the model uses extended reasoning, a collapsible **Thinking…** section appears before the response. Click the arrow to expand or collapse.
-- **Agent response** — full Markdown rendering: headings, bold/italic, syntax-highlighted code blocks, tables, lists.
+- **Agent response** — text streams in as it is generated. When a session's history is reloaded, assistant messages are rendered with bold/italic, fenced code blocks, and clickable file links.
 - **Tool call cards** — every tool the agent invokes appears as an inline card with:
-  - Tool icon and name (`📝 str_replace_editor`, `💻 bash`, `🔍 web_search`, `🔧 mcp_tool`, etc.)
+  - Tool icon and friendly name (a gear icon plus a label like `Edit`, `Bash`, `WebSearch`, `TodoWrite`; the raw tool id such as `str_replace_editor` is shown in the card's tooltip)
   - Live spinner → checkmark or ✕ on completion
   - Collapsible **Inputs** section (parameters sent to the tool)
   - Collapsible **Output** section (result returned by the tool)
@@ -130,20 +130,24 @@ Each completed turn consists of:
 
 ## Stats Bar and Metrics
 
-Below the message list, a stats bar displays session-level metrics that update after each turn:
+A stats bar between the header and the message list shows session-level metrics that update after each turn (it appears once the first turn completes):
 
 - **Turns** — total completed turns in the session
+- **Errors** — turns that ended in an error
 - **Tokens** — cumulative token count (input + output)
-- **Cost** — estimated USD cost (shown when the server reports pricing)
-- **Tool calls** — total tool invocations; click the chip to see a per-tool breakdown
+- **LLM calls** — cumulative model invocations
 - **Avg latency** — mean response time across turns
 - **TTFT** — mean time-to-first-token
+- **Cost** — estimated USD cost (shown when the server reports pricing)
+- **TODO** — live agent todo progress (✓ completed / ◐ in progress / ☐ pending), when the agent reports one
 
-Click the bar chart icon on the right to toggle **mini charts** — bar graphs showing tokens and duration per turn. Click any bar to view that turn's details.
+Each completed turn's footer shows that turn's token counts, tool calls, error categories, and duration.
 
-Below the stats bar, a **context bar** shows how full the active model's context window is (0–100%). When the model reports context occupancy above 80%, the bar turns orange; above 95%, red.
+The bar chart icon (right side of the stats bar, shown after two or more turns) toggles **mini charts** — bar graphs of tokens and duration per turn. Hover a bar to see that turn's details.
 
-The **server memory** chip shows live JiuwenSwarm server RAM usage (RSS / available), polled every 10 seconds.
+At the bottom of the panel, the input area contains a **context bar** showing how full the active model's context window is (0–100%). It turns orange above 60% and red above 80%; a warning chip appears as the context approaches the server's auto-compaction threshold.
+
+The **server memory** chip shows live JiuwenSwarm server RAM usage (RSS of total, plus available), polled every 10 seconds.
 
 ---
 
@@ -192,7 +196,7 @@ Active file: /Users/mishka/project/src/api/handler.py  (Python)
 Cursor line: 87
 
 Selected code:
-```python
+```
 def handle_request(req):
     result = blocking_call(req)
     return result
@@ -236,12 +240,6 @@ Plain identifiers in backticks (no `/` and no `:N`) are not linkified as files. 
 
 ---
 
-## Symbol Navigation
-
-PascalCase (`` `MyClass` ``) and SCREAMING_SNAKE_CASE (`` `MAX_RETRIES` ``) identifiers in backticks appear as purple links. Clicking uses `PsiSearchHelper` to find the symbol in the project and opens the first match. Common acronyms (API, HTTP, JSON, TODO, etc.) are excluded.
-
----
-
 ## Actions and Keyboard Shortcuts
 
 | Action | Win / Linux | Mac |
@@ -254,13 +252,13 @@ PascalCase (`` `MyClass` ``) and SCREAMING_SNAKE_CASE (`` `MAX_RETRIES` ``) iden
 
 **Send selection** — opens the panel and pre-fills the input with the selected code, labelled with the file name:
 
-```
+````
 [File: handler.py]
-```python
+```
 def handle_request(req):
     ...
 ```
-```
+````
 
 Add your question after the code and press Enter.
 
@@ -278,18 +276,18 @@ What happens:
 2. ±7 lines of surrounding code are captured.
 3. The panel opens and the input is pre-filled:
 
-```
+````
 Fix this error in handler.py:
 
 Error:
 Variable 'result' is not used before return
 
-```python
+```py
 def handle_request(req):
     result = blocking_call(req)
     return result
 ```
-```
+````
 
 Works for any language PyCharm supports — Python, Kotlin, Java, TypeScript, Go, Rust, and so on.
 
@@ -301,7 +299,7 @@ When the agent calls `str_replace_editor`, `write_file`, or `create_file`, the p
 
 ### Default: diff review
 
-A side-by-side diff window opens — **Current** (left) vs **Proposed** (right). Review the diff using IntelliJ's standard diff tools. Close the window to apply the change to the in-memory document. Save with `Ctrl+S` / `⌘S` or let the IDE auto-save.
+A side-by-side diff window opens — **Current** (left) vs **Proposed** (right) — so you can review the change. This dialog is preview-only: closing it does not write the change to the file. To have agent edits applied to your files, enable **Auto-apply file edits** in settings, or apply the proposed change manually.
 
 If the target text for a `str_replace` cannot be located, a balloon notification explains the problem.
 
@@ -319,7 +317,7 @@ Enable **Require approval before edits** to show a confirmation prompt before an
 
 Agent shell commands (`bash`, `run_command`) are routed to a **JiuwenSwarm** terminal tab in the Terminal tool window. The tab is created on the first command and reused for all subsequent ones. The Terminal tool window comes to the front automatically.
 
-Disable **Run commands in IDE terminal** in settings to run commands silently in a background process instead.
+Disable **Run commands in IDE terminal** in settings to skip mirroring agent commands into the IDE. The agent still runs its commands on the server — the IDE only reflects them when this setting is on.
 
 ---
 
@@ -362,11 +360,11 @@ Disable rewind entirely via **Enable checkpoint / rewind** in settings (reduces 
 
 Enable **Git quick actions** in settings to show a toolbar below the message list with two buttons:
 
-**Commit** — opens a dialog pre-filled with your last sent message as the commit message (prefixed with "AI: "). Clicking OK runs `git add -u && git commit -m <message>`. The git status chip updates after commit.
+**Commit** — opens a dialog pre-filled with your last sent message as the commit message (prefixed with "AI: "). Clicking OK runs `git add -u && git commit -m <message>`. The git bar updates after commit.
 
 **Push** — runs `git push` in the background. Status updates on completion.
 
-The git status chip in the stats bar shows the current branch and the number of uncommitted files. It updates automatically after each agent turn.
+The git bar shows the current branch and the number of uncommitted files. It updates automatically after each agent turn.
 
 ---
 
@@ -472,7 +470,7 @@ Click **⚙ → Debug log** to open a scrollable log panel below the message lis
 - File edit tool calls (tool name and parameters)
 - Snapshot events (`SNAP →`) and rewind operations
 
-The panel keeps the most recent 500 lines. Toggle off to hide; the log clears on the next enable.
+The panel keeps the most recent 500 lines. Toggle off to hide the panel; use **Clear** to empty the log (its content persists across toggles).
 
 ---
 
@@ -483,7 +481,7 @@ The panel keeps the most recent 500 lines. Toggle off to hide; the log clears on
 | Panel shows blank | JCEF not enabled | Enable `ide.browser.jcef.enabled` in **Help → Find Action → Registry**; restart |
 | Status bar shows `○` | Server not running or wrong host/port | Start JiuwenSwarm; verify settings; click status widget to reconnect |
 | Messages send, no response | Server unreachable after handshake | Enable Debug log; look for error frames; check server logs |
-| Diff window opens but file unchanged | Close the window to apply | The change applies when the diff window is closed, not immediately on open |
+| Diff window opens but file unchanged | The diff dialog is preview-only | The proposed change is not applied automatically — enable **Auto-apply file edits** or apply it manually |
 | Rewind bar missing | Rewind disabled, or turn ended without file edits | Check **Enable checkpoint / rewind** in settings; enable Debug log and look for `SNAP →` lines |
 | Rewind restores 0 files | Snapshots cleared by a subsequent message | Click Undo immediately after the turn; snapshots survive until the next send |
 | Alt+Enter does not show the option | No error at cursor | Move cursor onto a line with a red or yellow gutter marker |
