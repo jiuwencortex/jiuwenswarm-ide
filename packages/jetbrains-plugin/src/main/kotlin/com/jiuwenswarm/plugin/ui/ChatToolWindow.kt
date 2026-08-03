@@ -2,6 +2,7 @@ package com.jiuwenswarm.plugin.ui
 
 import com.google.gson.Gson
 import com.google.gson.JsonObject
+import com.google.gson.JsonParser
 import com.intellij.codeInsight.navigation.actions.GotoDeclarationAction
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
@@ -579,9 +580,13 @@ class ChatPanel(
         if (converted != null) {
             val et = converted.get("event_type")?.asString
             // ── Snapshot files before they are edited so rewind can restore them ──
-            if (et == "chat.tool_call") {
+            // Swarm tool attribution runs for both tool_call and tool_update so real
+            // sub-agent activity stubs lanes even when team.member.spawned is not sent.
+            if (et == "chat.tool_call" || et == "chat.tool_update") {
                 val payload = converted.getAsJsonObject("payload") ?: JsonObject()
-                val toolName = payload.get("tool_name")?.asString ?: ""
+                val toolName = payload.get("tool_name")?.asString
+                    ?: payload.getAsJsonObject("tool_call")?.get("name")?.asString
+                    ?: ""
                 // File-edit snapshots (only when rewind is enabled in settings)
                 if (JiuwenSwarmSettings.instance().rewindEnabled &&
                     toolName in setOf("str_replace_editor", "write_file", "create_file")) {
@@ -610,14 +615,7 @@ class ChatPanel(
                     }
                 }
                 // Swarm tool attribution — update the agent lane's current activity
-                val tcArgs = payload.getAsJsonObject("tool_call")?.getAsJsonObject("arguments")
-                    ?: payload.getAsJsonObject("tool_input")
-                    ?: payload.getAsJsonObject("input")
-                val filePath = tcArgs?.get("path")?.asString
-                val memberName = payload.get("member_name")?.asString
-                swarmStateManager.applyToolCall(toolName, filePath, memberName)
-                if (swarmMapPanel == null) swarmMapPanel = SwarmMapToolWindowFactory.getPanel(project)
-                swarmMapPanel?.postSnapshot(swarmStateManager.snapshot())
+                applySwarmToolAttribution(payload)
             }
             // ── On turn end, promote snapshots and show rewind bar ──
             if (et == "chat.final") {
@@ -681,11 +679,48 @@ class ChatPanel(
         if (msg.get("type")?.asString == "event") {
             val eventName = msg.get("event")?.asString ?: return null
             if (!eventName.startsWith("team.")) return null
-            val payload = msg.getAsJsonObject("payload")?.deepCopy() ?: JsonObject()
-            payload.addProperty("type", eventName)
-            return gson.toJson(JsonObject().apply { add("event", payload) })
+            val payload = msg.getAsJsonObject("payload")
+            // The gateway nests the real event under payload.event (e.g. event:"team.member"
+            // with payload.event.type === "team.member.spawned"). Use the inner event so the
+            // type SwarmStateManager dispatches on is the specific one, not the category.
+            val inner = payload?.getAsJsonObject("event")
+            if (inner != null && inner.get("type")?.asString != null) {
+                return gson.toJson(JsonObject().apply { add("event", inner.deepCopy()) })
+            }
+            // Legacy fallback: flat payload with the category name as the event type.
+            val flat = payload?.deepCopy() ?: JsonObject()
+            flat.addProperty("type", eventName)
+            return gson.toJson(JsonObject().apply { add("event", flat) })
         }
         return null
+    }
+
+    /**
+     * Update the swarm lane for a tool call/update event. Parses the tool name from
+     * either payload.tool_name (chat.tool_update) or tool_call.name (chat.tool_call),
+     * and tolerates `arguments` being a JSON string or an object. No-ops when the
+     * tool or member name is missing.
+     */
+    private fun applySwarmToolAttribution(payload: JsonObject) {
+        val toolName = payload.get("tool_name")?.takeIf { it.isJsonPrimitive }?.asString
+            ?: payload.getAsJsonObject("tool_call")?.get("name")?.takeIf { it.isJsonPrimitive }?.asString
+            ?: return
+        val memberName = payload.get("member_name")?.takeIf { it.isJsonPrimitive }?.asString ?: return
+        val tcArgs = payload.getAsJsonObject("tool_call")?.get("arguments")
+            ?: payload.get("arguments")
+            ?: payload.get("tool_input")
+            ?: payload.get("input")
+        val args: JsonObject? = when {
+            tcArgs != null && tcArgs.isJsonObject -> tcArgs.asJsonObject
+            tcArgs != null && tcArgs.isJsonPrimitive -> runCatching {
+                JsonParser.parseString(tcArgs.asString).asJsonObject
+            }.getOrNull()
+            else -> null
+        }
+        val filePath = args?.get("path")?.asString
+        swarmStateManager.applyToolCall(toolName, filePath, memberName)
+        if (swarmMapPanel == null) swarmMapPanel = SwarmMapToolWindowFactory.getPanel(project)
+        swarmMapPanel?.postSnapshot(swarmStateManager.snapshot())
     }
 
     /** Convert server messages (E2A or old format) to the legacy event format the webview expects.

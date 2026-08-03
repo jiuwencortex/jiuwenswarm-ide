@@ -345,7 +345,9 @@ export class ChatPanel implements vscode.Disposable {
 
     // ── Snapshot & apply file-edit tool calls ──
     if (et === 'chat.tool_call') {
-      const toolName = payload.tool_name as string | undefined;
+      const toolName = payload.tool_name as string | undefined
+        || ((payload.tool_call as Record<string, unknown>)?.name as string | undefined)
+        || '';
       const isFileEdit = toolName === 'str_replace_editor' || toolName === 'write_file' || toolName === 'create_file';
 
       if (isFileEdit) {
@@ -404,15 +406,30 @@ export class ChatPanel implements vscode.Disposable {
         }
       }
 
-      // ── Swarm tool attribution — update the agent lane's current activity ──
-      const tcArgs = (payload['tool_call'] as Record<string, unknown>)?.['arguments'] as Record<string, unknown>
-        || (payload['tool_input'] as Record<string, unknown>)
-        || (payload['input'] as Record<string, unknown>)
-        || {};
-      const tcFilePath = tcArgs['path'] as string | undefined;
-      const memberName = payload['member_name'] as string | undefined;
-      if (toolName) {
-        this.swarmStateManager.applyToolCall(toolName, tcFilePath, memberName);
+    }
+
+    // ── Swarm tool attribution — update the agent lane's current activity ──
+    // Handles both chat.tool_call (tool name nested at tool_call.name, args may be a
+    // JSON string) and chat.tool_update (tool_name at top level) so that real
+    // sub-agent activity stubs lanes even when team.member.spawned is not sent.
+    if (et === 'chat.tool_call' || et === 'chat.tool_update') {
+      const attrToolName = (payload.tool_name as string | undefined)
+        || ((payload.tool_call as Record<string, unknown>)?.name as string | undefined)
+        || '';
+      const memberName = payload.member_name as string | undefined;
+      const rawArgs = ((payload.tool_call as Record<string, unknown>)?.arguments as unknown)
+        || (payload.arguments as unknown)
+        || (payload.tool_input as unknown)
+        || (payload.input as unknown);
+      let attrArgs: Record<string, unknown> = {};
+      if (typeof rawArgs === 'string') {
+        try { attrArgs = JSON.parse(rawArgs) as Record<string, unknown>; } catch { attrArgs = {}; }
+      } else if (rawArgs && typeof rawArgs === 'object') {
+        attrArgs = rawArgs as Record<string, unknown>;
+      }
+      const attrFilePath = attrArgs['path'] as string | undefined;
+      if (attrToolName) {
+        this.swarmStateManager.applyToolCall(attrToolName, attrFilePath, memberName);
         this.swarmMapPanel?.postSnapshot(this.swarmStateManager.snapshot());
       }
     }
@@ -444,11 +461,11 @@ export class ChatPanel implements vscode.Disposable {
    * that SwarmStateManager.applyTeamEvent() expects.
    */
   private extractTeamEventDelta(msg: JiuwenMessage): string | null {
-    const responseKind = (msg as Record<string, unknown>)['response_kind'] as string | undefined;
+    const responseKind = msg.response_kind;
 
     // E2A chunk path
     if (responseKind === 'e2a.chunk') {
-      const body = (msg as Record<string, unknown>)['body'] as Record<string, unknown> | undefined;
+      const body = msg.body;
       if (!body) return null;
       if (body['event_type'] !== 'chat.delta') return null;
       const delta = body['delta'] as string | undefined;
@@ -458,8 +475,17 @@ export class ChatPanel implements vscode.Disposable {
 
     // Old-format path
     if (msg.type === 'event' && typeof msg.event === 'string' && msg.event.startsWith('team.')) {
-      const payload = { ...(msg.payload || {}), type: msg.event };
-      return JSON.stringify({ event: payload });
+      const payload = msg.payload || {};
+      // The gateway nests the real event under payload.event (e.g. event:"team.member"
+      // with payload.event.type === "team.member.spawned"). Use the inner event so the
+      // type the SwarmStateManager dispatches on is the specific one, not the category.
+      const inner = payload['event'] as Record<string, unknown> | undefined;
+      if (inner && typeof inner === 'object' && typeof inner['type'] === 'string') {
+        return JSON.stringify({ event: inner });
+      }
+      // Legacy fallback: flat payload with the category name as the event type.
+      const flat = { ...payload, type: msg.event };
+      return JSON.stringify({ event: flat });
     }
 
     return null;

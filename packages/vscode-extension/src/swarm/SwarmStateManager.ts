@@ -26,7 +26,7 @@ export class SwarmStateManager {
   applyTeamEvent(json: string): void {
     try {
       const root = JSON.parse(json) as Record<string, unknown>;
-      const event = (root['event'] as Record<string, unknown>) ?? root;
+      const event = this.normalizeEvent(((root['event'] as Record<string, unknown>) ?? root));
       const type = event['type'] as string | undefined;
       if (!type) return;
       this.lastEventAt = (event['timestamp'] as number | undefined) ?? Date.now();
@@ -43,12 +43,38 @@ export class SwarmStateManager {
         case 'team.task.started':             this.onTaskStarted(event); break;
         case 'team.task.completed':           this.onTaskCompleted(event); break;
         case 'team.task.cancelled':           this.onTaskCancelled(event); break;
+        case 'team.task.status_snapshot':     this.onTaskStatusSnapshot(event); break;
         default:
           if (type.startsWith('team.message.')) this.onTeamMessage(event);
       }
     } catch {
       // malformed JSON — ignore silently
     }
+  }
+
+  /**
+   * Map the gateway's team-event field names to the shape this manager consumes.
+   * The gateway sends member_id/name/mode/team_id; the lanes here use
+   * member_name/display_name/role/team_name. Runs before dispatch so every
+   * handler below reads one consistent vocabulary.
+   */
+  private normalizeEvent(raw: Record<string, unknown>): Record<string, unknown> {
+    const e: Record<string, unknown> = { ...raw };
+    if (e['member_id'] !== undefined && e['member_name'] === undefined) e['member_name'] = e['member_id'];
+    if (e['name'] !== undefined && e['display_name'] === undefined) e['display_name'] = e['name'];
+    if (e['mode'] !== undefined && e['role'] === undefined) {
+      e['role'] = typeof e['mode'] === 'string' ? e['mode'].toUpperCase() : e['mode'];
+    }
+    if (e['team_id'] !== undefined && e['team_name'] === undefined) e['team_name'] = e['team_id'];
+    return e;
+  }
+
+  /** Uppercase a lane status into the map's vocabulary (READY/BUSY/PAUSED/SHUTDOWN). */
+  private normalizeLaneStatus(s: unknown): string | undefined {
+    if (typeof s !== 'string' || !s) return undefined;
+    const up = s.toUpperCase();
+    if (up === 'IDLE') return 'READY';
+    return up;
   }
 
   /**
@@ -133,7 +159,8 @@ export class SwarmStateManager {
     const name = e['member_name'] as string | undefined;
     if (!name) return;
     const lane = this.getOrStubLane(name);
-    lane.status = (e['status'] as string) ?? lane.status;
+    const status = this.normalizeLaneStatus(e['new_status'] ?? e['status']);
+    if (status) lane.status = status;
     lane.lastActiveAt = this.lastEventAt;
   }
 
@@ -141,7 +168,8 @@ export class SwarmStateManager {
     const name = e['member_name'] as string | undefined;
     if (!name) return;
     const lane = this.getOrStubLane(name);
-    lane.executionStatus = (e['execution_status'] as string) ?? lane.executionStatus;
+    const execution = e['new_status'] ?? e['execution_status'];
+    if (typeof execution === 'string' && execution) lane.executionStatus = execution.toUpperCase();
     lane.lastActiveAt = this.lastEventAt;
   }
 
@@ -173,7 +201,30 @@ export class SwarmStateManager {
     if (!id) return;
     const task = this.tasks.get(id) ?? { taskId: id, title: id, status: 'pending', assignee: null, createdAt: this.lastEventAt };
     this.tasks.set(id, task);
-    task.assignee = (e['assignee'] as string) ?? null;
+    // Gateway names the claimer member_id; normalizeEvent maps it to member_name.
+    task.assignee = (e['assignee'] as string | null) ?? (e['member_name'] as string | null) ?? null;
+  }
+
+  /** Convergence event: apply a task's authoritative status/assignee snapshot. */
+  private onTaskStatusSnapshot(e: Record<string, unknown>): void {
+    const id = e['task_id'] as string | undefined;
+    if (!id) return;
+    const status = e['status'] as string | undefined;
+    const assignee = (e['assignee'] as string | null) ?? (e['member_name'] as string | null) ?? null;
+    const task = this.tasks.get(id)
+      ?? { taskId: id, title: (e['title'] as string) ?? id, status: 'pending', assignee: null, createdAt: this.lastEventAt };
+    if (status) task.status = status;
+    if (assignee) task.assignee = assignee;
+    this.tasks.set(id, task);
+    if (task.assignee) {
+      const lane = this.lanes.get(task.assignee);
+      if (lane && task.status === 'completed' && lane.currentTaskId === id) {
+        lane.currentTaskId = null;
+        lane.currentTaskTitle = null;
+        lane.tasksDone++;
+        lane.lastActiveAt = this.lastEventAt;
+      }
+    }
   }
 
   private onTaskStarted(e: Record<string, unknown>): void {

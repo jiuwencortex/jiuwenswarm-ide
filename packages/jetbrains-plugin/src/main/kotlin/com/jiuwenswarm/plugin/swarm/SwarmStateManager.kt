@@ -36,7 +36,7 @@ class SwarmStateManager {
     fun applyTeamEvent(json: String) {
         runCatching {
             val root = gson.fromJson(json, JsonObject::class.java)
-            val event = root.getAsJsonObject("event") ?: root  // tolerate flat shape
+            val event = normalizeEvent(root.getAsJsonObject("event") ?: root)  // tolerate flat shape
             val type = event.get("type")?.asString ?: return
             lastEventAt = event.get("timestamp")?.asLong ?: System.currentTimeMillis()
 
@@ -53,10 +53,46 @@ class SwarmStateManager {
                 type == "team.task.started"            -> onTaskStarted(event)
                 type == "team.task.completed"          -> onTaskCompleted(event)
                 type == "team.task.cancelled"          -> onTaskCancelled(event)
+                type == "team.task.status_snapshot"    -> onTaskStatusSnapshot(event)
                 type.startsWith("team.message.")       -> onMessage(event)
                 else -> LOG.debug("SWARM → unhandled event type: $type")
             }
         }.onFailure { LOG.warn("SWARM → failed to apply team event: ${it.message}") }
+    }
+
+    /**
+     * Map the gateway's team-event field names to the shape this manager consumes.
+     * The gateway sends member_id/name/mode/team_id; the lanes here use
+     * member_name/display_name/role/team_name. Runs before dispatch so every
+     * handler below reads one consistent vocabulary.
+     */
+    private fun normalizeEvent(raw: JsonObject): JsonObject {
+        val e = raw.deepCopy()
+        if (e.has("member_id") && !e.has("member_name")) {
+            e.get("member_id")?.takeIf { it.isJsonPrimitive }?.asString?.let { e.addProperty("member_name", it) }
+        }
+        if (e.has("name") && !e.has("display_name")) {
+            e.get("name")?.takeIf { it.isJsonPrimitive }?.asString?.let { e.addProperty("display_name", it) }
+        }
+        if (e.has("mode") && !e.has("role")) {
+            val mode = e.get("mode")
+            if (mode != null && mode.isJsonPrimitive) {
+                e.addProperty("role", mode.asString.uppercase())
+            } else if (mode != null) {
+                e.add("role", mode)
+            }
+        }
+        if (e.has("team_id") && !e.has("team_name")) {
+            e.get("team_id")?.takeIf { it.isJsonPrimitive }?.asString?.let { e.addProperty("team_name", it) }
+        }
+        return e
+    }
+
+    /** Uppercase a lane status into the map's vocabulary (READY/BUSY/PAUSED/SHUTDOWN). */
+    private fun normalizeLaneStatus(s: String?): String? {
+        if (s.isNullOrEmpty()) return null
+        val up = s.uppercase()
+        return if (up == "IDLE") "READY" else up
     }
 
     /**
@@ -136,14 +172,18 @@ class SwarmStateManager {
     private fun onMemberStatusChanged(e: JsonObject) {
         val name = e.get("member_name")?.asString ?: return
         val lane = lanes.getOrPut(name) { stubLane(name) }
-        lane.status = e.get("status")?.asString ?: lane.status
+        val newStatus = e.get("new_status")?.takeIf { it.isJsonPrimitive }?.asString
+            ?: e.get("status")?.takeIf { it.isJsonPrimitive }?.asString
+        normalizeLaneStatus(newStatus)?.let { lane.status = it }
         lane.lastActiveAt = lastEventAt
     }
 
     private fun onMemberExecutionChanged(e: JsonObject) {
         val name = e.get("member_name")?.asString ?: return
         val lane = lanes.getOrPut(name) { stubLane(name) }
-        lane.executionStatus = e.get("execution_status")?.asString ?: lane.executionStatus
+        val execution = e.get("new_status")?.takeIf { it.isJsonPrimitive }?.asString
+            ?: e.get("execution_status")?.takeIf { it.isJsonPrimitive }?.asString
+        if (!execution.isNullOrEmpty()) lane.executionStatus = execution.uppercase()
         lane.lastActiveAt = lastEventAt
     }
 
@@ -169,8 +209,29 @@ class SwarmStateManager {
     private fun onTaskClaimed(e: JsonObject) {
         val id = e.get("task_id")?.asString ?: return
         val task = tasks.getOrPut(id) { TeamTask(id, id, "pending") }
-        task.assignee = e.get("assignee")?.asString
+        // Gateway names the claimer member_id; normalizeEvent maps it to member_name.
+        task.assignee = e.get("assignee")?.asString ?: e.get("member_name")?.asString
         // stays "pending" until started
+    }
+
+    /** Convergence event: apply a task's authoritative status/assignee snapshot. */
+    private fun onTaskStatusSnapshot(e: JsonObject) {
+        val id = e.get("task_id")?.asString ?: return
+        val status = e.get("status")?.asString
+        val assignee = e.get("assignee")?.asString ?: e.get("member_name")?.asString
+        val task = tasks.getOrPut(id) { TeamTask(id, e.get("title")?.asString ?: id, "pending") }
+        if (!status.isNullOrEmpty()) task.status = status
+        if (!assignee.isNullOrEmpty()) task.assignee = assignee
+        task.assignee?.let { memberName ->
+            lanes[memberName]?.let { lane ->
+                if (task.status == "completed" && lane.currentTaskId == id) {
+                    lane.currentTaskId = null
+                    lane.currentTaskTitle = null
+                    lane.tasksDone++
+                    lane.lastActiveAt = lastEventAt
+                }
+            }
+        }
     }
 
     private fun onTaskStarted(e: JsonObject) {
