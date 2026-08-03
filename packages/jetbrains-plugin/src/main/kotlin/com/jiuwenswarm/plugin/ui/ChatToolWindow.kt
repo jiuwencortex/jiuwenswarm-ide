@@ -11,6 +11,7 @@ import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.vfs.LocalFileSystem
@@ -95,6 +96,9 @@ class ChatPanel(
 
     // Debug logging is toggled from the webview; when true we log to IDEA log.
     @Volatile private var debugEnabled = false
+
+    // Last user message text — used as commit message suggestion.
+    @Volatile private var lastUserInput: String? = null
 
     // Snapshot tracking for checkpoint/rewind feature.
     // currentTurnSnapshots: file path → content before first edit this turn (null = file didn't exist).
@@ -254,7 +258,7 @@ class ChatPanel(
         try {
             val msg = gson.fromJson(jsonStr, JsonObject::class.java)
             when (msg.get("type")?.asString) {
-                "ready" -> sendCurrentStatus()
+                "ready" -> { sendCurrentStatus(); sendGitStatus() }
                 "send" -> {
                     val content = msg.get("content")?.asString ?: return
                     val mode = msg.get("mode")?.asString ?: "code.plan"
@@ -267,6 +271,7 @@ class ChatPanel(
                     currentTurnSnapshots.clear()
                     lastTurnSnapshots = emptyMap()
                     dispatchToWebview(mapOf("type" to "rewindable", "enabled" to false))
+                    lastUserInput = content
                     debug("SEND  → requestId=$rid mode=$mode content=${content.take(60)} media=${mediaItems?.size() ?: 0}")
                     val ideContext = ContextCollector.collect(project, mentionedPaths)
                     if (!service.session.sendChat(content, mode, rid, ideContext, mediaItems)) {
@@ -445,6 +450,9 @@ class ChatPanel(
                     val files = ContextCollector.gatherWorkspaceFiles(project)
                     dispatchToWebview(mapOf("type" to "files", "files" to files))
                 }
+                "git_status_request" -> sendGitStatus()
+                "git_commit_request" -> ApplicationManager.getApplication().invokeLater { handleGitCommit() }
+                "git_push_request"   -> ApplicationManager.getApplication().executeOnPooledThread { handleGitPush() }
             }
         } catch (e: Exception) {
             LOG.warn("Failed to parse webview message: $jsonStr", e)
@@ -527,6 +535,7 @@ class ChatPanel(
                     debug("SNAP  → turn complete, ${lastTurnSnapshots.size} file(s) snapshotted")
                 }
                 currentTurnSnapshots.clear()
+                sendGitStatus()
             }
             debug("CONV  → event_type=$et request_id=${converted.get("request_id")?.asString}")
             dispatchToWebview(mapOf("type" to "jiuwen_event", "event" to converted))
@@ -632,16 +641,80 @@ class ChatPanel(
         return null
     }
 
+    // ──────────────────────────────────────────
+    // Git quick actions
+    // ──────────────────────────────────────────
+    private fun execGitCommand(vararg args: String): String {
+        val base = project.basePath ?: return ""
+        return try {
+            val proc = ProcessBuilder(*args)
+                .directory(File(base))
+                .redirectErrorStream(true)
+                .start()
+            val out = proc.inputStream.bufferedReader().readText().trim()
+            proc.waitFor(10, java.util.concurrent.TimeUnit.SECONDS)
+            out
+        } catch (_: Exception) { "" }
+    }
+
+    private fun sendGitStatus() {
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val branch = execGitCommand("git", "rev-parse", "--abbrev-ref", "HEAD")
+            if (branch.isEmpty() || branch == "HEAD") return@executeOnPooledThread
+            val status = execGitCommand("git", "status", "--porcelain")
+            val changedCount = if (status.isEmpty()) 0 else status.lines().count { it.isNotBlank() }
+            dispatchToWebview(mapOf("type" to "git_status", "branch" to branch, "changedCount" to changedCount))
+        }
+    }
+
+    /** Must be called on the EDT (invokeLater) because it shows a dialog. */
+    private fun handleGitCommit() {
+        val defaultMsg = lastUserInput?.take(72)?.let { "AI: $it" } ?: "AI: agent changes"
+        val message = Messages.showInputDialog(
+            project, "Commit message (git add -u && git commit):",
+            "Git Commit", null, defaultMsg, null,
+        ) ?: return
+        ApplicationManager.getApplication().executeOnPooledThread {
+            execGitCommand("git", "add", "-u")
+            val result = execGitCommand("git", "commit", "-m", message)
+            if (result.contains("nothing to commit") || result.contains("error") || result.contains("fatal")) {
+                dispatchToWebview(mapOf("type" to "git_error", "message" to result.lines().firstOrNull().orEmpty()))
+            } else {
+                val hash = execGitCommand("git", "rev-parse", "--short", "HEAD")
+                dispatchToWebview(mapOf("type" to "git_committed", "hash" to hash))
+                sendGitStatus()
+            }
+        }
+    }
+
+    /** Runs on a pooled thread. */
+    private fun handleGitPush() {
+        val result = execGitCommand("git", "push")
+        if (result.contains("error") || result.contains("fatal")) {
+            dispatchToWebview(mapOf("type" to "git_error", "message" to result.lines().firstOrNull().orEmpty()))
+        } else {
+            dispatchToWebview(mapOf("type" to "git_pushed"))
+            sendGitStatus()
+        }
+    }
+
     private fun sendCurrentStatus() {
         val s = service.ws.getStatus()
         val sid = service.session.sessionId
         debug("STATUS→ ws=$s session=$sid")
         when {
             s == WsStatus.CONNECTED && sid != null -> {
-                // Fetch models in background and include them
+                // Send connected immediately so the webview stops showing "Connecting to JiuwenSwarm…"
+                dispatchToWebview(mapOf(
+                    "type" to "connected",
+                    "sessionId" to sid,
+                    "sessionTitle" to service.session.sessionTitle,
+                ))
+                // Then fetch models in background and send a second update with model list
                 ApplicationManager.getApplication().executeOnPooledThread {
                     try {
                         val (models, activeModel) = service.session.listModels()
+                        if (service.session.sessionId != sid) return@executeOnPooledThread
                         val modelList = models.map { m ->
                             mapOf(
                                 "model_name" to (m.get("model_name")?.asString ?: ""),
@@ -656,13 +729,8 @@ class ChatPanel(
                             "models" to modelList,
                             "activeModel" to activeModel,
                         ))
-                    } catch (e: Exception) {
-                        debug("STATUS→ models.list failed: ${e.message}")
-                        dispatchToWebview(mapOf(
-                            "type" to "connected",
-                            "sessionId" to sid,
-                            "sessionTitle" to service.session.sessionTitle,
-                        ))
+                    } catch (_: Exception) {
+                        debug("STATUS→ models.list failed, staying with basic connected state")
                     }
                 }
             }

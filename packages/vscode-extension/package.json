@@ -81,7 +81,7 @@
       "properties": {
         "jiuwenswarm.host": {
           "type": "string",
-          "default": "localhost",
+          "default": "127.0.0.1",
           "description": "JiuwenSwarm server hostname"
         },
         "jiuwenswarm.port": {

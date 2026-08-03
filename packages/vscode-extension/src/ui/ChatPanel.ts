@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import { execSync } from 'child_process';
 import { WsClient, WsStatus } from '../client/WsClient';
 import { SessionManager } from '../client/SessionManager';
 import { JiuwenMessage, ExtToWebviewMsg, makeRequest, SessionMetrics } from '../client/protocol';
@@ -120,6 +121,7 @@ export class ChatPanel implements vscode.Disposable {
         this.flushPendingMessages();
         this.sendCurrentStatus();
         this.refreshMetrics();
+        this.sendGitStatus();
         break;
 
       case 'input_changed': {
@@ -258,6 +260,21 @@ export class ChatPanel implements vscode.Disposable {
         this.postToWebview({ type: 'files', files });
         break;
       }
+
+      case 'git_status_request': {
+        this.sendGitStatus();
+        break;
+      }
+
+      case 'git_commit_request': {
+        void this.handleGitCommit();
+        break;
+      }
+
+      case 'git_push_request': {
+        void this.handleGitPush();
+        break;
+      }
     }
   }
 
@@ -348,6 +365,7 @@ export class ChatPanel implements vscode.Disposable {
         this.postToWebview({ type: 'rewindable', enabled: true });
         this.debug('SNAP  → turn complete, rewindable');
       }
+      this.sendGitStatus();
     }
 
     this.debug(`CONV  → event_type=${et} request_id=${converted.request_id}`);
@@ -466,8 +484,12 @@ export class ChatPanel implements vscode.Disposable {
     const sid = this.session.sessionId;
     this.debug(`STATUS→ ws=${s} session=${sid}`);
     if (s === 'connected' && sid) {
+      // Send connected immediately so the webview stops showing "Connecting to JiuwenSwarm…"
+      this.postToWebview({ type: 'connected', sessionId: sid, sessionTitle: this.session.sessionTitle });
+      // Then load models in background and send a second update with model list
       this.session.listModels()
         .then(({ models, activeModel }) => {
+          if (this.session.sessionId !== sid) return; // session changed in the meantime
           const modelList = models.map((m) => ({
             model_name: (m.model_name as string) || '',
             alias: (m.alias as string) || '',
@@ -481,13 +503,7 @@ export class ChatPanel implements vscode.Disposable {
             activeModel: activeModel || undefined,
           });
         })
-        .catch(() => {
-          this.postToWebview({
-            type: 'connected',
-            sessionId: sid,
-            sessionTitle: this.session.sessionTitle,
-          });
-        });
+        .catch(() => { /* already sent basic connected, nothing more to do */ });
     } else if (s === 'connected') {
       this.postToWebview({
         type: 'connected',
@@ -645,6 +661,62 @@ export class ChatPanel implements vscode.Disposable {
       : `Rewound ${restored} file(s), ${failed} failed`;
     this.postToWebview({ type: 'rewind_done', message, restored, failed });
     this.debug(`REWIND→ ${message}`);
+  }
+
+  // ──────────────────────────────────────────
+  // Git quick actions
+  // ──────────────────────────────────────────
+  private gitRoot(): string | undefined {
+    return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  }
+
+  private sendGitStatus(): void {
+    const root = this.gitRoot();
+    if (!root) return;
+    try {
+      const branch = execSync('git rev-parse --abbrev-ref HEAD', { cwd: root, encoding: 'utf-8', timeout: 3000 }).trim();
+      if (!branch || branch === 'HEAD') return; // detached HEAD or not a git repo
+      const status = execSync('git status --porcelain', { cwd: root, encoding: 'utf-8', timeout: 3000 }).trim();
+      const changedCount = status ? status.split('\n').filter((l) => l.trim()).length : 0;
+      this.postToWebview({ type: 'git_status', branch, changedCount });
+    } catch {
+      // not a git repo or git unavailable — hide the bar silently
+    }
+  }
+
+  private async handleGitCommit(): Promise<void> {
+    const root = this.gitRoot();
+    if (!root) return;
+    const defaultMsg = this.latestInput
+      ? `AI: ${this.latestInput.substring(0, 72)}`
+      : 'AI: agent changes';
+    const message = await vscode.window.showInputBox({
+      prompt: 'Commit message (staged: tracked modified files)',
+      value: defaultMsg,
+      placeHolder: 'Enter commit message',
+    });
+    if (!message) return; // user cancelled
+    try {
+      execSync('git add -u', { cwd: root, encoding: 'utf-8', timeout: 5000 });
+      execSync(`git commit -m ${JSON.stringify(message)}`, { cwd: root, encoding: 'utf-8', timeout: 10000 });
+      const hash = execSync('git rev-parse --short HEAD', { cwd: root, encoding: 'utf-8', timeout: 3000 }).trim();
+      this.postToWebview({ type: 'git_committed', hash });
+      this.sendGitStatus();
+    } catch (e: unknown) {
+      this.postToWebview({ type: 'git_error', message: (e instanceof Error) ? e.message : 'commit failed' });
+    }
+  }
+
+  private async handleGitPush(): Promise<void> {
+    const root = this.gitRoot();
+    if (!root) return;
+    try {
+      execSync('git push', { cwd: root, encoding: 'utf-8', timeout: 20000 });
+      this.postToWebview({ type: 'git_pushed' });
+      this.sendGitStatus();
+    } catch (e: unknown) {
+      this.postToWebview({ type: 'git_error', message: (e instanceof Error) ? e.message.split('\n')[0] : 'push failed' });
+    }
   }
 
   private debug(line: string): void {

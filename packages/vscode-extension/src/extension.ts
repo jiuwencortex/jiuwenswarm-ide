@@ -19,7 +19,7 @@ let chatPanel: ChatPanel | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
   const cfg = vscode.workspace.getConfiguration('jiuwenswarm');
-  const host = cfg.get<string>('host', 'localhost');
+  const host = cfg.get<string>('host', '127.0.0.1');
   const port = cfg.get<number>('port', 19000);
   const channelId = cfg.get<string>('channelId', 'ide');
   const autoConnect = cfg.get<boolean>('autoConnect', true);
@@ -41,6 +41,26 @@ export function activate(context: vscode.ExtensionContext): void {
   if (autoConnect) {
     ws.connect();
   }
+
+  // If the server isn't ready at connection time it skips connection.ack.
+  // Schedule a one-time reconnect after 15s so the IDE retries once the agent
+  // prewarm finishes (typically ~8s after startup).
+  let ackRetryPending = false;
+  ws.on('status', (s) => {
+    if (s === 'connected') {
+      if (!ackRetryPending) {
+        ackRetryPending = true;
+        setTimeout(() => {
+          ackRetryPending = false;
+          if (ws?.isConnected() && !session?.sessionId) {
+            ws.reconnect();
+          }
+        }, 15_000);
+      }
+    } else if (s === 'disconnected' || s === 'reconnecting') {
+      ackRetryPending = false;
+    }
+  });
 
   // Register code-action lightbulb before any other interactions
   registerDiffProvider(context);

@@ -20,11 +20,16 @@ export class WsClient {
   private pingTimer: NodeJS.Timeout | null = null;
   private destroyed = false;
   private listeners: Partial<{ [K in keyof WsEventMap]: WsEventMap[K][] }> = {};
+  // On macOS, Node.js 17+ resolves "localhost" to ::1 (IPv6) before 127.0.0.1 (IPv4).
+  // If the server only listens on IPv4 the connection fails immediately. Force IPv4.
+  private readonly url: string;
 
   constructor(
-    private readonly url: string,
+    url: string,
     private pingIntervalMs: number = DEFAULT_PING_INTERVAL_MS,
-  ) {}
+  ) {
+    this.url = url.replace('://localhost:', '://127.0.0.1:');
+  }
 
   on<K extends keyof WsEventMap>(event: K, listener: WsEventMap[K]): this {
     if (!this.listeners[event]) this.listeners[event] = [] as any;

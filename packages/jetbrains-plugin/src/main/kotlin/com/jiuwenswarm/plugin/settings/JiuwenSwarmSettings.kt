@@ -12,7 +12,7 @@ import com.intellij.openapi.components.Storage
 class JiuwenSwarmSettings : PersistentStateComponent<JiuwenSwarmSettings.State> {
 
     data class State(
-        var host: String = "localhost",
+        var host: String = "127.0.0.1",
         var port: Int = 19000,
         var channelId: String = "ide",
         var defaultMode: String = "code.plan",

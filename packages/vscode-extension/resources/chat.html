@@ -1320,6 +1320,35 @@
   }
   #rewind-btn:hover:not(:disabled) { border-color: var(--text-muted); color: var(--text); }
   #rewind-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ── Git bar ── */
+  #git-bar {
+    display: none;
+    padding: 5px 10px;
+    border-top: 1px solid var(--border);
+    background: var(--bg2);
+    gap: 8px;
+    align-items: center;
+    flex-shrink: 0;
+    font-size: 11px;
+  }
+  #git-bar.visible { display: flex; }
+  #git-branch { color: var(--text-dim); font-family: var(--font-mono); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #git-changes { color: var(--text-muted); white-space: nowrap; }
+  #git-changes.dirty { color: #eab308; }
+  .git-btn {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .git-btn:hover:not(:disabled) { border-color: var(--text-muted); color: var(--text); }
+  .git-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>
 </head>
 <body>
@@ -1394,6 +1423,14 @@
 <div id="rewind-bar">
   <span id="rewind-label">Agent edited files this turn</span>
   <button id="rewind-btn" onclick="requestRewind()">&#x27F2; Undo changes</button>
+</div>
+
+<!-- Git bar — always shown when inside a git repo -->
+<div id="git-bar">
+  <span id="git-branch">⎇</span>
+  <span id="git-changes"></span>
+  <button class="git-btn" id="git-commit-btn" onclick="requestGitCommit()" title="Stage tracked changes and commit">Commit</button>
+  <button class="git-btn" id="git-push-btn" onclick="requestGitPush()" title="Push current branch to remote">Push ↑</button>
 </div>
 
 <!-- Debug console — shown above input when debug mode is on -->
@@ -1535,6 +1572,8 @@ let state = {
   pendingMentions: [], // paths the user @-mentioned in the current input
   mentionQuery: '',    // current @-token being typed
   mentionActive: -1,   // keyboard-selected index in mention popup (-1 = none)
+  gitBranch: null,     // current git branch name (null = not a git repo)
+  gitChangedCount: 0,  // number of uncommitted changes
 };
 var _historyPendingAssistant = null; // assistant turn being assembled from history records
 
@@ -1644,6 +1683,21 @@ function handleHostMessage(msg) {
       break;
     case 'memory':
       renderMemoryChip(msg);
+      break;
+    case 'git_status':
+      state.gitBranch = msg.branch || null;
+      state.gitChangedCount = typeof msg.changedCount === 'number' ? msg.changedCount : 0;
+      updateGitBar();
+      break;
+    case 'git_committed':
+      updateGitBar();
+      if (msg.hash) appendGitNotice('\u2713 Committed ' + msg.hash);
+      break;
+    case 'git_pushed':
+      appendGitNotice('\u2191 Pushed to remote');
+      break;
+    case 'git_error':
+      appendGitNotice('\u26a0 Git: ' + (msg.message || 'error'), true);
       break;
   }
 }
@@ -3656,6 +3710,50 @@ function requestRewind() {
     btn.textContent = '\u2026';
   }
   send({ type: 'rewind' });
+}
+
+// ─────────────────────────────────────────────
+// Git quick actions
+// ─────────────────────────────────────────────
+function updateGitBar() {
+  var bar = document.getElementById('git-bar');
+  var branchEl = document.getElementById('git-branch');
+  var changesEl = document.getElementById('git-changes');
+  if (!bar || !branchEl || !changesEl) return;
+  if (!state.gitBranch) { bar.classList.remove('visible'); return; }
+  bar.classList.add('visible');
+  branchEl.textContent = '\u29bf ' + state.gitBranch;
+  if (state.gitChangedCount > 0) {
+    changesEl.textContent = state.gitChangedCount + ' changed';
+    changesEl.className = 'dirty';
+    document.getElementById('git-commit-btn').disabled = false;
+  } else {
+    changesEl.textContent = 'clean';
+    changesEl.className = '';
+    document.getElementById('git-commit-btn').disabled = true;
+  }
+}
+
+function requestGitCommit() {
+  document.getElementById('git-commit-btn').disabled = true;
+  send({ type: 'git_commit_request' });
+}
+
+function requestGitPush() {
+  document.getElementById('git-push-btn').disabled = true;
+  send({ type: 'git_push_request' });
+}
+
+function appendGitNotice(text, isError) {
+  var el = document.createElement('div');
+  el.className = isError ? 'usage-line' : 'usage-line';
+  el.style.color = isError ? 'var(--error-text)' : 'var(--text-muted)';
+  el.textContent = text;
+  var msgs = document.getElementById('messages');
+  if (msgs) { msgs.appendChild(el); scrollToBottom(); }
+  // Re-enable push button after push attempt
+  var pushBtn = document.getElementById('git-push-btn');
+  if (pushBtn) pushBtn.disabled = false;
 }
 
 // ─────────────────────────────────────────────

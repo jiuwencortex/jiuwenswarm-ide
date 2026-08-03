@@ -22,9 +22,14 @@ private val BACKOFF_SECONDS = longArrayOf(1, 2, 4, 8, 16, 30)
 private val gson = Gson()
 
 class WsClient(
-    private val url: String,
+    url: String,
     pingIntervalSeconds: Long = 15,
 ) : Disposable {
+
+    // On macOS, "localhost" resolves to ::1 (IPv6) before 127.0.0.1 (IPv4).
+    // If the server only listens on IPv4, OkHttp gets "Connection Refused" on ::1
+    // and stays in reconnect loop. Force IPv4 to avoid this.
+    private val url = url.replace("://localhost:", "://127.0.0.1:")
 
     @Volatile private var pingIntervalSec: Long = pingIntervalSeconds.coerceIn(0, 300)
 
