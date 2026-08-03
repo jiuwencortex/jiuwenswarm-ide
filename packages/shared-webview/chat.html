@@ -1053,6 +1053,34 @@
   .skill-item:hover, .skill-item.active { background: var(--accent); color: #fff; }
   .skill-item .sk-desc { color: var(--text-muted); font-size: 11px; margin-left: 6px; }
   .skill-item.active .sk-desc { color: rgba(255,255,255,0.7); }
+  /* ── Preset prompt picker popup (!) ── */
+  #prompt-popup {
+    position: absolute;
+    bottom: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    max-height: 220px;
+    overflow-y: auto;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    z-index: 100;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+  }
+  #prompt-popup.hidden { display: none; }
+  .prompt-item {
+    padding: 6px 10px;
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .prompt-item:hover, .prompt-item.active { background: var(--accent); color: #fff; }
+  .prompt-item .pi-label { font-weight: 600; }
+  .prompt-item .pi-preview { color: var(--text-muted); font-size: 11px; margin-left: 6px; }
+  .prompt-item.active .pi-preview { color: rgba(255,255,255,0.7); }
   /* ── Mini bar charts (tokens/turn + duration/turn) ── */
   #mini-charts {
     display: none;
@@ -1474,7 +1502,8 @@
   <div id="input-row">
     <div id="mention-popup" class="hidden"></div>
     <div id="skill-popup" class="hidden"></div>
-    <textarea id="input" placeholder="@ files · # skills — Enter to send" rows="1" disabled></textarea>
+    <div id="prompt-popup" class="hidden"></div>
+    <textarea id="input" placeholder="@ files · # skills · ! prompts — Enter to send" rows="1" disabled></textarea>
     <button id="send-btn" disabled title="Send (Enter)">↑</button>
   </div>
   <div id="token-row">
@@ -1601,6 +1630,8 @@ let state = {
   mentionActive: -1,   // keyboard-selected index in mention popup (-1 = none)
   skillQuery: '',      // current #-token being typed
   skillActive: -1,     // keyboard-selected index in skill popup (-1 = none)
+  promptQuery: '',     // current !-token being typed
+  promptActive: -1,    // keyboard-selected index in prompt popup (-1 = none)
   gitBranch: null,     // current git branch name (null = not a git repo)
   gitChangedCount: 0,  // number of uncommitted changes
 };
@@ -3176,6 +3207,70 @@ const inputEl = document.getElementById('input');
 const sendBtn = document.getElementById('send-btn');
 const mentionPopupEl = document.getElementById('mention-popup');
 const skillPopupEl  = document.getElementById('skill-popup');
+const promptPopupEl = document.getElementById('prompt-popup');
+
+// ── Preset prompts (!): built-in templates the user can pick from ──────────
+var PRESETS = [
+  { label: 'Explain',      text: 'Explain what this code does and how it works.' },
+  { label: 'Fix bug',      text: 'Find and fix the bug in this code. Explain what caused it.' },
+  { label: 'Write tests',  text: 'Write unit tests for this code. Cover edge cases.' },
+  { label: 'Refactor',     text: 'Refactor this code to be cleaner and more maintainable.' },
+  { label: 'Optimize',     text: 'Optimize this code for performance. Explain the changes.' },
+  { label: 'Document',     text: 'Add clear documentation and comments to this code.' },
+  { label: 'Review',       text: 'Review this code for bugs, security issues, and improvements.' },
+  { label: 'Implement',    text: 'Implement the following feature: ' },
+];
+
+function getPromptMatches() {
+  var q = state.promptQuery.toLowerCase();
+  if (!q) return PRESETS;
+  return PRESETS.filter(function(p) {
+    return p.label.toLowerCase().includes(q) || p.text.toLowerCase().includes(q);
+  });
+}
+
+function renderPromptPopup(matches) {
+  if (!matches.length) { hidePromptPopup(); return; }
+  promptPopupEl.innerHTML = matches.map(function(p, i) {
+    var active = i === state.promptActive ? ' active' : '';
+    var preview = p.text.replace(/</g, '&lt;').substring(0, 55) + (p.text.length > 55 ? '…' : '');
+    return '<div class="prompt-item' + active + '" data-idx="' + i + '">' +
+      '<span class="pi-label">' + p.label.replace(/</g, '&lt;') + '</span>' +
+      '<span class="pi-preview">' + preview + '</span>' +
+      '</div>';
+  }).join('');
+  promptPopupEl.classList.remove('hidden');
+  var activeEl = promptPopupEl.querySelector('.active');
+  if (activeEl) activeEl.scrollIntoView({ block: 'nearest' });
+  promptPopupEl.onclick = function(e) {
+    var item = e.target.closest('.prompt-item');
+    if (item) {
+      var idx = parseInt(item.dataset.idx, 10);
+      if (matches[idx]) selectPrompt(matches[idx]);
+    }
+  };
+}
+
+function hidePromptPopup() {
+  promptPopupEl.classList.add('hidden');
+  promptPopupEl.innerHTML = '';
+  state.promptActive = -1;
+}
+
+function selectPrompt(preset) {
+  var val = inputEl.value;
+  var pos = inputEl.selectionStart;
+  var before = val.substring(0, pos);
+  var after  = val.substring(pos);
+  // Replace the !query token with the preset text
+  var replaced = before.replace(/!([^\s!]*)$/, preset.text);
+  inputEl.value = replaced + after;
+  var newPos = replaced.length;
+  inputEl.setSelectionRange(newPos, newPos);
+  sendBtn.disabled = !inputEl.value.trim() || !state.connected || state.streaming;
+  hidePromptPopup();
+  inputEl.focus();
+}
 
 function getMentionMatches() {
   var q = state.mentionQuery.toLowerCase();
@@ -3277,6 +3372,30 @@ function selectSkill(skill) {
 }
 
 inputEl.addEventListener('keydown', function(e) {
+  // When prompt popup is open, intercept navigation keys
+  if (!promptPopupEl.classList.contains('hidden')) {
+    const prItems = promptPopupEl.querySelectorAll('.prompt-item');
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      state.promptActive = Math.min(state.promptActive + 1, prItems.length - 1);
+      renderPromptPopup(getPromptMatches());
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      state.promptActive = Math.max(state.promptActive - 1, 0);
+      renderPromptPopup(getPromptMatches());
+      return;
+    }
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      var idx = state.promptActive >= 0 ? state.promptActive : 0;
+      var matches = getPromptMatches();
+      if (matches[idx]) selectPrompt(matches[idx]);
+      return;
+    }
+    if (e.key === 'Escape') { hidePromptPopup(); return; }
+  }
   // When skill popup is open, intercept navigation keys
   if (!skillPopupEl.classList.contains('hidden')) {
     const skItems = skillPopupEl.querySelectorAll('.skill-item');
@@ -3347,7 +3466,7 @@ inputEl.addEventListener('input', function() {
   if (atMatch) {
     state.mentionQuery = atMatch[1];
     state.mentionActive = 0;
-    hideSkillPopup();
+    hideSkillPopup(); hidePromptPopup();
     // Request file list from host the first time
     if (state.mentionFiles.length === 0) send({ type: 'files_request' });
     var atMatches = getMentionMatches();
@@ -3365,6 +3484,7 @@ inputEl.addEventListener('input', function() {
   if (hashMatch) {
     state.skillQuery = hashMatch[1];
     state.skillActive = 0;
+    hidePromptPopup();
     // Fetch skills if not yet loaded
     if (state.skills.length === 0) send({ type: 'list_skills' });
     var skMatches = getSkillMatches();
@@ -3375,6 +3495,22 @@ inputEl.addEventListener('input', function() {
     }
   } else {
     hideSkillPopup();
+  }
+
+  // !-prompt detection: find last '!...' token before cursor
+  var bangMatch = val.match(/!([^\s!]*)$/);
+  if (bangMatch) {
+    state.promptQuery = bangMatch[1];
+    state.promptActive = 0;
+    hideMentionPopup(); hideSkillPopup();
+    var prMatches = getPromptMatches();
+    if (prMatches.length > 0) {
+      renderPromptPopup(prMatches);
+    } else {
+      hidePromptPopup();
+    }
+  } else {
+    hidePromptPopup();
   }
 });
 
@@ -3437,6 +3573,7 @@ function submitMessage() {
 
   hideMentionPopup();
   hideSkillPopup();
+  hidePromptPopup();
   inputEl.value = '';
   inputEl.style.height = 'auto';
 }
