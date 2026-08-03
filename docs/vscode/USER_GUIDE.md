@@ -143,6 +143,8 @@ A stats bar between the header and the message list shows session-level metrics 
 
 The bar chart icon (right side of the stats bar, shown after two or more turns) toggles **mini charts** — bar graphs of tokens and duration per turn. Hover a bar to see that turn's details.
 
+The **server memory** chip shows live JiuwenSwarm server RAM usage (RSS of total, plus available), polled every 10 seconds.
+
 In the input area at the bottom, a **context bar** shows how full the active model's context window is (0–100%). It turns orange above 60% and red above 80%; a warning chip appears as the context approaches the server's auto-compaction threshold.
 
 ---

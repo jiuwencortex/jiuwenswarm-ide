@@ -34,7 +34,7 @@ Legend: ✅ done · 🔶 partial · ❌ not started · 🚫 platform limitation
 | Mini bar charts (tokens/turn + duration/turn) | ✅ | ✅ |
 | Git status chip (branch + changed file count) | ✅ | ✅ |
 | Git quick actions (Commit + Push, toggled in settings) | ✅ | ✅ |
-| Server memory usage chip | ✅ | 🚫 |
+| Server memory usage chip | ✅ | ✅ |
 | Dark / light / auto theme | ✅ | ✅ |
 | Debug log panel | ✅ | ✅ |
 | Context compaction progress indicator | ✅ | ✅ |

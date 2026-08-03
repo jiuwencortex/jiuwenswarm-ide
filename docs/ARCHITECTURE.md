@@ -101,7 +101,7 @@ req: session.delete  → delete a session
 req: skills.list     → list registered skills
 req: skills.toggle   → enable / disable a skill
 req: models.list     → list available models
-req: memory.compute  → compute server memory stats (JetBrains only)
+req: memory.compute  → compute server memory stats
 req: history.get     → fetch past messages for a session
 req: chat.interrupt  → interrupt an in-progress agent turn
 req: chat.answer     → respond to a human-turn clarifying question

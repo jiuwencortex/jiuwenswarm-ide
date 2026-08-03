@@ -86,6 +86,7 @@ Attach images with the **+** button (PNG, JPEG, WebP, GIF; up to 10 MB each).
 - **Token counter** — per-turn token count next to the send button; session total in the VS Code status bar.
 - **Session stats chips** — total turns, tokens, cost, tool calls, average latency, and a tools breakdown chip.
 - **Mini charts** — collapsible bar charts showing tokens and duration per turn.
+- **Server memory** — live server RAM usage shown in the stats bar (polled every 10 s).
 
 ### Context automatically sent with every message
 
