@@ -4,6 +4,20 @@ Future development items for the JetBrains plugin and VS Code extension.
 
 ---
 
+## Completed
+
+Features that have shipped and are available in both the JetBrains plugin and VS Code extension.
+
+| Feature | What was built |
+|---------|----------------|
+| **Live Swarm Map** | Real-time panel showing active agents as named lane cards, with pulsing status dots, per-lane file activity, task pill board, and 90-second timeline. Opens automatically when the first `code.team` agent spawns. See `docs/SWARM_MAP_PLAN.md`. |
+| **Progress chip** | Header chip (`N/M tasks · K agents`) computed live from snapshot — no server changes needed. |
+| **Lane click → jump to file** | Clicking a lane card navigates the editor to the last file the agent touched. Hover hint `↗ open file` shows when a path is available. |
+| **Inter-agent message log** | Collapsible log below the timeline capturing `team.message.*` content (last 50), colour-coded by sender's lane colour. |
+| **Summary card** | When all agents reach SHUTDOWN, the lane list is replaced by a session summary (agents, tasks completed, messages exchanged). |
+
+---
+
 ## Incomplete — foundational work exists
 
 These features are partially built. The infrastructure is in place; specific gaps remain.
@@ -50,7 +64,7 @@ These do not exist in any tool today. Each would be a demo-stopping moment.
 
 | Feature | Description | Why it is different |
 |---------|-------------|---------------------|
-| **Live swarm map** | A sidebar panel that shows all active sub-agents as named "lanes" running in parallel — which file each agent is currently editing, which tool call it just made, whether it is waiting or running. You can click any lane to see its conversation, pause it, redirect it with a message, or merge two lanes. Unique because the server already has team-mode multi-agent sessions; this just makes the swarm visible and steerable in real time. | Competitors run at most one background agent. Nobody shows you the swarm working — you get a spinner. This turns the product name into a literal UI metaphor. |
+| **Live swarm map** ✅ | ~~A sidebar panel that shows all active sub-agents as named "lanes" running in parallel~~ **Implemented.** Phase 1 (lanes, tasks, timeline) + Phase 2 (progress chip, file navigation, message log, summary card) are shipped. Remaining steerable features (pause/redirect agent from the panel) are deferred to Phase 3 pending server API. | Competitors run at most one background agent. Nobody shows you the swarm working — you get a spinner. This turns the product name into a literal UI metaphor. |
 | **Blast radius preview** | Before you press Save, a side pane appears (can be opt-in) that shows everything in the codebase that imports or calls what you just changed — a live dependency graph with "X callers, Y tests, Z downstream modules". No code is run; it is pure static analysis on every keystroke. If the blast radius is zero, you see green. If it is large, you see a flame icon. Clicking any node navigates to that file. | Linters catch syntax errors. Type checkers catch type errors. Nothing tells you the *impact* of a change before you save it. This is the first "consequence preview" for live editing. |
 | **AI git archaeology — "why does this line exist?"** | Right-click any line → "Why was this written this way?". The agent traces git blame → commit message → PR description → linked ticket → any recorded conversation history that touched this line, and produces a one-paragraph human explanation: "This null check was added after a production incident on March 3rd where `user.profile` was null during OAuth token refresh. The team chose Optional over throwing because…" | Git blame tells you *who* and *when*. This tells you *why*. For large codebases with high turnover this is the single most useful thing you can ask about any line of code. Nothing else does this. |
 | **Sketch → architecture, then implement** | Before a single line of code is written, describe a feature in plain English and the agent generates an editable architecture diagram (Mermaid or Excalidraw) showing which existing components it touches, what new components are needed, and the data flow. You drag, drop, or annotate the diagram to express your intent, then click "Implement this" and the agent uses the diagram as its spec. | Every tool starts coding immediately. This puts a thinking step first — visible, shareable, correctable. The diagram becomes the single source of truth the swarm uses as a plan. |

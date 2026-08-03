@@ -124,6 +124,22 @@ Click **⚙ → Sessions** to open the session list. Switch, create (New button 
 
 Click **⚙ → Skills** to view and toggle registered skills. Each skill shows its name, description, trigger, and ON/OFF toggle. Type `#` in the chat input to pick a skill without opening the overlay.
 
+### Swarm Map
+
+Available when using **Team Coding** mode (`code.team`). Opens automatically beside the chat panel when the first team agent spawns — no click required.
+
+| Element | What it shows |
+|---------|---------------|
+| Progress chip | `N/M tasks · K agents` in the panel header |
+| Task pills | One pill per task; colour shifts from yellow (pending) → green (in_progress) → grey (completed) |
+| Lane cards | One card per agent — status dot, role badge, current file activity, active task title |
+| ↗ open file | Hover a lane card that has an active file to see the hint; click to open the file in the editor |
+| Timeline bar | 90-second colour-coded activity bar; overlapping tracks prove parallel work |
+| Message log | Collapsible `▶ Messages (N)` toggle showing inter-agent messages, colour-coded by sender |
+| Summary card | Replaces lane list when all agents reach SHUTDOWN: agent count, tasks completed, messages sent |
+
+See [USER_GUIDE.md — Swarm Map](USER_GUIDE.md#swarm-map) for the full reference.
+
 ## Code Action Quick Fix
 
 VS Code shows a lightbulb 💡 next to lines with errors or warnings. Click it (or press `Ctrl+.` / `⌘.`) and select **Fix with JiuwenSwarm**. The chat panel opens with the error message and ±7 lines of surrounding code pre-filled.

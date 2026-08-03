@@ -475,3 +475,117 @@ For webview JavaScript errors:
 
 1. Run **Developer: Open Webview Developer Tools** from the command palette.
 2. Check the **Console** tab.
+
+---
+
+## Swarm Map
+
+The Swarm Map is a dedicated webview panel that provides a real-time visual overview of an
+active `code.team` session — showing every agent, their current task, live file activity,
+inter-agent messages, and overall progress. It opens automatically beside the chat panel
+when the first team agent spawns.
+
+### Opening the panel
+
+Opens automatically on the first `team.member.spawned` event. If dismissed, it reopens on
+the next `code.team` session without any manual action.
+
+### Layout
+
+```
+┌──────────────────────────────────────────────┐
+│ JIUWENSWARM · SWARM MAP     2/4 tasks · 3 agents │
+├──────────────────────────────────────────────┤
+│ [⚙ Write module → coder] [✓ Plan → planner]  │
+├──────────────────────────────────────────────┤
+│ ● planner  LEADER  BUSY                      │
+│   editing · plan.md                          │
+│   Task: Decompose the work                   │
+│ ● coder    TEAMMATE BUSY                     │
+│   writing · tasks.py                         │
+│   Task: Write tasks module                   │
+│ ● tester   TEAMMATE READY                    │
+│   —                                          │
+├──────────────────────────────────────────────┤
+│ ████████░░░░░░░░░░  ← 90-second timeline     │
+├──────────────────────────────────────────────┤
+│ ▶ Messages (5)                               │
+└──────────────────────────────────────────────┘
+```
+
+### Progress chip
+
+The header chip (`N/M tasks · K agents`) shows how many tasks have completed and how
+many agents are currently active. Updates on every snapshot.
+
+### Task pills
+
+A row of pills across the top shows every task the planner created:
+
+| Appearance | Status |
+|------------|--------|
+| Green border | in_progress |
+| Yellow border | pending |
+| Grey, dim | completed or cancelled |
+
+### Lane cards
+
+Each agent appears as a card:
+
+| Element | Description |
+|---------|-------------|
+| Pulsing green dot | Agent is BUSY — actively running tools |
+| Grey dot | Agent is READY — waiting for a task |
+| Amber dot | Agent is PAUSED |
+| Faded card (45% opacity) | Agent has SHUTDOWN |
+| Green left border | BUSY status |
+| Activity line | Current operation: `writing · tasks.py`, `running · pytest`, … |
+| Task line | The active task title |
+| ⚠ idle Ns | Agent has been BUSY but silent for more than 30 seconds |
+
+The **LEADER** role badge is shown in purple.
+
+### Lane click → jump to file
+
+When an agent has recently touched a file, hovering over its card shows an **↗ open file**
+hint. Click the card to open that file in the VS Code editor. Focus moves immediately.
+
+### Timeline bar
+
+A 90-second activity bar at the bottom of the panel shows one coloured track per agent.
+Overlapping tracks prove parallel work at a glance.
+
+### Inter-agent message log
+
+When agents send messages to each other (`team.message.*` events), a **▶ Messages (N)**
+toggle appears below the timeline. Click to expand a scrollable log:
+
+```
+planner  →  coder    implement add_task(title), write to tasks.json…
+planner  →  tester   write unit tests for all four operations…
+coder    →  tester   tasks.py is done, file is at /…/tasks.py
+```
+
+Sender names are colour-coded to match their lane card. The log holds the last 50 messages
+and auto-scrolls to the newest entry.
+
+### Summary card
+
+When every agent reaches SHUTDOWN, the live lane cards are replaced by a session summary:
+
+```
+✓ TaskManager Team · Session complete
+Agents              4
+Tasks completed     4
+Messages            9
+```
+
+### Swarm Map troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---------|-------------|-----|
+| Swarm Map never opens | Server not emitting `team.member.spawned` | Check Output → JiuwenSwarm for `team.event:` lines; verify server sends team events |
+| Lane cards appear but no file activity | `member_name` missing from `chat.tool_call` payload | Confirm server includes `member_name` in tool call events |
+| Messages toggle never appears | `team.message.*` events missing or have no `content` field | Check server event schema |
+| ↗ open file hint not shown | Agent has not called any file tool yet | Wait for first `read_file`, `write_file`, or `str_replace_editor` call |
+| Click navigates to wrong file | File path in event is server-absolute but doesn't match workspace | Ensure server sends absolute paths matching the local project root |

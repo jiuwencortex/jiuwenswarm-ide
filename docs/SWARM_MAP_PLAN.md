@@ -77,6 +77,7 @@ data class AgentLane(
     var currentTaskTitle: String? = null,
     var currentActivity: String? = null,  // human-readable: "write_file · auth.service.ts:44"
     var lastToolName: String? = null,
+    var lastActivePath: String? = null,   // full file path for jump-to-file navigation
     var lastActiveAt: Long = System.currentTimeMillis(),
     var messageCount: Int = 0,
     var tasksDone: Int = 0,
@@ -90,11 +91,20 @@ data class TeamTask(
     val createdAt: Long = System.currentTimeMillis(),
 )
 
+/** One inter-agent message captured from team.message.* events. Ring buffer max 50. */
+data class TeamMessage(
+    val from: String,
+    val to: String?,      // null means broadcast
+    val content: String,
+    val timestamp: Long,
+)
+
 data class SwarmSnapshot(
     val sessionId: String,
     val teamName: String,
-    val lanes: List<AgentLane>,  // sorted: LEADER, BUSY, READY, PAUSED, SHUTDOWN
-    val tasks: List<TeamTask>,   // sorted: in_progress, pending, completed, cancelled
+    val lanes: List<AgentLane>,      // sorted: LEADER, BUSY, READY, PAUSED, SHUTDOWN
+    val tasks: List<TeamTask>,       // sorted: in_progress, pending, completed, cancelled
+    val messages: List<TeamMessage>, // last 50 inter-agent messages, chronological
     val lastEventAt: Long,
 )
 ```
@@ -113,7 +123,8 @@ export interface AgentLane {
   currentTaskTitle: string | null;
   currentActivity: string | null;
   lastToolName: string | null;
-  lastActiveAt: number;   // epoch ms
+  lastActivePath: string | null;  // full file path for jump-to-file navigation
+  lastActiveAt: number;           // epoch ms
   messageCount: number;
   tasksDone: number;
 }
@@ -126,11 +137,20 @@ export interface TeamTask {
   createdAt: number;
 }
 
+/** One inter-agent message captured from team.message.* events. Ring buffer max 50. */
+export interface TeamMessage {
+  from: string;
+  to: string | null;   // null means broadcast
+  content: string;
+  timestamp: number;
+}
+
 export interface SwarmSnapshot {
   sessionId: string;
   teamName: string;
   lanes: AgentLane[];
   tasks: TeamTask[];
+  messages: TeamMessage[];  // last 50 inter-agent messages, chronological
   lastEventAt: number;
 }
 ```
@@ -174,9 +194,9 @@ class SwarmStateManager {
 | `team.task.started` | `task.status = "in_progress"`; `lane.currentTaskId = task.taskId`; `lane.currentTaskTitle = task.title` |
 | `team.task.completed` | `task.status = "completed"`; clear `lane.currentTaskId/Title`; increment `lane.tasksDone` |
 | `team.task.cancelled` | `task.status = "cancelled"`; clear `lane.currentTaskId/Title` if it matched |
-| `team.message.p2p` | `lane.messageCount++` on `from_member` lane; `lane.lastActiveAt = now` |
-| `team.message.broadcast` | `lane.messageCount++` on `from_member` lane; `lane.lastActiveAt = now` |
-| `applyToolCall(...)` | `lane.lastToolName = toolName`; `lane.currentActivity = format(toolName, filePath)`; `lane.lastActiveAt = now` |
+| `team.message.p2p` | `lane.messageCount++` on `from_member` lane; `lane.lastActiveAt = now`; if `content` present, append `TeamMessage(from, to, content, ts)` to ring buffer (max 50) |
+| `team.message.broadcast` | same as p2p but `to = null` |
+| `applyToolCall(...)` | `lane.lastToolName = toolName`; `lane.currentActivity = format(toolName, filePath)`; `lane.lastActivePath = filePath`; `lane.lastActiveAt = now` |
 
 **`format(toolName, filePath)` rules:**
 - `write_file`, `str_replace_editor` → `"writing · {basename(filePath)}"` (or `"editing · {basename}"` for str_replace)
@@ -970,25 +990,27 @@ setInterval(function() { if (_state) render(); }, 5000);
 | Panel not yet open when first team event arrives | `postSnapshot` stores the snapshot in `pendingSnapshot`; panel sends it on `onLoadEnd` / `swarm_ready` |
 | `team.event:` arrives before `team.member.spawned` for that member | `SwarmStateManager` creates a stub lane; later `spawned` event overwrites `displayName` and `role` |
 | Session switches mid-team-session | `onSessionChange` calls `reset()` → blank panel |
-| All lanes reach SHUTDOWN | Panel stays open showing greyed-out lanes and all tasks completed; user closes manually |
+| All lanes reach SHUTDOWN | Live lane cards are replaced by a summary card showing agent count, tasks completed, and messages exchanged. The panel stays open; user closes manually. |
 | Duplicate events (network retry) | `SwarmStateManager` is idempotent: `applyTeamEvent` for `spawned` overwrites the lane rather than duplicating it; task events check `task.status` before mutating |
 | `member_name` absent from `chat.tool_call` payload | `applyToolCall` skips lane update; activity line stays at last known value |
 | Panel disposed while team session still running | `swarmMapPanel` field set to null; `postSnapshot` calls are no-ops |
 
 ---
 
-## 10. Open questions before coding
+## 10. Open questions — resolved
 
-1. **`member_name` in `chat.tool_call`** — verify by logging a live team session.
-   If absent, file a minimal server ticket to add it; it is a single field addition.
-2. **Exact team event wrapper key** — `payload.event` vs `event` at top level.
-   Confirm from raw WS log before writing `extractTeamEventDelta`.
-3. **Suppress or keep team events in chat webview?** — Current design suppresses them
-   (they are meta-events, not user content). If the user wants to see them in the chat
-   transcript too, remove the `return` after `applyTeamEvent` and let them flow through.
-4. **`SwarmStateManager` thread safety (JetBrains)** — `onJiuwenMessage` is called on
-   a background thread. Either use `@Synchronized` on mutating methods or switch to a
-   single-threaded executor. The data is small so `@Synchronized` is sufficient.
+1. **`member_name` in `chat.tool_call`** — ✅ Field is present. `applyToolCall` guards
+   against `null` and skips the lane update if absent.
+2. **Exact team event wrapper key** — ✅ Both wire formats handled: E2A chunk
+   (`body.delta` prefixed with `"team.event:"`) and old-format (`type:"event"`,
+   `event` starts with `"team."`). `extractTeamEventDelta` normalises both to the
+   `{ "event": { "type": ..., ... } }` shape.
+3. **Suppress or keep team events in chat webview?** — ✅ Suppressed. Team events are
+   meta-events consumed entirely by the plugin; the user sees swarm activity in the
+   Swarm Map panel, not as raw text in the chat transcript.
+4. **`SwarmStateManager` thread safety (JetBrains)** — ✅ All public methods annotated
+   with `@Synchronized`. The data is small so this is sufficient without a dedicated
+   executor.
 
 ---
 
@@ -1050,3 +1072,70 @@ setInterval(function() { if (_state) render(); }, 5000);
 ### Marketing caption
 
 > "One prompt. Three agents. Parallel. In your IDE."
+
+---
+
+## 12. Phase 2 enhancements — implemented
+
+Four self-contained improvements shipped after the initial Phase 1 release.
+All require zero server-side changes.
+
+### 12.1 Progress chip
+
+A small chip in the top-right of the Swarm Map header (`N/M tasks · K agents`)
+computed live from the snapshot:
+
+- `N` = tasks with `status === 'completed'`
+- `M` = total tasks created
+- `K` = lanes with `status === 'BUSY' || 'READY'`
+
+Disappears when no session is active. Renders via `renderProgress(state)` in
+`swarm_map.html`.
+
+### 12.2 Lane click → jump to active file
+
+`AgentLane` gained a `lastActivePath: String?` field populated by `applyToolCall`.
+`SwarmStateManager.applyToolCall` now also sets `lane.lastActivePath = filePath`.
+
+When the HTML panel is clicked, it sends `{ type: "open_lane", memberName }` to the
+plugin via the existing JS bridge. The plugin resolves `lastActivePath` from the
+current snapshot and navigates the editor to that file.
+
+**JetBrains** (`ChatPanel.handleSwarmMessage`):
+Uses `LocalFileSystem.getInstance().findFileByPath(filePath)` and
+`OpenFileDescriptor(project, vf).navigate(true)` on the EDT.
+
+**VS Code** (`ChatPanel.handleSwarmMessage`):
+Uses `vscode.workspace.openTextDocument(uri)` + `vscode.window.showTextDocument(doc)`.
+
+Lane cards with a non-null `lastActivePath` gain the `.has-path` CSS class, which
+renders an `↗ open file` hint via `::after` on hover.
+
+### 12.3 Inter-agent message log
+
+`SwarmStateManager` gained a `messages: ArrayDeque<TeamMessage>` ring buffer (max 50
+entries). Every `team.message.*` event with a non-empty `content` field appends a
+`TeamMessage(from, to, content, timestamp)` to the buffer.
+
+`SwarmSnapshot` now carries `messages: List<TeamMessage>`.
+
+In `swarm_map.html`, a collapsible `#msg-section` appears below the timeline once any
+messages exist. The toggle header shows `▶ Messages (N)`. When expanded, `renderMessages`
+renders rows colour-coded by sender's lane colour. The log auto-scrolls to the most
+recent entry. The buffer holds the last 50 messages; older ones are dropped.
+
+### 12.4 Summary card
+
+When `_state.lanes.every(l => l.status === 'SHUTDOWN')` is true, `renderSummaryCard`
+replaces the live lane list with a single card:
+
+```
+✓ {teamName} · Session complete
+Agents            N
+Tasks completed   N (M cancelled)
+Messages          N
+```
+
+All counters are computed from the snapshot — no additional server events required.
+The live lane cards are hidden (not destroyed) so the panel can return to normal if a
+new session starts and lanes become active again.
