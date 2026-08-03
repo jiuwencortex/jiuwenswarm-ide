@@ -513,6 +513,11 @@ export class ChatPanel implements vscode.Disposable {
         sessionTitle: this.session.sessionTitle,
         defaultMode,
       });
+      // Load history on connect/reconnect (same guard as switchSession)
+      if (vscode.workspace.getConfiguration('jiuwenswarm').get<boolean>('loadHistoryOnSwitch', true)) {
+        this.postToWebview({ type: 'history_loading', loading: true });
+        this.session.loadHistory(sid);
+      }
       // Then load models in background and send a second update with model list
       this.session.listModels()
         .then(({ models, activeModel }) => {

@@ -738,6 +738,13 @@ class ChatPanel(
                     "sessionTitle" to service.session.sessionTitle,
                     "defaultMode" to service.settings.defaultMode,
                 ))
+                // Load history on connect/reconnect (same guard as switch_session)
+                if (service.settings.loadHistoryOnSwitch) {
+                    dispatchToWebview(mapOf("type" to "history_loading", "loading" to true))
+                    ApplicationManager.getApplication().executeOnPooledThread {
+                        service.session.loadHistory(sid)
+                    }
+                }
                 // Then fetch models in background and send a second update with model list
                 ApplicationManager.getApplication().executeOnPooledThread {
                     try {
