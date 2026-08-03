@@ -23,6 +23,7 @@ export class ChatPanel implements vscode.Disposable {
   private debugEnabled = false;
   private lastRequestId = '';
   private activeModel: string | null = null;
+  private historyLoadedForSession: string | null = null;
   private sessionTokens = 0;
   private sessionCostUsd = 0;
   private hasCost = false;
@@ -513,8 +514,10 @@ export class ChatPanel implements vscode.Disposable {
         sessionTitle: this.session.sessionTitle,
         defaultMode,
       });
-      // Load history on connect/reconnect (same guard as switchSession)
-      if (vscode.workspace.getConfiguration('jiuwenswarm').get<boolean>('loadHistoryOnSwitch', true)) {
+      // Load history exactly once per session (connect / reconnect / switch).
+      if (sid && this.historyLoadedForSession !== sid &&
+          vscode.workspace.getConfiguration('jiuwenswarm').get<boolean>('loadHistoryOnSwitch', true)) {
+        this.historyLoadedForSession = sid;
         this.postToWebview({ type: 'history_loading', loading: true });
         this.session.loadHistory(sid);
       }
@@ -572,17 +575,14 @@ export class ChatPanel implements vscode.Disposable {
       this.debug(`ACTION→ switch_session ${sessionId} mode=${mode || 'default'}`);
       await this.session.switchSession(sessionId, mode);
       this.resetSessionMetrics();
-      const cfg = vscode.workspace.getConfiguration('jiuwenswarm');
-      const loadHistory = cfg.get<boolean>('loadHistoryOnSwitch', true);
-      this.postToWebview({ type: 'history_loading', loading: loadHistory });
+      // The session change already fired onSessionChange → sendCurrentStatus,
+      // which loads the new session's history exactly once (guarded by
+      // historyLoadedForSession) — no separate loadHistory call here.
       this.postToWebview({
         type: 'connected',
         sessionId: this.session.sessionId!,
         sessionTitle: this.session.sessionTitle,
       });
-      if (loadHistory) {
-        this.session.loadHistory(sessionId);
-      }
     } catch (e) {
       this.postToWebview({ type: 'error', message: String(e) });
     }
