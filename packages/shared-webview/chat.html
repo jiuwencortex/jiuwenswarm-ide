@@ -3000,6 +3000,37 @@ function fmtMb(mb) {
   return Math.round(mb) + ' MB';
 }
 
+/** Give every LLM call a "Response" entry that shows what the model produced.
+ *  An intermediate call's output is an instruction (a tool call / skill read);
+ *  that instruction is shown as the call's Response, right after the call row.
+ *  Tool executions and their results keep their own separate rows. The final
+ *  call's Response is the response text (the trailing 'final' event).
+ */
+function attachIntermediateLlmResponses(events) {
+  var out = [];
+  for (var i = 0; i < events.length; i++) {
+    var e = events[i];
+    out.push(e);
+    if (e.type !== 'usage') continue;
+    // Collect the instructions (tool calls) this call emitted until the next LLM call.
+    var j = i + 1;
+    var parts = [];
+    while (j < events.length && events[j].type !== 'usage') {
+      var x = events[j];
+      if (x.type === 'tool_call') {
+        parts.push((x.label || 'tool') + (x.detail ? '\n' + x.detail : ''));
+      }
+      j++;
+    }
+    // Only intermediate calls get a Response here; the final call's Response is
+    // the response text (the trailing 'final' event).
+    if (j < events.length && parts.length) {
+      out.push({ type: 'final', t: e.t, detail: parts.join('\n\n---\n\n') });
+    }
+  }
+  return out;
+}
+
 function finalizeTurn(rid, payload) {
   const pt = state.pendingTurns[rid];
   if (pt) {
@@ -3035,6 +3066,15 @@ function finalizeTurn(rid, payload) {
     // ── Live metrics ──
     pt.hasFinal = true;
     if (payload.stopped) pt.stopped = true;
+
+    // Record the final response text as a 'final' event so the trajectory
+    // shows the turn's response as its own entry. Live streaming never emits a
+    // 'final' event itself (unlike history restore), so without this the
+    // timeline has no response entry to display.
+    const finalText = pt.textContent ? pt.textContent.trim() : '';
+    if (finalText) {
+      pt.events.push({ type: 'final', t: Date.now(), detail: finalText });
+    }
 
     const durationMs  = Date.now() - pt.startTime;
     const outcome     = classifyOutcome(pt);
@@ -3132,6 +3172,9 @@ function finalizeTurn(rid, payload) {
     footer.appendChild(copyBtn);
 
     pt.containerEl.appendChild(footer);
+    // Give every LLM call its own Response entry (intermediate calls summarize
+    // the tools they invoked; the final call's Response is the response text).
+    pt.events = attachIntermediateLlmResponses(pt.events || []);
     insertTrajectoryToggle(footer, pt.containerEl, (pt.events || []).length);
 
     pt.containerEl.__events = pt.events || [];
@@ -3652,14 +3695,14 @@ function classifyOutcome(pt) {
 
 // ── Per-turn trajectory (TraceHound-style event timeline) ──
 var TRAJ_EVENT_META = {
-  user:         { icon: '\u{1F9D1}', label: 'User' },
+  user:         { icon: '\u{1F9D1}', label: 'User Message' },
   reasoning:    { icon: '\u{1F914}', label: 'Reasoning' },
   tool_call:    { icon: '\u{1F527}', label: 'Tool' },
-  tool_update:  { icon: '\u23F3',   label: 'Tool update' },
+  tool_update:  { icon: '\u23F3',   label: 'Tool Update' },
   tool_result:  { icon: '\u2705',   label: 'Result' },
-  usage:        { icon: '\u26A1',   label: 'LLM call' },
+  usage:        { icon: '\u26A1',   label: 'LLM Call' },
   error:        { icon: '\u{1F6A8}', label: 'Error' },
-  final:        { icon: '\u{1F4AC}', label: 'Response' },
+  final:        { icon: '\u{1F4AC}', label: 'LLM Response' },
 };
 
 function trajectoryBreakdown(events) {
@@ -3703,21 +3746,6 @@ function toggleTrajectory(containerEl) {
   if (visible) scrollToBottom();
 }
 
-/** Collect the LLM response that followed a usage event (until the next usage event),
- *  mirroring TraceHound's forward-scan: final text + tool calls + reasoning + errors. */
-function collectLLMResponse(events, startIdx) {
-  var parts = [];
-  for (var i = startIdx + 1; i < events.length; i++) {
-    var e = events[i];
-    if (e.type === 'usage') break;
-    if (e.type === 'final') parts.push('Text:\n' + (e.detail || ''));
-    else if (e.type === 'tool_call') parts.push('Tool: ' + (e.label || '') + '\n' + (e.detail || ''));
-    else if (e.type === 'reasoning') parts.push('Reasoning:\n' + (e.detail || ''));
-    else if (e.type === 'error') parts.push('Error:\n' + (e.detail || ''));
-  }
-  return parts.join('\n\n---\n\n');
-}
-
 function renderTrajectory(events) {
   if (!events || !events.length) return '';
   var firstT = events[0].t;
@@ -3734,11 +3762,10 @@ function renderTrajectory(events) {
     var icon = e.icon || meta.icon;
     var label = escapeHtml(meta.label + (e.label ? ': ' + e.label : ''));
     var rawContent = e.detail ? e.detail : '';
-    // For an LLM call, show the prompt (when available) and the model's response right inside the usage row
-    if (e.type === 'usage') {
-      if (e.prompt) rawContent = (rawContent ? rawContent + '\n\n' : '') + 'LLM Prompt:\n' + e.prompt;
-      var resp = collectLLMResponse(events, i);
-      if (resp) rawContent = (rawContent ? rawContent + '\n\n' : '') + 'LLM Response:\n' + resp;
+    // For an LLM call, show the prompt (when available) inside the usage row;
+    // the response it produced is a standalone row (reasoning / tool / result / final).
+    if (e.type === 'usage' && e.prompt) {
+      rawContent = (rawContent ? rawContent + '\n\n' : '') + 'LLM Prompt:\n' + e.prompt;
     }
     var content = rawContent ? escapeHtml(rawContent) : '';
     var elapsed = e.t - firstT;

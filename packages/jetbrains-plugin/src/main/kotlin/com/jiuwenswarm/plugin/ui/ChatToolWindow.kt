@@ -94,6 +94,9 @@ class ChatPanel(
     // events that carry no request_id in their payload (gateway quirk).
     @Volatile private var lastRequestId: String? = null
 
+    // Currently selected model (from the webview model selector); sent per-message.
+    @Volatile private var activeModel: String? = null
+
     // Debug logging is toggled from the webview; when true we log to IDEA log.
     @Volatile private var debugEnabled = false
 
@@ -264,6 +267,7 @@ class ChatPanel(
                     val mode = msg.get("mode")?.asString ?: "code.plan"
                     val rid = msg.get("requestId")?.asString ?: return
                     val mediaItems = msg.getAsJsonArray("media_items")
+                    val model = msg.get("model")?.asString ?: activeModel
                     val mentionedPaths = msg.getAsJsonArray("mentionedPaths")
                         ?.mapNotNull { it.asString } ?: emptyList()
                     lastRequestId = rid
@@ -274,7 +278,7 @@ class ChatPanel(
                     lastUserInput = content
                     debug("SEND  → requestId=$rid mode=$mode content=${content.take(60)} media=${mediaItems?.size() ?: 0}")
                     val ideContext = ContextCollector.collect(project, mentionedPaths)
-                    if (!service.session.sendChat(content, mode, rid, ideContext, mediaItems)) {
+                    if (!service.session.sendChat(content, mode, rid, ideContext, mediaItems, model)) {
                         debug("SEND  → FAILED (no session or disconnected)")
                         dispatchToWebview(mapOf(
                             "type" to "error",
@@ -377,6 +381,24 @@ class ChatPanel(
                         } catch (e: Exception) {
                             LOG.warn("toggle_skill failed", e)
                             dispatchToWebview(mapOf("type" to "skills_error", "message" to (e.message ?: "Failed to toggle skill")))
+                        }
+                    }
+                }
+                "switch_model" -> {
+                    val model = msg.get("model")?.asString ?: ""
+                    activeModel = model
+                    debug("ACTION→ switch_model $model")
+                    dispatchToWebview(mapOf("type" to "model_changed", "model" to model))
+                }
+                "rename_session" -> {
+                    val title = msg.get("title")?.asString ?: return
+                    ApplicationManager.getApplication().executeOnPooledThread {
+                        try {
+                            debug("ACTION→ session.rename title=$title")
+                            service.session.renameSession(title)
+                            dispatchToWebview(mapOf("type" to "session_renamed", "title" to title))
+                        } catch (e: Exception) {
+                            dispatchToWebview(mapOf("type" to "error", "message" to e.message))
                         }
                     }
                 }

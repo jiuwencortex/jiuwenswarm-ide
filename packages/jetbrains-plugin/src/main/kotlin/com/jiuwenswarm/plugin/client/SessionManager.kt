@@ -110,6 +110,13 @@ class SessionManager(
         request("session.delete", mapOf("session_id" to sid))
     }
 
+    /** Rename the active session (empty title clears it). Updates the cached title. */
+    fun renameSession(title: String) {
+        val sid = sessionId ?: return
+        val payload = request("session.rename", mapOf("title" to title), sid)
+        sessionTitle = payload.get("title")?.asString ?: title
+    }
+
     fun switchSession(sid: String, mode: String? = null) {
         val params = mutableMapOf("session_id" to sid)
         if (mode != null) params["mode"] = mode
@@ -152,6 +159,7 @@ class SessionManager(
         requestId: String,
         ideContext: String? = null,
         mediaItems: com.google.gson.JsonArray? = null,
+        model: String? = null,
     ): Boolean {
         val sid = sessionId ?: return false
         val fullContent = if (!ideContext.isNullOrBlank()) {
@@ -168,6 +176,9 @@ class SessionManager(
                 addProperty("content", fullContent)
                 addProperty("mode", mode)
                 addProperty("session_id", sid)
+                if (model != null) {
+                    addProperty("model_name", model)
+                }
                 if (mediaItems != null && mediaItems.size() > 0) {
                     add("media_items", mediaItems)
                 }

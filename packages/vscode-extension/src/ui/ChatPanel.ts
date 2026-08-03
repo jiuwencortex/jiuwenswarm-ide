@@ -22,6 +22,7 @@ export class ChatPanel implements vscode.Disposable {
   private webviewReady = false;
   private debugEnabled = false;
   private lastRequestId = '';
+  private activeModel: string | null = null;
   private sessionTokens = 0;
   private sessionCostUsd = 0;
   private hasCost = false;
@@ -134,6 +135,7 @@ export class ChatPanel implements vscode.Disposable {
         const content = msg.content as string;
         const mode = (msg.mode as string) || 'code.plan';
         const rid = msg.requestId as string;
+        const model = (msg.model as string) || this.activeModel || undefined;
         const mediaItems = msg.media_items as unknown[] | undefined;
         const mentionedPaths = (msg.mentionedPaths as string[] | undefined) || [];
         if (!rid) return;
@@ -149,7 +151,7 @@ export class ChatPanel implements vscode.Disposable {
         this.latestInput = content;
         const ideContext = collectContext(mentionedPaths);
         this.updateMetrics(content, ideContext.metrics, mediaItems?.length ?? 0);
-        if (!this.session.sendChat(content, mode, rid, ideContext.text || undefined, mediaItems)) {
+        if (!this.session.sendChat(content, mode, rid, ideContext.text || undefined, mediaItems, model)) {
           this.debug('SEND→ FAILED (no session or disconnected)');
           this.postToWebview({ type: 'error', message: 'Not connected or no active session', requestId: rid });
         } else {
@@ -198,8 +200,9 @@ export class ChatPanel implements vscode.Disposable {
       case 'switch_session': {
         const sid = msg.sessionId as string;
         if (sid) {
-          // session.switch is a team-mode server operation
-          this.switchSession(sid, 'team');
+          // session.switch is a team-mode server operation — the user's
+          // chat mode (code.plan / code.normal / code.team) is sent per-message.
+          this.switchSession(sid, 'code.team');
         }
         break;
       }
@@ -220,6 +223,23 @@ export class ChatPanel implements vscode.Disposable {
         const enabled = msg.enabled as boolean;
         if (skillId !== undefined && enabled !== undefined) {
           this.toggleSkill(skillId, enabled);
+        }
+        break;
+      }
+
+      case 'switch_model': {
+        const model = (msg.model as string) || null;
+        this.activeModel = model;
+        this.debug(`ACTION→ switch_model ${model}`);
+        this.postToWebview({ type: 'model_changed', model });
+        break;
+      }
+
+      case 'rename_session': {
+        const title = (msg.title as string) || '';
+        if (this.session.sessionId) {
+          this.debug(`ACTION→ rename_session title=${title}`);
+          void this.renameSession(title);
         }
         break;
       }
@@ -482,10 +502,17 @@ export class ChatPanel implements vscode.Disposable {
   private sendCurrentStatus(): void {
     const s = this.ws.getStatus();
     const sid = this.session.sessionId;
+    const defaultMode = vscode.workspace.getConfiguration('jiuwenswarm')
+      .get<string>('defaultMode', 'code.plan');
     this.debug(`STATUS→ ws=${s} session=${sid}`);
     if (s === 'connected' && sid) {
       // Send connected immediately so the webview stops showing "Connecting to JiuwenSwarm…"
-      this.postToWebview({ type: 'connected', sessionId: sid, sessionTitle: this.session.sessionTitle });
+      this.postToWebview({
+        type: 'connected',
+        sessionId: sid,
+        sessionTitle: this.session.sessionTitle,
+        defaultMode,
+      });
       // Then load models in background and send a second update with model list
       this.session.listModels()
         .then(({ models, activeModel }) => {
@@ -501,6 +528,7 @@ export class ChatPanel implements vscode.Disposable {
             sessionTitle: this.session.sessionTitle,
             models: modelList,
             activeModel: activeModel || undefined,
+            defaultMode,
           });
         })
         .catch(() => { /* already sent basic connected, nothing more to do */ });
@@ -510,6 +538,7 @@ export class ChatPanel implements vscode.Disposable {
         sessionId: null,
         sessionTitle: 'JiuwenSwarm',
         needsSession: true,
+        defaultMode,
       });
     } else if (s === 'reconnecting') {
       this.postToWebview({ type: 'reconnecting' });
@@ -529,7 +558,7 @@ export class ChatPanel implements vscode.Disposable {
       this.postToWebview({ type: 'sessions', sessions });
     } catch (e) {
       this.debug(`list_sessions failed: ${e}`);
-      this.postToWebview({ type: 'error', message: String(e) });
+      this.postToWebview({ type: 'sessions_error', message: String(e) });
     }
   }
 
@@ -561,6 +590,17 @@ export class ChatPanel implements vscode.Disposable {
       this.postToWebview({ type: 'session_deleted', sessionId });
     } catch (e) {
       this.debug(`delete_session failed: ${e}`);
+      this.postToWebview({ type: 'sessions_error', message: String(e) });
+    }
+  }
+
+  private async renameSession(title: string): Promise<void> {
+    try {
+      this.debug(`ACTION→ session.rename title=${title}`);
+      await this.session.renameSession(title);
+      this.postToWebview({ type: 'session_renamed', title: title.trim() });
+    } catch (e) {
+      this.debug(`session.rename failed: ${e}`);
       this.postToWebview({ type: 'error', message: String(e) });
     }
   }

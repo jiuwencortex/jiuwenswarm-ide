@@ -75,6 +75,7 @@ export class SessionManager {
     requestId: string,
     ideContext?: string,
     mediaItems?: unknown[],
+    modelName?: string,
   ): boolean {
     const sid = this._sessionId;
     if (!sid) return false;
@@ -86,6 +87,9 @@ export class SessionManager {
       mode,
       session_id: sid,
     };
+    if (modelName) {
+      params.model_name = modelName;
+    }
     if (mediaItems && mediaItems.length > 0) {
       params.media_items = mediaItems;
     }
@@ -143,6 +147,14 @@ export class SessionManager {
   /** Delete a session */
   async deleteSession(sid: string): Promise<void> {
     await this.request('session.delete', { session_id: sid }, sid);
+  }
+
+  /** Rename the active session (empty title clears it). */
+  async renameSession(title: string): Promise<void> {
+    const sid = this._sessionId;
+    if (!sid) return;
+    await this.request('session.rename', { session_id: sid, title });
+    this._sessionTitle = title.trim() || sid;
   }
 
   /**

@@ -26,13 +26,15 @@ export interface SessionInfo {
 
 // Messages from extension host → webview
 export type ExtToWebviewMsg =
-  | { type: 'connected'; sessionId: string | null; sessionTitle: string; needsSession?: boolean; models?: ModelEntry[]; activeModel?: string }
+  | { type: 'connected'; sessionId: string | null; sessionTitle: string; needsSession?: boolean; models?: ModelEntry[]; activeModel?: string; defaultMode?: string }
   | { type: 'disconnected' }
   | { type: 'reconnecting' }
   | { type: 'metrics'; metrics: SessionMetrics }
   | { type: 'memory'; rssMb: number; totalMb: number; availableMb: number }
   | { type: 'sessions'; sessions: SessionInfo[] }
+  | { type: 'sessions_error'; message: string }
   | { type: 'session_deleted'; sessionId: string }
+  | { type: 'session_renamed'; title: string }
   | { type: 'skills'; skills: SkillEntry[] }
   | { type: 'skill_toggled'; skillId: string; enabled: boolean }
   | { type: 'skills_error'; message: string }
@@ -47,7 +49,8 @@ export type ExtToWebviewMsg =
   | { type: 'git_status'; branch: string; changedCount: number }
   | { type: 'git_committed'; hash: string }
   | { type: 'git_error'; message: string }
-  | { type: 'git_pushed' };
+  | { type: 'git_pushed' }
+  | { type: 'model_changed'; model: string | null };
 
 export interface SessionMetrics {
   contextBytes: number;
@@ -77,7 +80,7 @@ export interface SkillEntry {
 export type WebviewToExtMsg =
   | { type: 'ready' }
   | { type: 'input_changed'; content: string }
-  | { type: 'send'; content: string; mode: string; requestId: string; media_items?: unknown[] }
+  | { type: 'send'; content: string; mode: string; requestId: string; model?: string; mentionedPaths?: string[]; media_items?: unknown[] }
   | { type: 'answer'; requestId: string; answers: unknown[]; source: string; mode: string }
   | { type: 'new_session' }
   | { type: 'switch_session'; sessionId: string }
@@ -87,6 +90,8 @@ export type WebviewToExtMsg =
   | { type: 'toggle_skill'; skillId: string; enabled: boolean }
   | { type: 'toggle_debug'; enabled: boolean }
   | { type: 'set_mode'; mode: string }
+  | { type: 'switch_model'; model: string }
+  | { type: 'rename_session'; title: string }
   | { type: 'open_file'; path: string; line?: number }
   | { type: 'rewind' }
   | { type: 'stop' };
