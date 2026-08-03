@@ -1637,6 +1637,7 @@ let state = {
   gitChangedCount: 0,  // number of uncommitted changes
 };
 var _historyPendingAssistant = null; // assistant turn being assembled from history records
+var _historyBuffer = []; // server sends history newest-first; we buffer and reverse before rendering
 
 // ─────────────────────────────────────────────
 // Host message handler
@@ -1726,6 +1727,7 @@ function handleHostMessage(msg) {
       break;
     case 'history_loading':
       state.historyLoading = !!msg.loading;
+      if (state.historyLoading) { _historyBuffer = []; }
       break;
     case 'session_renamed':
       state.sessionTitle = msg.title;
@@ -2460,25 +2462,17 @@ function handleJiuwenEvent(evt) {
   } else if (et === 'history.message') {
     renderHistoryMessage(payload);
   } else if (et === 'history.done') {
-    var hDoneEl = document.getElementById('history-loading');
-    if (hDoneEl) hDoneEl.remove();
-    _historyPendingAssistant = null;
-    state.historyLoading = false;
-    // Add trajectory toggles to every restored turn that has recorded events
-    document.querySelectorAll('#messages .msg').forEach(function(el) {
-      if (!el.__events || !el.__events.length) return;
-      var footerEl = el.querySelector('.turn-stats');
-      if (!footerEl) {
-        footerEl = document.createElement('div');
-        footerEl.className = 'turn-stats';
-        el.appendChild(footerEl);
-      }
-      if (!footerEl.querySelector('.traj-toggle')) {
-        footerEl.insertBefore(makeTrajectoryToggle(el, el.__events.length), footerEl.children[0]);
-      }
-    });
+    _flushHistoryBuffer();
   } else if (et === 'chat.error') {
-    appendError(rid, payload.error || 'Unknown error');
+    if (state.historyLoading) {
+      // error from history.get (e.g. empty session) — clear indicator silently
+      var hErrEl = document.getElementById('history-loading');
+      if (hErrEl) hErrEl.remove();
+      state.historyLoading = false;
+      _historyBuffer = [];
+    } else {
+      appendError(rid, payload.error || 'Unknown error');
+    }
   }
 }
 
@@ -2828,7 +2822,45 @@ function sendAnswerForInterrupt(pt, rid, source, optionValue) {
 // ─────────────────────────────────────────────
 // History rendering (session restore)
 // ─────────────────────────────────────────────
+
+// Called for each streaming history.message event.
+// Server sends newest-first, so we buffer and reverse before rendering.
 function renderHistoryMessage(payload) {
+  // Streaming done sentinel: payload.status === 'done'
+  if (payload && payload.status === 'done') {
+    _flushHistoryBuffer();
+    return;
+  }
+  _historyBuffer.push(payload);
+}
+
+// Render buffered history in chronological order and do cleanup.
+function _flushHistoryBuffer() {
+  var hFlushEl = document.getElementById('history-loading');
+  if (hFlushEl) hFlushEl.remove();
+  _historyBuffer.reverse(); // server sent newest-first; render oldest-first
+  for (var i = 0; i < _historyBuffer.length; i++) {
+    _renderHistoryMessageImmediate(_historyBuffer[i]);
+  }
+  _historyBuffer = [];
+  _historyPendingAssistant = null;
+  state.historyLoading = false;
+  // Add trajectory toggles to every restored turn that has recorded events
+  document.querySelectorAll('#messages .msg').forEach(function(el) {
+    if (!el.__events || !el.__events.length) return;
+    var footerEl = el.querySelector('.turn-stats');
+    if (!footerEl) {
+      footerEl = document.createElement('div');
+      footerEl.className = 'turn-stats';
+      el.appendChild(footerEl);
+    }
+    if (!footerEl.querySelector('.traj-toggle')) {
+      footerEl.insertBefore(makeTrajectoryToggle(el, el.__events.length), footerEl.children[0]);
+    }
+  });
+}
+
+function _renderHistoryMessageImmediate(payload) {
   // Backend wraps each history record under payload.message; older flows send it flat.
   var rec = (payload && typeof payload.message === 'object' && payload.message !== null)
     ? payload.message
@@ -2840,10 +2872,6 @@ function renderHistoryMessage(payload) {
   var recTs = rec.timestamp;
   var evtT = typeof recTs === 'number' ? (recTs > 1000000000000 ? recTs : recTs * 1000) : Date.now();
   var msgs = document.getElementById('messages');
-
-  // Remove loading indicator on first real message
-  var loadingEl = document.getElementById('history-loading');
-  if (loadingEl) loadingEl.remove();
 
   if (role === 'user') {
     _historyPendingAssistant = null;

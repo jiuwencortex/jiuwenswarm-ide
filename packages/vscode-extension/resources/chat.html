@@ -1637,6 +1637,7 @@ let state = {
   gitChangedCount: 0,  // number of uncommitted changes
 };
 var _historyPendingAssistant = null; // assistant turn being assembled from history records
+var _historyBuffer = []; // server sends history newest-first; we buffer and reverse before rendering
 
 // ─────────────────────────────────────────────
 // Host message handler
@@ -1726,6 +1727,7 @@ function handleHostMessage(msg) {
       break;
     case 'history_loading':
       state.historyLoading = !!msg.loading;
+      if (state.historyLoading) { _historyBuffer = []; }
       break;
     case 'session_renamed':
       state.sessionTitle = msg.title;
@@ -2460,25 +2462,17 @@ function handleJiuwenEvent(evt) {
   } else if (et === 'history.message') {
     renderHistoryMessage(payload);
   } else if (et === 'history.done') {
-    var hDoneEl = document.getElementById('history-loading');
-    if (hDoneEl) hDoneEl.remove();
-    _historyPendingAssistant = null;
-    state.historyLoading = false;
-    // Add trajectory toggles to every restored turn that has recorded events
-    document.querySelectorAll('#messages .msg').forEach(function(el) {
-      if (!el.__events || !el.__events.length) return;
-      var footerEl = el.querySelector('.turn-stats');
-      if (!footerEl) {
-        footerEl = document.createElement('div');
-        footerEl.className = 'turn-stats';
-        el.appendChild(footerEl);
-      }
-      if (!footerEl.querySelector('.traj-toggle')) {
-        footerEl.insertBefore(makeTrajectoryToggle(el, el.__events.length), footerEl.children[0]);
-      }
-    });
+    _flushHistoryBuffer();
   } else if (et === 'chat.error') {
-    appendError(rid, payload.error || 'Unknown error');
+    if (state.historyLoading) {
+      // error from history.get (e.g. empty session) — clear indicator silently
+      var hErrEl = document.getElementById('history-loading');
+      if (hErrEl) hErrEl.remove();
+      state.historyLoading = false;
+      _historyBuffer = [];
+    } else {
+      appendError(rid, payload.error || 'Unknown error');
+    }
   }
 }
 
@@ -2547,7 +2541,6 @@ function beginTurn(requestId, userContent) {
     tpotCount: 0,
     models: {},
     toolErrors: [],
-    errorCategories: [],
     // TraceHound-style per-turn tracking
     events: [],          // ordered event log for the trajectory timeline
   };
@@ -2717,8 +2710,6 @@ function appendToolResult(rid, payload) {
     var errMsg = result.replace(/^success=False\s+data=None\s+error='/g, '').replace(/'$/g, '').trim();
     pt.toolErrors = pt.toolErrors || [];
     pt.toolErrors.push(toolName + ': ' + (errMsg || 'Unknown error'));
-    pt.errorCategories = pt.errorCategories || [];
-    pt.errorCategories.push(classifyError(errMsg || result));
   }
 
   if (statusEl) {
@@ -2831,7 +2822,45 @@ function sendAnswerForInterrupt(pt, rid, source, optionValue) {
 // ─────────────────────────────────────────────
 // History rendering (session restore)
 // ─────────────────────────────────────────────
+
+// Called for each streaming history.message event.
+// Server sends newest-first, so we buffer and reverse before rendering.
 function renderHistoryMessage(payload) {
+  // Streaming done sentinel: payload.status === 'done'
+  if (payload && payload.status === 'done') {
+    _flushHistoryBuffer();
+    return;
+  }
+  _historyBuffer.push(payload);
+}
+
+// Render buffered history in chronological order and do cleanup.
+function _flushHistoryBuffer() {
+  var hFlushEl = document.getElementById('history-loading');
+  if (hFlushEl) hFlushEl.remove();
+  _historyBuffer.reverse(); // server sent newest-first; render oldest-first
+  for (var i = 0; i < _historyBuffer.length; i++) {
+    _renderHistoryMessageImmediate(_historyBuffer[i]);
+  }
+  _historyBuffer = [];
+  _historyPendingAssistant = null;
+  state.historyLoading = false;
+  // Add trajectory toggles to every restored turn that has recorded events
+  document.querySelectorAll('#messages .msg').forEach(function(el) {
+    if (!el.__events || !el.__events.length) return;
+    var footerEl = el.querySelector('.turn-stats');
+    if (!footerEl) {
+      footerEl = document.createElement('div');
+      footerEl.className = 'turn-stats';
+      el.appendChild(footerEl);
+    }
+    if (!footerEl.querySelector('.traj-toggle')) {
+      footerEl.insertBefore(makeTrajectoryToggle(el, el.__events.length), footerEl.children[0]);
+    }
+  });
+}
+
+function _renderHistoryMessageImmediate(payload) {
   // Backend wraps each history record under payload.message; older flows send it flat.
   var rec = (payload && typeof payload.message === 'object' && payload.message !== null)
     ? payload.message
@@ -2843,10 +2872,6 @@ function renderHistoryMessage(payload) {
   var recTs = rec.timestamp;
   var evtT = typeof recTs === 'number' ? (recTs > 1000000000000 ? recTs : recTs * 1000) : Date.now();
   var msgs = document.getElementById('messages');
-
-  // Remove loading indicator on first real message
-  var loadingEl = document.getElementById('history-loading');
-  if (loadingEl) loadingEl.remove();
 
   if (role === 'user') {
     _historyPendingAssistant = null;
@@ -3000,6 +3025,37 @@ function fmtMb(mb) {
   return Math.round(mb) + ' MB';
 }
 
+/** Give every LLM call a "Response" entry that shows what the model produced.
+ *  An intermediate call's output is an instruction (a tool call / skill read);
+ *  that instruction is shown as the call's Response, right after the call row.
+ *  Tool executions and their results keep their own separate rows. The final
+ *  call's Response is the response text (the trailing 'final' event).
+ */
+function attachIntermediateLlmResponses(events) {
+  var out = [];
+  for (var i = 0; i < events.length; i++) {
+    var e = events[i];
+    out.push(e);
+    if (e.type !== 'usage') continue;
+    // Collect the instructions (tool calls) this call emitted until the next LLM call.
+    var j = i + 1;
+    var parts = [];
+    while (j < events.length && events[j].type !== 'usage') {
+      var x = events[j];
+      if (x.type === 'tool_call') {
+        parts.push((x.label || 'tool') + (x.detail ? '\n' + x.detail : ''));
+      }
+      j++;
+    }
+    // Only intermediate calls get a Response here; the final call's Response is
+    // the response text (the trailing 'final' event).
+    if (j < events.length && parts.length) {
+      out.push({ type: 'final', t: e.t, detail: parts.join('\n\n---\n\n') });
+    }
+  }
+  return out;
+}
+
 function finalizeTurn(rid, payload) {
   const pt = state.pendingTurns[rid];
   if (pt) {
@@ -3036,11 +3092,19 @@ function finalizeTurn(rid, payload) {
     pt.hasFinal = true;
     if (payload.stopped) pt.stopped = true;
 
+    // Record the final response text as a 'final' event so the trajectory
+    // shows the turn's response as its own entry. Live streaming never emits a
+    // 'final' event itself (unlike history restore), so without this the
+    // timeline has no response entry to display.
+    const finalText = pt.textContent ? pt.textContent.trim() : '';
+    if (finalText) {
+      pt.events.push({ type: 'final', t: Date.now(), detail: finalText });
+    }
+
     const durationMs  = Date.now() - pt.startTime;
     const outcome     = classifyOutcome(pt);
     const totalTok    = pt.inputTokens + pt.outputTokens;
     const ttftMs      = pt.firstTokenTime ? pt.firstTokenTime - pt.startTime : null;
-    const uniqErrorCats  = (pt.errorCategories || []).filter(function(v, i, a) { return a.indexOf(v) === i; });
 
     // Derived values for chip tooltips
     const toolsUsed = (pt.events || []).filter(function(e) { return e.type === 'tool_call' && e.label; })
@@ -3067,10 +3131,6 @@ function finalizeTurn(rid, payload) {
     outcomeTip += '\nTime: ' + fmtTimeOfDay(pt.startTime);
     if (respLen > 0) outcomeTip += '\nResponse: ' + respLen.toLocaleString() + ' chars';
     if (pt.toolErrorCount) outcomeTip += '\nTool Failures: ' + pt.toolErrorCount;
-    if (uniqErrorCats.length) {
-      outcomeTip += '\nError Categories:';
-      uniqErrorCats.forEach(function(c) { outcomeTip += '\n' + c; });
-    }
 
     var tokTip = 'Input Tokens: ' + fmtTok(pt.inputTokens);
     tokTip += '\nOutput Tokens: ' + fmtTok(pt.outputTokens);
@@ -3112,9 +3172,6 @@ function finalizeTurn(rid, payload) {
     if (totalTok)           footerHtml += '<span class="stat-chip" data-tooltip="' + escapeHtml(tokTip) + '">Toks In ' + fmtTok(pt.inputTokens) + ' · Out ' + fmtTok(pt.outputTokens) + '</span>';
     if (actChips.length)    footerHtml += '<span class="stat-chip" data-tooltip="' + escapeHtml(actTip) + '">' + actChips.join(' \u00B7 ') + '</span>';
     if (pt.costUsd > 0)     footerHtml += '<span class="stat-chip" data-tooltip="' + escapeHtml(costTip) + '">' + fmtUsd(pt.costUsd) + '</span>';
-    uniqErrorCats.forEach(function(cat) {
-      footerHtml += '<span class="stat-chip" style="color:#ef4444;border-color:rgba(239,68,68,0.4)" data-tooltip="error category">' + escapeHtml(cat) + '</span>';
-    });
     footerHtml += '<span class="stat-chip" data-tooltip="' + escapeHtml(durTip) + '">' + (durationMs !== null ? 'Dur ' + fmtMs(durationMs) : '') + '</span>';
     if (pt.toolErrorCount) {
       const errSummary = pt.toolErrors.map(function(e) { return '• ' + escapeHtml(e); }).join('\n');
@@ -3132,6 +3189,9 @@ function finalizeTurn(rid, payload) {
     footer.appendChild(copyBtn);
 
     pt.containerEl.appendChild(footer);
+    // Give every LLM call its own Response entry (intermediate calls summarize
+    // the tools they invoked; the final call's Response is the response text).
+    pt.events = attachIntermediateLlmResponses(pt.events || []);
     insertTrajectoryToggle(footer, pt.containerEl, (pt.events || []).length);
 
     pt.containerEl.__events = pt.events || [];
@@ -3156,8 +3216,6 @@ function appendError(rid, errorText) {
       pt.typingEl = null;
     }
     pt.hasError = true;
-    var cat = classifyError(errorText);
-    pt.errorCategories.push(cat);
     pt.events = pt.events || [];
     pt.events.push({ type: 'error', t: Date.now(), detail: errorText });
 
@@ -3187,7 +3245,6 @@ function appendError(rid, errorText) {
     footer.innerHTML =
       '<span class="stat-badge" style="background:#ef4444" data-tooltip="' + escapeHtml(errBadgeTip) + '">error</span>' +
       (totalTok ? '<span class="stat-chip" data-tooltip="' + escapeHtml(errTokTip) + '">Toks In ' + fmtTok(pt.inputTokens) + ' · Out ' + fmtTok(pt.outputTokens) + '</span>' : '') +
-      '<span class="stat-chip" style="color:#ef4444;border-color:rgba(239,68,68,0.4)" data-tooltip="error category">' + escapeHtml(cat) + '</span>' +
       '<span class="stat-chip" data-tooltip="' + escapeHtml(errDurTip) + '">' + fmtMs(durationMs) + '</span>';
     pt.containerEl.appendChild(footer);
     insertTrajectoryToggle(footer, pt.containerEl, (pt.events || []).length);
@@ -3629,19 +3686,6 @@ function fmtTimeOfDay(ts) {
   }
 }
 
-function classifyError(text) {
-  var t = (text || '').toLowerCase();
-  if (/auth|unauthorized|forbidden|api.?key/.test(t))         return 'api_auth';
-  if (/timeout|timed.?out|deadline/.test(t))                  return 'timeout';
-  if (/file not found|permission denied|no such file/.test(t)) return 'filesystem';
-  if (/connection refused|dns|ssl/.test(t))                   return 'network';
-  if (/syntaxerror|parse error|invalid syntax/.test(t))       return 'syntax';
-  if (/importerror|no module|modulenot/.test(t))              return 'import';
-  if (/context.?length|token limit/.test(t))                  return 'model';
-  if (/runtimeerror|exception|traceback/.test(t))             return 'execution';
-  return 'other';
-}
-
 function classifyOutcome(pt) {
   if (pt.hasError)   return 'error';
   if (pt.stopped)    return 'stopped';
@@ -3652,14 +3696,14 @@ function classifyOutcome(pt) {
 
 // ── Per-turn trajectory (TraceHound-style event timeline) ──
 var TRAJ_EVENT_META = {
-  user:         { icon: '\u{1F9D1}', label: 'User' },
+  user:         { icon: '\u{1F9D1}', label: 'User Message' },
   reasoning:    { icon: '\u{1F914}', label: 'Reasoning' },
   tool_call:    { icon: '\u{1F527}', label: 'Tool' },
-  tool_update:  { icon: '\u23F3',   label: 'Tool update' },
+  tool_update:  { icon: '\u23F3',   label: 'Tool Update' },
   tool_result:  { icon: '\u2705',   label: 'Result' },
-  usage:        { icon: '\u26A1',   label: 'LLM call' },
+  usage:        { icon: '\u26A1',   label: 'LLM Call' },
   error:        { icon: '\u{1F6A8}', label: 'Error' },
-  final:        { icon: '\u{1F4AC}', label: 'Response' },
+  final:        { icon: '\u{1F4AC}', label: 'LLM Response' },
 };
 
 function trajectoryBreakdown(events) {
@@ -3703,21 +3747,6 @@ function toggleTrajectory(containerEl) {
   if (visible) scrollToBottom();
 }
 
-/** Collect the LLM response that followed a usage event (until the next usage event),
- *  mirroring TraceHound's forward-scan: final text + tool calls + reasoning + errors. */
-function collectLLMResponse(events, startIdx) {
-  var parts = [];
-  for (var i = startIdx + 1; i < events.length; i++) {
-    var e = events[i];
-    if (e.type === 'usage') break;
-    if (e.type === 'final') parts.push('Text:\n' + (e.detail || ''));
-    else if (e.type === 'tool_call') parts.push('Tool: ' + (e.label || '') + '\n' + (e.detail || ''));
-    else if (e.type === 'reasoning') parts.push('Reasoning:\n' + (e.detail || ''));
-    else if (e.type === 'error') parts.push('Error:\n' + (e.detail || ''));
-  }
-  return parts.join('\n\n---\n\n');
-}
-
 function renderTrajectory(events) {
   if (!events || !events.length) return '';
   var firstT = events[0].t;
@@ -3734,11 +3763,10 @@ function renderTrajectory(events) {
     var icon = e.icon || meta.icon;
     var label = escapeHtml(meta.label + (e.label ? ': ' + e.label : ''));
     var rawContent = e.detail ? e.detail : '';
-    // For an LLM call, show the prompt (when available) and the model's response right inside the usage row
-    if (e.type === 'usage') {
-      if (e.prompt) rawContent = (rawContent ? rawContent + '\n\n' : '') + 'LLM Prompt:\n' + e.prompt;
-      var resp = collectLLMResponse(events, i);
-      if (resp) rawContent = (rawContent ? rawContent + '\n\n' : '') + 'LLM Response:\n' + resp;
+    // For an LLM call, show the prompt (when available) inside the usage row;
+    // the response it produced is a standalone row (reasoning / tool / result / final).
+    if (e.type === 'usage' && e.prompt) {
+      rawContent = (rawContent ? rawContent + '\n\n' : '') + 'LLM Prompt:\n' + e.prompt;
     }
     var content = rawContent ? escapeHtml(rawContent) : '';
     var elapsed = e.t - firstT;
