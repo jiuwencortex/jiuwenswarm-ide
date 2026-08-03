@@ -2547,7 +2547,6 @@ function beginTurn(requestId, userContent) {
     tpotCount: 0,
     models: {},
     toolErrors: [],
-    errorCategories: [],
     // TraceHound-style per-turn tracking
     events: [],          // ordered event log for the trajectory timeline
   };
@@ -2717,8 +2716,6 @@ function appendToolResult(rid, payload) {
     var errMsg = result.replace(/^success=False\s+data=None\s+error='/g, '').replace(/'$/g, '').trim();
     pt.toolErrors = pt.toolErrors || [];
     pt.toolErrors.push(toolName + ': ' + (errMsg || 'Unknown error'));
-    pt.errorCategories = pt.errorCategories || [];
-    pt.errorCategories.push(classifyError(errMsg || result));
   }
 
   if (statusEl) {
@@ -3080,7 +3077,6 @@ function finalizeTurn(rid, payload) {
     const outcome     = classifyOutcome(pt);
     const totalTok    = pt.inputTokens + pt.outputTokens;
     const ttftMs      = pt.firstTokenTime ? pt.firstTokenTime - pt.startTime : null;
-    const uniqErrorCats  = (pt.errorCategories || []).filter(function(v, i, a) { return a.indexOf(v) === i; });
 
     // Derived values for chip tooltips
     const toolsUsed = (pt.events || []).filter(function(e) { return e.type === 'tool_call' && e.label; })
@@ -3107,10 +3103,6 @@ function finalizeTurn(rid, payload) {
     outcomeTip += '\nTime: ' + fmtTimeOfDay(pt.startTime);
     if (respLen > 0) outcomeTip += '\nResponse: ' + respLen.toLocaleString() + ' chars';
     if (pt.toolErrorCount) outcomeTip += '\nTool Failures: ' + pt.toolErrorCount;
-    if (uniqErrorCats.length) {
-      outcomeTip += '\nError Categories:';
-      uniqErrorCats.forEach(function(c) { outcomeTip += '\n' + c; });
-    }
 
     var tokTip = 'Input Tokens: ' + fmtTok(pt.inputTokens);
     tokTip += '\nOutput Tokens: ' + fmtTok(pt.outputTokens);
@@ -3152,9 +3144,6 @@ function finalizeTurn(rid, payload) {
     if (totalTok)           footerHtml += '<span class="stat-chip" data-tooltip="' + escapeHtml(tokTip) + '">Toks In ' + fmtTok(pt.inputTokens) + ' · Out ' + fmtTok(pt.outputTokens) + '</span>';
     if (actChips.length)    footerHtml += '<span class="stat-chip" data-tooltip="' + escapeHtml(actTip) + '">' + actChips.join(' \u00B7 ') + '</span>';
     if (pt.costUsd > 0)     footerHtml += '<span class="stat-chip" data-tooltip="' + escapeHtml(costTip) + '">' + fmtUsd(pt.costUsd) + '</span>';
-    uniqErrorCats.forEach(function(cat) {
-      footerHtml += '<span class="stat-chip" style="color:#ef4444;border-color:rgba(239,68,68,0.4)" data-tooltip="error category">' + escapeHtml(cat) + '</span>';
-    });
     footerHtml += '<span class="stat-chip" data-tooltip="' + escapeHtml(durTip) + '">' + (durationMs !== null ? 'Dur ' + fmtMs(durationMs) : '') + '</span>';
     if (pt.toolErrorCount) {
       const errSummary = pt.toolErrors.map(function(e) { return '• ' + escapeHtml(e); }).join('\n');
@@ -3199,8 +3188,6 @@ function appendError(rid, errorText) {
       pt.typingEl = null;
     }
     pt.hasError = true;
-    var cat = classifyError(errorText);
-    pt.errorCategories.push(cat);
     pt.events = pt.events || [];
     pt.events.push({ type: 'error', t: Date.now(), detail: errorText });
 
@@ -3230,7 +3217,6 @@ function appendError(rid, errorText) {
     footer.innerHTML =
       '<span class="stat-badge" style="background:#ef4444" data-tooltip="' + escapeHtml(errBadgeTip) + '">error</span>' +
       (totalTok ? '<span class="stat-chip" data-tooltip="' + escapeHtml(errTokTip) + '">Toks In ' + fmtTok(pt.inputTokens) + ' · Out ' + fmtTok(pt.outputTokens) + '</span>' : '') +
-      '<span class="stat-chip" style="color:#ef4444;border-color:rgba(239,68,68,0.4)" data-tooltip="error category">' + escapeHtml(cat) + '</span>' +
       '<span class="stat-chip" data-tooltip="' + escapeHtml(errDurTip) + '">' + fmtMs(durationMs) + '</span>';
     pt.containerEl.appendChild(footer);
     insertTrajectoryToggle(footer, pt.containerEl, (pt.events || []).length);
@@ -3670,19 +3656,6 @@ function fmtTimeOfDay(ts) {
   } catch (_) {
     return d.toLocaleTimeString();
   }
-}
-
-function classifyError(text) {
-  var t = (text || '').toLowerCase();
-  if (/auth|unauthorized|forbidden|api.?key/.test(t))         return 'api_auth';
-  if (/timeout|timed.?out|deadline/.test(t))                  return 'timeout';
-  if (/file not found|permission denied|no such file/.test(t)) return 'filesystem';
-  if (/connection refused|dns|ssl/.test(t))                   return 'network';
-  if (/syntaxerror|parse error|invalid syntax/.test(t))       return 'syntax';
-  if (/importerror|no module|modulenot/.test(t))              return 'import';
-  if (/context.?length|token limit/.test(t))                  return 'model';
-  if (/runtimeerror|exception|traceback/.test(t))             return 'execution';
-  return 'other';
 }
 
 function classifyOutcome(pt) {
