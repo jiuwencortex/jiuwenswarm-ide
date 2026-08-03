@@ -530,6 +530,38 @@
     max-width: 100%;
   }
 
+  /* Collapsible injected blocks in history messages (IDE context / system reminders) */
+  .history-user-text { white-space: pre-wrap; word-break: break-word; }
+  .history-collapse {
+    margin-top: 6px;
+    font-size: 11px;
+    font-family: var(--font);
+  }
+  .history-collapse summary {
+    cursor: pointer;
+    color: var(--text-muted);
+    user-select: none;
+    padding: 2px 0;
+    list-style: none;
+  }
+  .history-collapse summary::-webkit-details-marker { display: none; }
+  .history-collapse summary::before { content: '\25B8 '; }
+  .history-collapse[open] summary::before { content: '\25BE '; }
+  .history-collapse summary:hover { color: var(--text); }
+  .history-collapse-body {
+    margin-top: 4px;
+    padding: 6px 8px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-muted);
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.5;
+  }
+
   /* Inline markdown rendered into .msg-body */
   .msg-body code {
     font-family: var(--font-mono);
@@ -2823,6 +2855,42 @@ function sendAnswerForInterrupt(pt, rid, source, optionValue) {
 // History rendering (session restore)
 // ─────────────────────────────────────────────
 
+/** Extract injected blocks from a stored user message: the plugin's
+ *  `<!-- IDE Context -->` block and the harness's `<system-reminder>` blocks.
+ *  Returns the remaining user text plus the collapsed bodies. */
+function _splitHistoryUserContent(content) {
+  var text = content || '';
+  var ideContext = '';
+  var ideMatch = /<!--\s*IDE Context\s*-->([\s\S]*?)<!--\s*End IDE Context\s*-->/.exec(text);
+  if (ideMatch) {
+    ideContext = ideMatch[1].trim();
+    text = text.replace(ideMatch[0], '');
+  }
+  var systemReminders = [];
+  var remRe = /<system-reminder[^>]*>([\s\S]*?)<\/system-reminder>/g;
+  var m;
+  while ((m = remRe.exec(text)) !== null) {
+    var body = m[1].trim();
+    if (body) systemReminders.push(body);
+  }
+  text = text.replace(remRe, '');
+  return { text: text, ideContext: ideContext, systemReminders: systemReminders };
+}
+
+/** Build a native collapsible <details> block for an injected chunk. */
+function _makeCollapseBlock(summaryText, bodyText) {
+  var details = document.createElement('details');
+  details.className = 'history-collapse';
+  var sum = document.createElement('summary');
+  sum.textContent = summaryText;
+  details.appendChild(sum);
+  var body = document.createElement('div');
+  body.className = 'history-collapse-body';
+  body.textContent = bodyText;
+  details.appendChild(body);
+  return details;
+}
+
 // Called for each streaming history.message event.
 // Server sends newest-first, so we buffer and reverse before rendering.
 function renderHistoryMessage(payload) {
@@ -2877,9 +2945,27 @@ function _renderHistoryMessageImmediate(payload) {
     _historyPendingAssistant = null;
     var el = document.createElement('div');
     el.className = 'msg';
-    el.innerHTML =
-      '<div class="msg-header user">You</div>' +
-      '<div class="msg-body user">' + escapeHtml(content) + '</div>';
+    el.innerHTML = '<div class="msg-header user">You</div>';
+    var userBody = document.createElement('div');
+    userBody.className = 'msg-body user';
+    // Stored content includes injected blocks (IDE context, system reminders)
+    // that bury the real message — render them collapsed so the text is readable.
+    var userParts = _splitHistoryUserContent(content);
+    if (userParts.text.trim()) {
+      var userText = document.createElement('div');
+      userText.className = 'history-user-text';
+      userText.textContent = userParts.text.trim();
+      userBody.appendChild(userText);
+    }
+    if (userParts.systemReminders.length) {
+      userBody.appendChild(_makeCollapseBlock(
+        'System reminder' + (userParts.systemReminders.length > 1 ? ' (' + userParts.systemReminders.length + ')' : ''),
+        userParts.systemReminders.join('\n\n')));
+    }
+    if (userParts.ideContext) {
+      userBody.appendChild(_makeCollapseBlock('IDE Context', userParts.ideContext));
+    }
+    el.appendChild(userBody);
     msgs.appendChild(el);
     scrollToBottom();
   } else if (role === 'assistant') {
