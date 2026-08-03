@@ -1474,7 +1474,7 @@
   <div id="input-row">
     <div id="mention-popup" class="hidden"></div>
     <div id="skill-popup" class="hidden"></div>
-    <textarea id="input" placeholder="@ files · # skills · ! command — Enter to send" rows="1" disabled></textarea>
+    <textarea id="input" placeholder="@ files · # skills — Enter to send" rows="1" disabled></textarea>
     <button id="send-btn" disabled title="Send (Enter)">↑</button>
   </div>
   <div id="token-row">
@@ -3404,21 +3404,14 @@ function submitMessage() {
   var raw = inputEl.value.trim();
   if (!raw || !state.connected || state.streaming) return;
 
-  // !-command mode: strip leading '!' and wrap as a run-command instruction
-  var content = raw;
-  if (raw.startsWith('!')) {
-    var cmd = raw.substring(1).trim();
-    content = cmd ? 'Run: `' + cmd + '`' : raw;
-  }
-
   const requestId = generateId();
 
-  beginTurn(requestId, content);
+  beginTurn(requestId, raw);
   setStreaming(true);
 
   const msg = {
     type: 'send',
-    content: content,
+    content: raw,
     mode: state.mode,
     model: state.activeModel,
     requestId: requestId,
