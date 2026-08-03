@@ -75,17 +75,45 @@ version = "0.2.0"
 intellijPlatform {
     pluginConfiguration {
         changeNotes = """
-            <b>0.2.0</b>
-            <ul><li>Your new feature here</li></ul>
             <b>0.1.0</b>
             <ul>
-              <li>Streaming chat panel with real-time token output</li>
-              <li>Session management (create, switch, resume)</li>
-              <li>IDE context injection</li>
-              <li>File edit diff viewer and auto-apply mode</li>
-              <li>Send Selection shortcut</li>
-              <li>Connection status bar widget</li>
-              <li>Dark and light themes</li>
+              <li>Streaming chat panel with real-time token output and full Markdown rendering</li>
+              <li>Thinking / reasoning block support (collapsible)</li>
+              <li>Tool call cards with collapsible inputs and outputs</li>
+              <li>Mode selector: Plan &amp; Execute, Execute, Team Coding</li>
+              <li>Default mode applied from settings on every connect</li>
+              <li>Model selector with live model list from server</li>
+              <li>@ file mention picker — inline workspace file autocomplete</li>
+              <li># skill picker — select skills directly from the chat input</li>
+              <li>! preset prompt templates — eight built-in prompt shortcuts</li>
+              <li>Session management: create, switch, resume, delete</li>
+              <li>Session history loading after switch</li>
+              <li>Skills panel with ON/OFF toggle</li>
+              <li>Checkpoint / rewind — undo all file edits from last agent turn</li>
+              <li>Context bar showing model context window occupancy</li>
+              <li>Session stats chips (turns, tokens, cost, tool calls, latency, TTFT)</li>
+              <li>Mini bar charts (tokens and duration per turn)</li>
+              <li>Server memory usage chip (live RSS / available)</li>
+              <li>Git status chip (branch + changed file count)</li>
+              <li>Git quick actions: Commit and Push (optional, enabled in settings)</li>
+              <li>IDE context injection: active file, cursor, selection, diagnostics, open tabs, project tree, git, project rules, @-mentioned files</li>
+              <li>Project rules auto-injection from .jiuwenswarm/instructions.md, .jiuwenswarm/rules.md, or AGENTS.md</li>
+              <li>Side-by-side diff window for agent file edits</li>
+              <li>Auto-apply mode (skip diff, undoable with Ctrl+Z)</li>
+              <li>Approval prompt before applying file edits</li>
+              <li>Agent shell commands routed to IDE terminal (JiuwenSwarm tab)</li>
+              <li>Alt+Enter quick fix: Fix with JiuwenSwarm</li>
+              <li>Send Selection action (Ctrl+Shift+E / ⌘⇧E)</li>
+              <li>New Session shortcut (Ctrl+Shift+J / ⌘⇧J)</li>
+              <li>Clickable file links in agent responses (open file at line)</li>
+              <li>Symbol navigation links (PascalCase / SCREAMING_SNAKE)</li>
+              <li>Connection status bar widget with token count</li>
+              <li>Dark / light / auto theme</li>
+              <li>Debug log panel</li>
+              <li>Image attachments (PNG, JPEG, WebP, GIF)</li>
+              <li>E2A streaming protocol support</li>
+              <li>Exponential backoff reconnect (1 s → 30 s)</li>
+              <li>Keep-alive ping frames (configurable interval)</li>
             </ul>
         """.trimIndent()
     }

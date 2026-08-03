@@ -1,125 +1,190 @@
 # JiuwenSwarm JetBrains Plugin — Usage Guide
 
-This is the complete usage reference for the JiuwenSwarm JetBrains plugin. It covers every panel, setting, action, and workflow in detail. For installation instructions see the [README](README.md).
+Complete reference for every setting, panel element, and workflow. For installation see [README.md](README.md).
 
 ---
 
 ## Configuration
 
-Open **Settings → Tools → JiuwenSwarm**:
+Open **Settings → Tools → JiuwenSwarm**.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| Server host | `localhost` | Hostname or IP of the JiuwenSwarm WebSocket server |
-| Server port | `19000` | Port the server is listening on — connects to `ws://host:port/ws` |
-| Channel ID | `ide` | Identifies this client in server logs and TraceHound traces |
-| Connect automatically on startup | on | Opens the WebSocket connection when the IDE starts |
-| **Default mode** | `code.plan` | Pre-selects the agent mode (Plan & Explore / Execute / Team Coding) used when a new session is created |
-| Auto-apply file edits (skip diff dialog) | off | When on, agent file edits are written immediately without a review window |
-| Run bash / shell commands in IDE terminal | on | Sends agent shell commands to a dedicated terminal tab; disable to run them silently |
-| **Load history when switching sessions** | on | Automatically fetches and displays past messages when you switch to an existing session |
-| **Enable checkpoint / rewind** | on | Enables file snapshots after each agent turn and shows the rewind bar; disable to reduce memory usage |
-| **Include project tree in context** | on | Appends a 2-level directory listing of the project root to every outgoing message |
-| **Project tree max files** | `200` | Maximum number of file entries included in the project tree (range: 10–2000) |
+| Server host | `127.0.0.1` | Hostname or IP of the JiuwenSwarm WebSocket server |
+| Server port | `19000` | Port — connects to `ws://host:port/ws` |
+| Channel ID | `ide` | Client identifier shown in server logs and traces |
+| Connect on startup | on | Open the WebSocket when the IDE starts |
+| **Default mode** | `code.plan` | Mode applied when a new session is created (Plan & Execute / Execute / Team Coding). Applied to the UI on every connection and can be overridden per-session by the mode selector. |
+| Auto-apply file edits | off | Apply agent file edits immediately without opening the diff review window |
+| Require approval before edits | off | Show a confirmation prompt before applying any agent file edit |
+| Run commands in IDE terminal | on | Route agent shell commands to a dedicated JiuwenSwarm terminal tab |
+| Keep-alive ping | on | Send periodic WebSocket ping frames to prevent server-side timeout |
+| Keep-alive interval | 30 s | Seconds between pings (5–300) |
+| Include project tree | on | Prepend a 2-level directory listing of the project root to every message |
+| Project tree max files | 200 | Maximum file entries in the tree listing (10–2000) |
+| Load history on session switch | on | Fetch and display past messages after switching to an existing session |
+| **Enable checkpoint / rewind** | on | Snapshot files before agent edits; show the rewind bar at the end of each turn |
+| **Git quick actions** | off | Show Commit and Push buttons below the message list |
 
-Settings are stored per-IDE-installation in `jiuwenswarm.xml` inside the IDE config directory and persist across restarts.
+Settings are stored in `jiuwenswarm.xml` in the IDE config directory and persist across restarts.
 
 ---
 
 ## Opening the Panel
 
-Click the **JiuwenSwarm** tool window button in the right sidebar. The panel opens as a docked tool window and can be moved, resized, or floated like any other IDE tool window.
+Click **JiuwenSwarm** in the right sidebar tool window. The panel opens as a docked JCEF (embedded Chromium) tool window and can be resized, moved, or floated like any other tool window.
 
-On first connect a session is created automatically. The panel header shows the session title and the live connection state.
+A session is created automatically on first connect. The header shows the session title and live connection state.
 
 ---
 
-## The Chat Panel
-
-The chat panel runs inside JCEF (an embedded Chromium browser). Here is a complete tour of every element.
-
-### Header bar
+## Header Bar
 
 ```
-● JiuwenSwarm  [New] [⚙]
+● Session title                    [New] [⚙]
 ```
 
 | Element | Description |
 |---------|-------------|
-| Status dot | Coloured indicator — green = connected, spinning = connecting, orange = reconnecting, red = disconnected |
-| Session title | Name of the active session; updates when a session is loaded or switched |
-| **New** button | Starts a fresh session: disconnects, reconnects, and clears the message list |
-| **⚙** menu | Opens the settings dropdown: Sessions, Skills, Theme, Debug log |
+| Status dot | Green = connected; spinning = connecting; orange = reconnecting; red = disconnected. Click to reconnect when disconnected. |
+| Session title | Name of the active session |
+| **New** button | Start a fresh session: reconnects the WebSocket and clears the message list |
+| **⚙** menu | Sessions, Skills, Theme (Auto/Dark/Light), Debug log |
 
-### Mode selector
+---
 
-Located in the input bar at the bottom:
+## Mode Selector
 
-| Mode | Internal key | Description |
-|------|-------------|-------------|
-| **Plan & Explore** | `code.plan` | Explore files, design a plan, wait for your approval — no edits yet. Best for non-trivial tasks. |
-| **Execute** | `code.normal` | Edit files, run commands, verify and deliver results directly. Good for quick changes and clear tasks. |
-| **Team Coding** | `code.team` | Multi-agent collaboration: a leader assigns specialists in parallel. Best for large, decomposable tasks. |
+The mode pill in the bottom input bar controls how the agent works:
 
-Click the mode button to open the dropdown and switch. If the active session already has messages you will be asked to confirm because switching mode creates a new session.
+| Mode | Key | Description |
+|------|-----|-------------|
+| **Plan & Execute** | `code.plan` | Agent reads files and designs a plan, then waits for you to approve before making any edits. Best for non-trivial or risky changes. |
+| **Execute** | `code.normal` | Agent edits files and runs commands without a planning phase. Best for clear, contained tasks. |
+| **Team Coding** | `code.team` | A leader agent breaks the task into parallel sub-tasks and assigns them to specialist agents simultaneously. Best for large decomposable work. |
 
-### Message list
+Click the mode pill to open the dropdown. If the current session already has messages, switching mode asks for confirmation and starts a new session. The default mode applied at startup comes from **Settings → Default mode**.
 
-Responses stream token-by-token. Each turn shows:
+---
 
-- **Your message** — right-aligned, darker background.
-- **Agent response** — full markdown: headers, bold, italic, code blocks with syntax highlighting, tables, lists.
-- **Reasoning block** — when the model uses extended thinking, a collapsible "Thinking…" section appears above the response text. Click the arrow to expand or collapse.
-- **Tool call cards** — every tool the agent invokes is shown inline:
-  - Icon and tool name (e.g. `📝 str_replace_editor`, `💻 bash`, `🔍 web_search`, `🔧 mcp_tool`)
-  - Live status indicator (running spinner → done checkmark or error)
-  - Collapsible inputs (the parameters sent to the tool)
-  - Collapsible output (the result returned by the tool)
-- **Token usage** — after each completed turn, a small counter in the bottom-right of the input bar shows the token count for that exchange (e.g. `1,234 tok`). The running total is also shown directly in the status bar widget.
-
-### Input bar
+## Chat Input
 
 ```
-[+] [mode ▾]  [write your message here…]  [→ Send]
+[+]  [mode ▾]  @ files · # skills · ! prompts — Enter to send · Shift+Enter for new line     [↑]
 ```
 
 | Element | Description |
 |---------|-------------|
-| **+** (attach) | Opens a file picker to attach one or more images (PNG, JPEG, WebP, GIF; up to 10 MB each). Thumbnail previews appear above the input. Click ✕ on a thumbnail to remove it. Images are base64-encoded and sent with the message. |
-| Mode pill | Quick-access mode switcher (same choices as described above) |
-| Textarea | Type your message. Grows vertically as you type. **Enter** sends; **Shift+Enter** inserts a newline. |
-| Send button | Submits the message. Disabled while a response is streaming. |
+| **+** | Opens a file picker to attach images (PNG, JPEG, WebP, GIF; up to 10 MB each). Previews appear above the input; click **✕** to remove. Images are base64-encoded and sent with the message. |
+| Mode pill | Quick mode switcher |
+| Textarea | Grows vertically as you type. **Enter** sends; **Shift+Enter** inserts a newline. |
+| Send / Stop button | Submits the message while idle. Becomes a Stop button while the agent is streaming — click to interrupt. |
+
+### Inline pickers
+
+Three characters trigger autocomplete dropdowns that appear above the input:
+
+**`@` — file mention**
+
+Type `@` followed by part of a filename to search workspace files. Selecting a file inserts `@relative/path/to/file` into the message. When sent, the plugin reads the file and includes its full contents in the context under a fenced code block.
+
+**`#` — skill picker**
+
+Type `#` to see all registered skills. Continue typing to filter by name. Selecting a skill inserts `#skill-name` into the message. Skills listed here are the same ones shown in the Skills overlay.
+
+**`!` — preset prompts**
+
+Type `!` to see eight built-in prompt templates:
+
+| Label | Template |
+|-------|---------|
+| Explain | Explain what this code does and how it works. |
+| Fix bug | Find and fix the bug in this code. Explain what caused it. |
+| Write tests | Write unit tests for this code. Cover edge cases. |
+| Refactor | Refactor this code to be cleaner and more maintainable. |
+| Optimize | Optimize this code for performance. Explain the changes. |
+| Document | Add clear documentation and comments to this code. |
+| Review | Review this code for bugs, security issues, and improvements. |
+| Implement | Implement the following feature: |
+
+Continue typing to filter the list. Selecting a template replaces `!query` with the full prompt text.
+
+For all three pickers: **Arrow keys** navigate, **Enter** or **Tab** selects, **Escape** dismisses.
+
+---
+
+## Message List
+
+Each completed turn consists of:
+
+- **Your message** — right-aligned bubble.
+- **Thinking block** — when the model uses extended reasoning, a collapsible **Thinking…** section appears before the response. Click the arrow to expand or collapse.
+- **Agent response** — full Markdown rendering: headings, bold/italic, syntax-highlighted code blocks, tables, lists.
+- **Tool call cards** — every tool the agent invokes appears as an inline card with:
+  - Tool icon and name (`📝 str_replace_editor`, `💻 bash`, `🔍 web_search`, `🔧 mcp_tool`, etc.)
+  - Live spinner → checkmark or ✕ on completion
+  - Collapsible **Inputs** section (parameters sent to the tool)
+  - Collapsible **Output** section (result returned by the tool)
+
+---
+
+## Stats Bar and Metrics
+
+Below the message list, a stats bar displays session-level metrics that update after each turn:
+
+- **Turns** — total completed turns in the session
+- **Tokens** — cumulative token count (input + output)
+- **Cost** — estimated USD cost (shown when the server reports pricing)
+- **Tool calls** — total tool invocations; click the chip to see a per-tool breakdown
+- **Avg latency** — mean response time across turns
+- **TTFT** — mean time-to-first-token
+
+Click the bar chart icon on the right to toggle **mini charts** — bar graphs showing tokens and duration per turn. Click any bar to view that turn's details.
+
+Below the stats bar, a **context bar** shows how full the active model's context window is (0–100%). When the model reports context occupancy above 80%, the bar turns orange; above 95%, red.
+
+The **server memory** chip shows live JiuwenSwarm server RAM usage (RSS / available), polled every 10 seconds.
 
 ---
 
 ## IDE Context Injection
 
-Every message you send automatically has a structured context block prepended. The agent sees it as part of your message and uses it to understand what you are looking at — no copy-pasting required.
+Every message has a structured context block prepended before being sent. The agent sees it as part of your message — no manual copy-pasting required.
 
 ### What is injected
 
-| Field | How it is collected | Example |
-|-------|---------------------|---------|
-| Active file path and language | `FileEditorManager` + `FileType` | `Active file: /src/api/handler.py  (Python)` |
-| Cursor line number | `Editor.caretModel` | `Cursor line: 87` |
-| Selected code | `Editor.selectionModel` | Fenced code block of the current selection |
-| Editor diagnostics | Document markup model (error-stripe highlighters) | Up to 10 current errors and warnings from the editor gutter |
-| Other open tabs | `FileEditorManager.openFiles` | Paths of up to 10 other files open in the editor |
-| Project tree structure | `LocalFileSystem` + `VirtualFile` traversal | 2-level directory listing of the project root; skips `node_modules`, `build`, `.git`, `target`, etc. |
-| Git status | `git` subprocess | `Git: branch=feature/auth, 3 uncommitted changes` |
+| Field | Source |
+|-------|--------|
+| Active file path and language | `FileEditorManager` + `FileType` |
+| Cursor line | `Editor.caretModel` |
+| Selected code | `Editor.selectionModel` (if non-empty) |
+| Diagnostics (up to 10) | Document markup model (error-stripe highlighters) |
+| Other open tabs (up to 10) | `FileEditorManager.openFiles` |
+| Project tree (2-level) | `LocalFileSystem` traversal; skips `.git`, `build`, `node_modules`, `target`, `.venv`, etc. |
+| Git branch + change count | `git rev-parse` + `git status --porcelain` subprocess |
+| Project rules | First non-empty file found: `.jiuwenswarm/instructions.md`, `.jiuwenswarm/rules.md`, `AGENTS.md` |
+| @-mentioned files | Full file content for each `@path` typed in the message |
 
-The block is assembled at send time. If there is nothing useful (no editor open, no git repo, no selection), the message is sent without a context block.
+### Project rules
+
+Create a file at the project root to inject standing instructions into every message:
+
+```
+.jiuwenswarm/instructions.md   ← checked first
+.jiuwenswarm/rules.md          ← checked second
+AGENTS.md                      ← checked third
+```
+
+Use it to define coding style, forbidden patterns, preferred libraries, or any project-specific context the agent should always know.
 
 ### Controlling what is injected
 
-Open **Settings → Tools → JiuwenSwarm** to adjust context injection:
-
 | Setting | Effect |
 |---------|--------|
-| **Include project tree in context** | Toggle the directory listing on or off |
-| **Project tree max files** | Limit the number of entries listed (10–2000); useful for large mono-repos where the full listing would be too verbose |
+| **Include project tree** | Toggle the directory listing on or off |
+| **Project tree max files** | Limit entries (10–2000) for large mono-repos |
 
-### Example injected block
+### Example context block
 
 ````
 <!-- IDE Context -->
@@ -137,9 +202,8 @@ Diagnostics (2):
   • Variable 'result' is not used before return (line 87)
   • blocking_call is deprecated
 
-Other open files (3):
+Other open files (2):
   /Users/mishka/project/src/api/router.py
-  /Users/mishka/project/src/models/request.py
   /Users/mishka/project/tests/test_handler.py
 
 Project structure:
@@ -148,9 +212,11 @@ src/
   models/
 tests/
 pyproject.toml
-README.md
 
 Git: branch=feature/async-refactor, 3 uncommitted changes
+
+Project rules:
+Always use async/await. No blocking calls. Follow PEP 8.
 <!-- End IDE Context -->
 ````
 
@@ -158,317 +224,255 @@ Git: branch=feature/async-refactor, 3 uncommitted changes
 
 ## Clickable File Links
 
-When the agent mentions a file path in its response, the plugin turns it into a clickable link. Clicking it opens the file in the editor and jumps to the referenced line.
+File paths in agent responses become clickable links. Clicking opens the file in the editor at the referenced line.
 
-### What gets linkified
+| Pattern | Example | Effect |
+|---------|---------|--------|
+| Backtick path with directory | `` `src/api/handler.py` `` | Opens file at line 1 |
+| Backtick path with line | `` `src/api/handler.py:42` `` | Opens file at line 42 |
+| Bare `path/to/file.ext:N` | `src/auth/router.py:87` | Opens file at line 87 |
 
-| Pattern | Example | Behaviour |
-|---------|---------|-----------|
-| Backtick path with directory | `` `src/api/handler.py` `` | Opens file; goes to line 1 |
-| Backtick path with line number | `` `src/api/handler.py:42` `` | Opens file; goes to line 42 |
-| Bare `path/to/file.ext:N` | `src/auth/router.py:87` | Opens file; goes to line 87 |
-
-### What does NOT get linkified
-
-- Plain variable names in backticks (`` `someVar` ``, `` `myFunc` ``) — no path separator and no `:N` suffix.
-- Paths inside fenced code blocks (``` ``` ``` sections) — these are rendered verbatim.
-- URLs — the colon in `http://` is not followed by a plain integer.
-
-### How it works
-
-The plugin intercepts the rendered agent text and runs two regex passes before rendering:
-
-1. Backtick-wrapped paths that contain a `/` or end with `:N` are wrapped in a clickable `<a>` element around the existing `<code>` span.
-2. Bare `path/to/file:N` references outside backticks and HTML tags are wrapped in a clickable `<a>` element.
-
-Clicking either type sends an `open_file` message from the webview to the IDE, which uses `OpenFileDescriptor` to navigate to the file and line.
+Plain identifiers in backticks (no `/` and no `:N`) are not linkified as files. Paths inside fenced code blocks are rendered verbatim.
 
 ---
 
 ## Symbol Navigation
 
-When the agent mentions a code symbol (class name, constant, enum value, or other identifier) in its response, the plugin turns it into a clickable purple link. Clicking it searches the project for the symbol and jumps to the first match.
-
-### What gets linkified
-
-| Pattern | Example | Behaviour |
-|---------|---------|-----------|
-| PascalCase identifier in backticks | `` `MyClass` `` | Searches project for `MyClass`; jumps to first occurrence |
-| SCREAMING_SNAKE_CASE identifier | `` `MAX_SIZE` `` | Searches project for `MAX_SIZE`; jumps to first occurrence |
-
-### What does NOT get linkified
-
-- File paths (handled by file links above)
-- Common keywords like `TODO`, `FIXME`, `HTTP`, `JSON`, `API`, etc.
-- Identifiers shorter than 3 characters
-- camelCase or snake_case that starts with a lowercase letter
-
-### How it works
-
-The markdown renderer checks remaining backtick content after file-link extraction. If it looks like an uppercase identifier (≥3 chars, not in the keyword blocklist), it is wrapped in a `<a class="symbol-link">` element. Clicking sends a `navigate_symbol` message to the plugin, which uses `PsiSearchHelper` to find files containing the symbol and opens the first match.
+PascalCase (`` `MyClass` ``) and SCREAMING_SNAKE_CASE (`` `MAX_RETRIES` ``) identifiers in backticks appear as purple links. Clicking uses `PsiSearchHelper` to find the symbol in the project and opens the first match. Common acronyms (API, HTTP, JSON, TODO, etc.) are excluded.
 
 ---
 
-## Actions & Keyboard Shortcuts
+## Actions and Keyboard Shortcuts
 
-### Keyboard shortcuts
+| Action | Win / Linux | Mac |
+|--------|-------------|-----|
+| New session | `Ctrl+Shift+J` | `⌘⇧J` |
+| Send selection | `Ctrl+Shift+E` | `⌘⇧E` |
+| Fix with JiuwenSwarm | `Alt+Enter` | `⌥Enter` |
 
-| Action | Win / Linux | Mac | Notes |
-|--------|-------------|-----|-------|
-| **New session** | `Ctrl+Shift+J` | `⌘⇧J` | Always available |
-| **Send selection** | `Ctrl+Shift+E` | `⌘⇧E` | Available when text is selected |
+**New session** — opens the panel if not already visible, then reconnects the WebSocket to start a fresh session. The message list clears.
 
-**New session** (`Ctrl+Shift+J` / `⌘⇧J`):
-Opens the panel (creating it lazily if this is the first open), then reconnects the WebSocket to start a fresh session. The message list clears and the previous history is left on the server.
+**Send selection** — opens the panel and pre-fills the input with the selected code, labelled with the file name:
 
-**Send selection** (`Ctrl+Shift+E` / `⌘⇧E`):
-Opens the panel and pre-fills the input with the selected code labelled with the file name, for example:
+```
+[File: handler.py]
+```python
+def handle_request(req):
+    ...
+```
+```
 
-> `[File: handler.py]`
-> ` ```python`
-> `def handle_request(req):`
-> `    ...`
-> ` ``` `
+Add your question after the code and press Enter.
 
-Add your question after the code block and press Enter to send.
+**Right-click → Send Selection to JiuwenSwarm** — identical to `Ctrl+Shift+E`.
 
-### Editor right-click menu
+---
 
-Right-clicking anywhere in an editor appends **Send Selection to JiuwenSwarm** to the context menu. This is identical to `Ctrl+Shift+E`.
+## Alt+Enter Quick Fix
 
-### Alt+Enter quick-fix — "Fix with JiuwenSwarm"
+Place the cursor on any error or warning gutter marker and press **Alt+Enter**. **Fix with JiuwenSwarm** appears in the lightbulb menu.
 
-When the cursor is on or adjacent to an error or warning highlight, pressing **Alt+Enter** (the lightbulb menu) includes **Fix with JiuwenSwarm** in the list of available quick-fixes.
+What happens:
 
-What happens when you select it:
+1. The error tooltip text is read (HTML stripped).
+2. ±7 lines of surrounding code are captured.
+3. The panel opens and the input is pre-filled:
 
-1. The plugin reads the error tooltip text at the cursor (HTML formatting stripped).
-2. It captures the 15 lines of code surrounding the error (7 lines before, 7 after).
-3. The JiuwenSwarm panel opens.
-4. The input is pre-filled with a structured prompt containing the error message and the surrounding code:
+```
+Fix this error in handler.py:
 
-       Fix this error in handler.py:
+Error:
+Variable 'result' is not used before return
 
-       Error:
-       Variable 'result' is not used before return
+```python
+def handle_request(req):
+    result = blocking_call(req)
+    return result
+```
+```
 
-       ```python
-       def handle_request(req):
-           result = blocking_call(req)
-           return result
-       ```
-
-5. Press Enter. The agent analyses the error and proposes a fix.
-
-The quick-fix works for any language — Python, Kotlin, Java, TypeScript, Go, Rust, etc.
+Works for any language PyCharm supports — Python, Kotlin, Java, TypeScript, Go, Rust, and so on.
 
 ---
 
 ## File Edit Workflow
 
-When the agent calls a file-editing tool (`str_replace_editor`, `write_file`, or `create_file`), the plugin intercepts the call and handles it based on your settings.
+When the agent calls `str_replace_editor`, `write_file`, or `create_file`, the plugin intercepts it:
 
-### Supported tools
+### Default: diff review
 
-| Tool | Operation |
-|------|-----------|
-| `str_replace_editor` command=`str_replace` | Replaces a specific block of text in an existing file |
-| `str_replace_editor` command=`create` | Creates a new file with given content |
-| `write_file` | Overwrites an existing file or creates it if missing |
-| `create_file` | Creates a new file; parent directories are created automatically |
+A side-by-side diff window opens — **Current** (left) vs **Proposed** (right). Review the diff using IntelliJ's standard diff tools. Close the window to apply the change to the in-memory document. Save with `Ctrl+S` / `⌘S` or let the IDE auto-save.
 
-### Default: diff review window
+If the target text for a `str_replace` cannot be located, a balloon notification explains the problem.
 
-A **side-by-side diff window** opens titled **"JiuwenSwarm — Proposed Edit: filename"**:
+### Auto-apply
 
-- **Left** — current file content (labelled "Current")
-- **Right** — proposed content (labelled "Proposed")
+Enable **Auto-apply file edits** to skip the diff dialog. Changes are applied via `WriteCommandAction` and are undoable with `Ctrl+Z`. A balloon notification confirms each edit.
 
-Use IntelliJ's standard diff tools to review line-by-line. Close the diff window to apply the change to the in-memory document. Save normally (`Ctrl+S` / `⌘S`), or let the IDE auto-save.
+### Require approval
 
-If the text targeted by a `str_replace` cannot be located in the file, or the file is missing, a balloon notification in the top-right corner explains the problem.
+Enable **Require approval before edits** to show a confirmation prompt before any edit is applied or the diff dialog opens. Useful when you want to see every proposed change before committing.
 
-### Auto-apply mode
+---
 
-Enable **Auto-apply file edits** in **Settings → Tools → JiuwenSwarm** to skip the diff dialog entirely.
+## Terminal Integration
 
-- Changes are applied immediately via `WriteCommandAction` and are **undoable** with `Ctrl+Z` / `⌘Z`.
-- A balloon notification confirms each applied edit (e.g. "Applied edit to handler.py").
-- New files are written to disk with any missing parent directories created automatically.
+Agent shell commands (`bash`, `run_command`) are routed to a **JiuwenSwarm** terminal tab in the Terminal tool window. The tab is created on the first command and reused for all subsequent ones. The Terminal tool window comes to the front automatically.
 
-### Terminal integration
-
-When the agent runs a shell command (`bash` or `run_command`), the command is automatically sent to an IDE terminal tab named **"JiuwenSwarm"** so you can see live output, scroll back, and copy text.
-
-- The terminal tab is created on the first command and reused for all subsequent ones.
-- If you close the tab, a new one is created on the next command.
-- The Terminal tool window is brought to the front automatically when a command runs.
-- Disable this in **Settings → Tools → JiuwenSwarm → Run bash / shell commands in IDE terminal** if you prefer commands to run silently.
+Disable **Run commands in IDE terminal** in settings to run commands silently in a background process instead.
 
 ---
 
 ## Checkpoint / Rewind
 
-After every agent turn that edits one or more files, a rewind bar appears between the message list and the debug/input area:
+After any agent turn that edits files, the rewind bar appears below the message list:
 
 ```
 ⟲ Agent edited files this turn    [⟲ Undo changes]
 ```
 
-> **Note:** Rewind can be disabled entirely via **Settings → Tools → JiuwenSwarm → Enable checkpoint / rewind**. When disabled, no file snapshots are taken and the rewind bar never appears. This is useful if you want to reduce memory usage during long agent runs or if you rely solely on `Ctrl+Z` / `⌘Z` for undo.
-
 ### How it works
 
-Before the agent's first edit to a file in a given turn the plugin snapshots the current file content. At the end of the turn (`chat.final`) the snapshots are locked in and the rewind bar becomes active.
+Before the agent's first edit to a file in a given turn, the plugin snapshots that file's current content. At the end of the turn (`chat.final`) the snapshots are locked in. If no edits were made, the bar does not appear.
 
-### Using the rewind bar
+### Using rewind
 
-Click **⟲ Undo changes**. The plugin restores every snapshotted file to its pre-turn state. The restore runs as a `WriteCommandAction`, meaning it is itself **undoable** with `Ctrl+Z` / `⌘Z` if you change your mind.
+Click **⟲ Undo changes**. The plugin restores every snapshotted file using `WriteCommandAction`. Files that did not exist before the turn are deleted. The restore is itself undoable with `Ctrl+Z`.
 
-After a successful rewind the bar disappears and a status line appears in the message list, for example:
+A status line confirms the result:
 
 ```
 ⟲ Rewound 3 file(s)
 ```
 
-### Scope and limits
+### Limits
 
 | Scenario | Behaviour |
 |----------|-----------|
-| Agent created a new file | The file is deleted on rewind |
-| Agent edited an existing file | The file is restored to the content before the first edit in the turn |
-| You send another message | The bar disappears; snapshots are discarded — only the most recent completed turn can be rewound |
-| New session | Rewind bar is cleared |
-| Rewind partially fails | Bar disappears; status line reports how many files were restored and how many failed |
+| Agent created a file | File is deleted on rewind |
+| Agent edited a file | File is restored to pre-turn state |
+| You send another message | Bar disappears; snapshots are discarded |
+| New session | Bar cleared |
+
+Disable rewind entirely via **Enable checkpoint / rewind** in settings (reduces memory usage during long agent runs).
+
+---
+
+## Git Quick Actions
+
+Enable **Git quick actions** in settings to show a toolbar below the message list with two buttons:
+
+**Commit** — opens a dialog pre-filled with your last sent message as the commit message (prefixed with "AI: "). Clicking OK runs `git add -u && git commit -m <message>`. The git status chip updates after commit.
+
+**Push** — runs `git push` in the background. Status updates on completion.
+
+The git status chip in the stats bar shows the current branch and the number of uncommitted files. It updates automatically after each agent turn.
 
 ---
 
 ## Sessions
 
-Sessions maintain separate conversation histories. You can run several parallel conversations (one per project, feature, or topic) and resume any of them at any time.
+### Opening the overlay
 
-### Opening the Sessions panel
-
-Click **⚙ → Sessions** in the header dropdown. The Sessions overlay slides into the main panel area, replacing the message list.
+Click **⚙ → Sessions** in the header. The overlay slides over the message list.
 
 ### What the list shows
 
-Each session item displays:
-- **Session title** (or the raw session ID if no title has been set by the server)
-- **Time of last message** (relative: "just now", "3m ago", "2h ago", "5d ago")
-- **Message count**
+Each row shows:
+- Session title (or raw session ID if untitled)
+- Time of last message (relative: "just now", "3m ago", "2h ago", "5d ago")
+- Message count
 
-### Switching sessions
+### Switching
 
-Click a session item to switch. The overlay closes, the header title updates, and new messages are routed to the chosen session.
+Click a row to switch. With **Load history on session switch** on, past messages stream in automatically. A **"Loading history…"** indicator appears until the stream is complete.
 
-#### Session history
+### Creating
 
-When **Load history when switching sessions** is enabled (the default), the plugin automatically fetches the session's past messages after switching. A **"Loading history…"** indicator appears in the message list while the history streams in over the WebSocket. Once loading is complete the indicator disappears and the full conversation is visible.
+Click **New** in the header or press `Ctrl+Shift+J` / `⌘⇧J`.
 
-To disable this behaviour — for example, if you only want to continue the conversation without replaying old messages — turn off **Load history when switching sessions** in **Settings → Tools → JiuwenSwarm**.
+### Deleting
 
-### Creating a new session
+Click **✕** on a non-active session row. The button turns red and the tooltip changes to "Click again to confirm." Click a second time within 2 seconds to confirm deletion. The active session cannot be deleted — switch to another session first.
 
-Click the **New** button in the header (or press `Ctrl+Shift+J` / `⌘⇧J`). This reconnects the WebSocket, which triggers automatic session creation on the server side.
+### Refreshing
 
-### Deleting a session
-
-Each non-active session row has a **✕** button on the right side of the title. Click it once — the button turns red and the tooltip changes to "Click again to confirm". Click it a second time within 2 seconds to permanently delete the session from the server. The row is removed from the list immediately.
-
-The currently active session cannot be deleted from the overlay. To delete it, click **New** to start a fresh session first, then delete the old one.
-
-### Refreshing the list
-
-Click the **↺** button in the Sessions overlay header to reload the list from the server. The list shows up to 20 recent sessions.
-
-### Closing the overlay
-
-Click **✕** in the overlay header. The message list for the current session becomes visible again.
+Click **↺** in the overlay header to reload the list. Up to 20 sessions are shown.
 
 ---
 
-## Skills Panel
+## Skills
 
-Skills are named slash-command shortcuts registered with your JiuwenSwarm instance. Examples: `/commit` to generate a commit message, `/review` to code-review a file, `/init` to bootstrap a new project.
+### Opening the overlay
 
-### Opening the Skills panel
-
-Click **⚙ → Skills** in the header dropdown. The Skills overlay slides into the main panel area.
+Click **⚙ → Skills** in the header.
 
 ### What the list shows
 
-Each skill item displays:
-- **Skill name** — the human-readable name
-- **Description** — a short explanation of what the skill does
-- **Trigger** — the slash command used to invoke it (e.g. `/commit`)
-- **ON / OFF toggle** — the current enabled state
+Each skill row shows:
+- Name and description
+- Trigger (the slash command used in-session, e.g. `/commit`)
+- ON/OFF toggle
 
-### Toggling a skill
+### Toggling
 
-Click the **ON** or **OFF** button on a skill item. The button changes immediately (teal = ON, muted grey = OFF) and a `skills.toggle` request is sent to the server to persist the change.
+Click ON or OFF. The change is sent immediately to the server via `skills.toggle`. Teal = enabled; muted grey = disabled.
 
-### Refreshing and errors
+### Picking a skill from the input
 
-Click **↺** to reload. If the server does not support the `skills.list` method an error message is shown with a Retry button — this is expected on older server versions.
+Type `#` in the chat textarea. A popup lists all loaded skills. Continue typing to filter. Select with Enter or Tab — the skill name is inserted at the cursor. Skills are loaded the first time `#` is typed; the list is cached for the session.
 
 ---
 
 ## Connection Status Bar Widget
 
-A coloured text widget in the IDE status bar (bottom of the window) shows the live WebSocket state:
+| Widget | Meaning |
+|--------|---------|
+| `⬤ JiuwenSwarm` (teal) | Connected |
+| `◌ JiuwenSwarm` (teal) | Connecting |
+| `↻ JiuwenSwarm` (yellow) | Reconnecting — exponential backoff: 1 s → 2 s → 4 s → … → 30 s max |
+| `○ JiuwenSwarm` (grey) | Disconnected — click to reconnect |
 
-| Widget text | Colour | Meaning |
-|-------------|--------|---------|
-| `⬤ JiuwenSwarm` | Teal | Connected and active |
-| `◌ JiuwenSwarm` | Teal | Connecting — waiting for server handshake |
-| `↻ JiuwenSwarm` | Yellow | Reconnecting — automatic exponential backoff: 1 s → 2 s → 4 s → 8 s → … → 30 s max |
-| `○ JiuwenSwarm` | Grey | Disconnected — **click the widget to reconnect** |
-
-Once tokens are used, the running total appears directly in the widget:
+Token total appears next to the label once tokens are consumed:
 
 ```
 ⬤ JiuwenSwarm · 42.3k
 ```
 
-Hovering shows a detailed tooltip:
-
-```
-JiuwenSwarm: Connected — session a1b2c3d4 | 42.3k tokens used
-```
-
-The count accumulates across all turns in the current IDE session and resets on reconnect or new session.
+Hover for a tooltip with session ID and full token count.
 
 ---
 
 ## Theme
 
-The chat panel follows the IDE theme automatically by default. Override it at any time:
-
 | Option | Description |
 |--------|-------------|
-| **⚙ → ◐ Auto** | Matches the IDE's current Light or Dark theme (default) |
-| **⚙ → 🌙 Dark** | Forces dark background regardless of IDE theme |
-| **⚙ → ☀ Light** | Forces light background regardless of IDE theme |
+| **⚙ → ◐ Auto** | Follows the IDE's light or dark theme (default) |
+| **⚙ → 🌙 Dark** | Forces dark regardless of IDE theme |
+| **⚙ → ☀ Light** | Forces light regardless of IDE theme |
 
-The theme preference is stored in browser local storage and survives panel restarts.
+Stored in browser local storage inside JCEF; survives panel restarts.
+
+---
+
+## Model Selector
+
+When connected to a server that has multiple models configured, a model dropdown appears in the input bar. Click to open it and switch models. The active model is shown in the mini model chip. Model availability depends on the server configuration.
 
 ---
 
 ## Debug Log
 
-The debug log panel is hidden by default. Toggle it with **⚙ → Debug log**.
+Click **⚙ → Debug log** to open a scrollable log panel below the message list. It records:
 
-When enabled, a scrollable panel appears below the message list and records:
-
-- Every WebSocket message received from the server (raw JSON, with timestamp)
-- Every chat message sent (including context and media item counts)
-- Session switches, reconnects, and connection status changes
+- Every WebSocket frame received (raw JSON with timestamp)
+- Every message sent (content, context size, media item count)
+- Session switches, reconnects, connection state transitions
 - Action dispatches (list_sessions, list_skills, toggle_skill, etc.)
+- File edit tool calls (tool name and parameters)
+- Snapshot events (`SNAP →`) and rewind operations
 
-The panel keeps the most recent 500 lines. Toggle it off to hide it; the log clears on the next enable.
-
-This is most useful when something is not working as expected and you need to see what messages are being exchanged with the server.
+The panel keeps the most recent 500 lines. Toggle off to hide; the log clears on the next enable.
 
 ---
 
@@ -476,28 +480,20 @@ This is most useful when something is not working as expected and you need to se
 
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
-| Panel shows a blank white or grey box | JCEF not enabled | Enable `ide.browser.jcef.enabled` in **Help → Find Action → Registry**, then restart the IDE |
-| "Could not load JiuwenSwarm chat UI" error message | `chat.html` not bundled | Reinstall from the latest ZIP; rebuild from source if developing locally |
-| Status bar shows `○` (disconnected) | Server not running or host/port wrong | Start JiuwenSwarm; verify **Settings → Tools → JiuwenSwarm**; click the status widget to reconnect |
-| Messages send but no response streams in | Server unreachable after handshake | Enable the Debug log and look for error frames; check server logs |
-| Image preview shows a broken icon | JCEF content-security-policy issue (pre-0.2.0 bug) | Update the plugin to the latest version |
-| Alt+Enter does not show "Fix with JiuwenSwarm" | No error or warning highlight at cursor | Move the cursor onto a line with a red or yellow gutter marker |
-| Diff window opens but file does not change | Close the diff window to apply | The change is applied when the diff window is closed, not immediately on open |
-| Session list stays on "Loading…" | Server timeout (5 s) or method not supported | Click **↺ Retry**; check server logs for `session.list` errors |
-| Skills list shows an error | Server does not support `skills.list` | Expected on older server versions; upgrade the server to enable the skills panel |
-| IDE log filled with `[JiuwenSwarmDebug]` lines | Debug mode was left on | Open the panel and click **⚙ → Debug log** to toggle it off |
-| Rewind bar does not appear after agent edits a file | Auto-apply may be off so edits were not applied, `rewindEnabled` is off, or the server did not send `chat.final` | Check **Enable checkpoint / rewind** in settings; enable the Debug log to check for `SNAP →` lines; verify the turn completed normally |
-| Rewind restores 0 files | Snapshots were cleared by a subsequent message before rewind was clicked | The rewind window only lasts for the most recently completed turn |
-| Session history does not appear after switching sessions | **Load history when switching sessions** is off, or the server does not support `history.get` | Verify the setting is enabled in **Settings → Tools → JiuwenSwarm**; enable the Debug log and check for `history.get` errors; upgrade the server if needed |
-| "Loading history…" indicator never disappears | Server began streaming history but did not send `history.done` | Reconnect via the status bar widget; check server logs for the affected session |
-| Session ✕ button is not visible | The session is the currently active one | Active sessions cannot be deleted; switch to another session first |
-| "Project structure" not appearing in context | No project root detected (`project.basePath` is null) | This can happen in the default project or when no project folder is open |
+| Panel shows blank | JCEF not enabled | Enable `ide.browser.jcef.enabled` in **Help → Find Action → Registry**; restart |
+| Status bar shows `○` | Server not running or wrong host/port | Start JiuwenSwarm; verify settings; click status widget to reconnect |
+| Messages send, no response | Server unreachable after handshake | Enable Debug log; look for error frames; check server logs |
+| Diff window opens but file unchanged | Close the window to apply | The change applies when the diff window is closed, not immediately on open |
+| Rewind bar missing | Rewind disabled, or turn ended without file edits | Check **Enable checkpoint / rewind** in settings; enable Debug log and look for `SNAP →` lines |
+| Rewind restores 0 files | Snapshots cleared by a subsequent message | Click Undo immediately after the turn; snapshots survive until the next send |
+| Alt+Enter does not show the option | No error at cursor | Move cursor onto a line with a red or yellow gutter marker |
+| Skills popup shows nothing | Server has no skills, or `list_skills` failed | Check server logs; the popup is empty if the server returns an empty list |
+| Session history does not load | **Load history on session switch** is off, or server does not support history | Enable the setting; check server logs for `history.get` errors |
+| "Loading history…" never disappears | Server did not send `history.done` | Reconnect via the status bar; check server logs |
+| Session ✕ button missing | Session is active | Switch to another session before deleting |
+| Project structure not in context | No project root detected | Open a project folder; `project.basePath` must be non-null |
+| Git quick actions not visible | **Git quick actions** is off | Enable in Settings → Tools → JiuwenSwarm |
 
 ### Reading the IDE log
 
-The plugin writes all warnings and errors to the standard IDE log:
-
-- **Windows / Linux**: **Help → Show Log in Explorer**
-- **macOS**: **Help → Show Log in Finder**
-
-Search the log for `JiuwenSwarm` to filter plugin-related entries.
+**Help → Show Log in Explorer** (Windows/Linux) or **Help → Show Log in Finder** (macOS). Search for `JiuwenSwarm`.

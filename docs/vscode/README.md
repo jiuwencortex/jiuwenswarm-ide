@@ -1,27 +1,27 @@
 # JiuwenSwarm for VS Code
 
-The JiuwenSwarm extension brings an autonomous multi-agent AI chat panel directly into Visual Studio Code.
+The JiuwenSwarm extension embeds an autonomous multi-agent AI coding assistant directly into Visual Studio Code. The panel runs in the Activity Bar sidebar, streams responses token-by-token, and integrates with the editor through file edits, terminal integration, file-link navigation, and the lightbulb quick-fix menu.
 
 ## Prerequisites
 
 JiuwenSwarm must be running locally before the extension connects:
 
 ```bash
-cd jiuwenswarm && jiuwenswarm-start
-# WebSocket server at ws://localhost:19000/ws
+jiuwenswarm-start
+# WebSocket server opens at ws://localhost:19000/ws
 ```
 
 ## Installation
 
 ### From VSIX
 
-1. Download [`jiuwenswarm-0.1.0.vsix`](https://github.com/jiuwencortex/jiuwenswarm-ide/releases/download/0.1.0/jiuwenswarm-0.1.0.vsix).
+1. Download `jiuwenswarm-0.1.0.vsix` from the [releases page](https://github.com/jiuwencortex/jiuwenswarm-ide/releases).
 2. In VS Code, go to **Extensions → ⋯ → Install from VSIX** and select the file.
 3. The JiuwenSwarm icon appears in the Activity Bar.
 
 ### From Marketplace
 
-Search "JiuwenSwarm" in **Extensions → Marketplace** and click Install.
+Search **JiuwenSwarm** in **Extensions → Marketplace** and click Install.
 
 ## Configuration
 
@@ -29,69 +29,132 @@ Open **Settings → Extensions → JiuwenSwarm**:
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `jiuwenswarm.host` | `localhost` | JiuwenSwarm server hostname |
-| `jiuwenswarm.port` | `19000` | WebSocket port |
-| `jiuwenswarm.defaultMode` | `code.plan` | Default agent mode: `code.plan` / `code.normal` / `code.team` |
-| `jiuwenswarm.channelId` | `ide` | Channel ID reported to the server |
-| `jiuwenswarm.autoConnect` | `true` | Connect on startup |
-| `jiuwenswarm.approveEdits` | `false` | Show approval prompt before applying agent file edits |
+| `jiuwenswarm.host` | `localhost` | Hostname or IP of the JiuwenSwarm server |
+| `jiuwenswarm.port` | `19000` | WebSocket port — connects to `ws://host:port/ws` |
+| `jiuwenswarm.channelId` | `ide` | Client identifier shown in server logs |
+| `jiuwenswarm.autoConnect` | `true` | Open the WebSocket when VS Code starts |
+| `jiuwenswarm.defaultMode` | `code.plan` | Mode applied to new sessions (`code.plan` / `code.normal` / `code.team`) |
+| `jiuwenswarm.approveEdits` | `false` | Require explicit approval before applying any agent file edit |
+| `jiuwenswarm.loadHistoryOnSwitch` | `true` | Fetch and display past messages when switching to an existing session |
+| `jiuwenswarm.rewindEnabled` | `true` | Snapshot files before agent edits; show the rewind bar after each turn |
+| `jiuwenswarm.projectTree.enabled` | `true` | Prepend a directory listing of the workspace root to every message |
+| `jiuwenswarm.projectTree.maxFiles` | `200` | Max entries in the project tree listing (10–2000) |
 
-## Usage
+## Keyboard Shortcuts
 
-| Action | Win/Linux | Mac | Description |
-|--------|-----------|-----|-------------|
-| Open chat panel | `Ctrl+Shift+J` | `⌘⇧J` | Opens the JiuwenSwarm sidebar |
-| Send selection | `Ctrl+Shift+E` | `⌘⇧E` | Sends selected code to the chat input |
-| New session | — | — | Use the command palette: `JiuwenSwarm: New Session` |
-| Reconnect | — | — | Use the command palette: `JiuwenSwarm: Reconnect` |
+| Action | Win / Linux | Mac |
+|--------|-------------|-----|
+| Open chat panel | `Ctrl+Shift+J` | `⌘⇧J` |
+| Send selection to chat | `Ctrl+Shift+E` | `⌘⇧E` |
+| Fix with JiuwenSwarm | `Ctrl+.` | `⌘.` |
 
-1. Start JiuwenSwarm locally.
-2. Click the JiuwenSwarm icon in the Activity Bar or press **Ctrl+Shift+J**.
-3. A session is created automatically on first connect.
-4. Type a message, or select code and press **Ctrl+Shift+E**, then add your question and send.
+## What the Panel Contains
 
-## What You See
+### Chat input
 
-The chat panel renders in the sidebar using a VS Code webview. It supports:
+Type your message in the textarea at the bottom. Three typing shortcuts trigger inline pickers:
 
-- Markdown rendering with syntax-highlighted code blocks
-- Collapsible tool call cards showing every agent action with live status, inputs, and outputs
-- A mode selector dropdown (`code.plan`, `code.normal`, `code.team`)
-- A session dropdown to create, switch, or delete conversations
-- A skills panel to view and toggle registered skills
-- Clickable file links in agent responses — click to open the file at the referenced line
-- A rewind bar that appears after the agent edits files — click to undo all changes from that turn
-- An attach button to include the current file as context
-- A dark/light theme toggle
+| Trigger | What appears |
+|---------|-------------|
+| `@` | File autocomplete — picks from workspace files and injects the full file content |
+| `#` | Skill picker — lists registered skills and inserts the skill name |
+| `!` | Preset prompts — eight built-in templates (Explain, Fix bug, Write tests, Refactor, Optimize, Document, Review, Implement) |
 
-## File Edits
+Use **Arrow keys** to navigate, **Enter** or **Tab** to select, **Escape** to dismiss. **Enter** sends the message; **Shift+Enter** inserts a newline.
 
-When the agent proposes a file edit, the extension applies it directly to your workspace. A notification toast confirms each applied change.
+Attach images with the **+** button (PNG, JPEG, WebP, GIF; up to 10 MB each).
 
-Enable **Approve edits** in settings to require your confirmation before every file change. When enabled, a prompt appears with **Approve** and **Reject** buttons for each proposed edit.
+### Mode selector
 
-## Checkpoint / Rewind
+| Mode | Key | Behaviour |
+|------|-----|-----------|
+| Plan & Execute | `code.plan` | Agent explores and proposes a plan; waits for your confirmation before editing files |
+| Execute | `code.normal` | Agent edits files and runs commands directly |
+| Team Coding | `code.team` | Leader agent assigns sub-agents in parallel for large tasks |
 
-After each agent turn that modifies files, a rewind bar appears at the bottom of the chat panel. Click **Undo Changes** to restore all files to their state before that turn. Files that did not exist before the turn are deleted on rewind.
+### Message list
 
-Rewind is cleared when you send a new message or start a new session.
+- Responses stream token-by-token with full Markdown rendering (code blocks, tables, lists, headings).
+- **Thinking blocks** — extended model reasoning appears in a collapsible section above the response.
+- **Tool call cards** — every tool call is shown inline with a live status indicator, collapsible inputs, and collapsible output.
+- **File links** — file paths in agent responses are clickable and open the file at the referenced line.
+- **Symbol links** — PascalCase and SCREAMING_SNAKE_CASE identifiers in backticks are purple links that jump to the symbol in the workspace.
 
-## Status Bar
+### Stats and metrics
 
-The status bar widget in the bottom-right shows:
+- **Context bar** — a thin bar below the input shows how full the model's context window is.
+- **Token counter** — per-turn token count next to the send button; session total in the VS Code status bar.
+- **Session stats chips** — total turns, tokens, cost, tool calls, average latency, and a tools breakdown chip.
+- **Mini charts** — collapsible bar charts showing tokens and duration per turn.
 
-| State | Icon | Behaviour |
-|-------|------|-----------|
-| Connected | `$(check)` | Click to open chat |
-| Connecting | `$(loading~spin)` | — |
-| Reconnecting | `$(sync~spin)` | Auto-retry with exponential back-off |
-| Disconnected | `$(circle-slash)` | Click to force reconnect |
+### Context automatically sent with every message
 
-When token usage metadata is received from the server, the token count is displayed next to the status label.
+| Field | Source |
+|-------|--------|
+| Active file path and language | `vscode.window.activeTextEditor` |
+| Cursor line | `editor.selection.active.line` |
+| Selected code | `editor.document.getText(editor.selection)` |
+| Editor diagnostics (up to 10) | `vscode.languages.getDiagnostics()` |
+| Other open tabs (up to 10) | `vscode.window.tabGroups.all` |
+| Project tree (2-level) | Workspace folder traversal |
+| Git branch and change count | `git` subprocess |
+| Project rules | `.jiuwenswarm/instructions.md`, `.jiuwenswarm/rules.md`, or `AGENTS.md` |
+| @-mentioned files | Full file contents for each `@path` typed in the message |
+
+### File edit workflow
+
+When the agent calls a file-editing tool (`str_replace_editor`, `write_file`, `create_file`), the extension applies the edit to your workspace via Node.js `fs`. A notification toast confirms each applied change.
+
+Enable **Approve edits** in settings to show an **Approve** / **Reject** prompt before every file change.
+
+### Terminal integration
+
+Agent shell commands (`bash`, `run_command`) run in a dedicated **JiuwenSwarm** terminal so output is visible and scrollable. The terminal is created on the first command and reused.
+
+### Checkpoint / rewind
+
+After any turn that edits files, a rewind bar appears below the message list. Click **Undo Changes** to restore all modified files to their state before that turn. Files created during the turn are deleted on rewind. Snapshots clear when you send the next message.
+
+### Sessions
+
+Click **⚙ → Sessions** to open the session list. Switch, create (New button / `Ctrl+Shift+J`), or delete sessions. With **Load history on session switch** on, past messages stream in automatically after switching.
+
+### Skills
+
+Click **⚙ → Skills** to view and toggle registered skills. Each skill shows its name, description, trigger, and ON/OFF toggle. Type `#` in the chat input to pick a skill without opening the overlay.
+
+## Code Action Quick Fix
+
+VS Code shows a lightbulb 💡 next to lines with errors or warnings. Click it (or press `Ctrl+.` / `⌘.`) and select **Fix with JiuwenSwarm**. The chat panel opens with the error message and ±7 lines of surrounding code pre-filled.
+
+## Send Selection
+
+Select code in any editor and press `Ctrl+Shift+E` / `⌘⇧E` (or right-click → **Send Selection to JiuwenSwarm**). The chat panel opens with the code pre-filled, labelled with the file name.
+
+## Connection Status Bar
+
+The VS Code status bar (bottom-right) shows live WebSocket state:
+
+| Icon | Meaning |
+|------|---------|
+| `$(check)` | Connected |
+| `$(loading~spin)` | Connecting |
+| `$(sync~spin)` (yellow) | Reconnecting (exponential back-off: 1 s → 30 s max) |
+| `$(circle-slash)` (red) | Disconnected — click to reconnect |
+
+Token total appears next to the label: `$(check) JiuwenSwarm · 42.3k`.
+
+## Project Rules
+
+Create `.jiuwenswarm/instructions.md` (or `.jiuwenswarm/rules.md` or `AGENTS.md`) in the workspace root. The extension reads the first file it finds and prepends its contents to every message under **Project rules:**. Use it for per-project coding standards, forbidden patterns, or preferred libraries.
 
 ## Troubleshooting
 
-- **Panel shows blank / no connection**: Check that JiuwenSwarm is running on the configured host and port. The status bar shows connection state; click it to reconnect.
-- **No responses appear**: Verify the WebSocket endpoint (`ws://host:port/ws`) is reachable. Open the webview developer tools (**Developer: Open Webview Developer Tools** from the command palette) and check the console for debug messages.
-- **Send Selection does nothing**: Make sure text is actually selected in the editor.
-- **Clickable file links don't open**: Ensure the file path exists in your workspace.
+| Symptom | Fix |
+|---------|-----|
+| Panel is blank | Check that JiuwenSwarm is running on the configured host/port; click the status bar widget to reconnect |
+| No response streams | Enable Debug log (**⚙ → Debug log**) and check for error frames; open Webview Developer Tools from the command palette |
+| Send Selection does nothing | Ensure text is actually selected in the editor before pressing the shortcut |
+| File links don't open | Verify the file path exists in the workspace |
+| Rewind bar missing | Check `jiuwenswarm.rewindEnabled` in settings |
+| Settings change did not take effect | Reload the VS Code window when prompted |

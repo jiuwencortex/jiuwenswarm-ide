@@ -1,29 +1,29 @@
 # JiuwenSwarm for JetBrains
 
-The JiuwenSwarm plugin brings an autonomous multi-agent AI chat panel directly into PyCharm, IntelliJ IDEA, WebStorm, and all JetBrains IDEs (2023.1+).
+The JiuwenSwarm plugin embeds an autonomous multi-agent AI coding assistant directly into PyCharm, IntelliJ IDEA, WebStorm, GoLand, and every other JetBrains IDE (2023.1+). The panel lives in a docked tool window, streams responses token-by-token, and integrates with the editor through diff review, terminal integration, file-link navigation, and the Alt+Enter quick-fix menu.
 
 ## Prerequisites
 
 JiuwenSwarm must be running locally before the plugin connects:
 
 ```bash
-cd jiuwenswarm && jiuwenswarm-start
-# WebSocket server at ws://localhost:19000/ws
+jiuwenswarm-start
+# WebSocket server opens at ws://127.0.0.1:19000/ws
 ```
 
-JCEF (Chromium Embedded Framework) must be enabled in your IDE. If you see a warning on first open, enable it via **Help → Find Action → Registry** → `ide.browser.jcef.enabled`, then restart.
+JCEF (Chromium Embedded Framework) must be enabled. If the panel shows blank on first open, enable it via **Help → Find Action → Registry** → `ide.browser.jcef.enabled`, then restart the IDE.
 
 ## Installation
 
-### From ZIP
+### From ZIP (recommended)
 
-1. Download [`jiuwenswarm-plugin-0.1.0.zip`](https://github.com/jiuwencortex/jiuwenswarm-ide/releases/download/0.1.0/jiuwenswarm-plugin-0.1.0.zip).
-2. Go to **Settings → Plugins → ⚙ → Install Plugin from Disk** and select the ZIP file.
+1. Download `jiuwenswarm-plugin-0.1.0.zip` from the [releases page](https://github.com/jiuwencortex/jiuwenswarm-ide/releases).
+2. Go to **Settings → Plugins → ⚙ → Install Plugin from Disk** and select the ZIP.
 3. Restart the IDE.
 
 ### From Marketplace
 
-Search "JiuwenSwarm" in **Settings → Plugins → Marketplace** and click Install.
+Search **JiuwenSwarm** in **Settings → Plugins → Marketplace** and click Install.
 
 ## Configuration
 
@@ -31,73 +31,139 @@ Open **Settings → Tools → JiuwenSwarm**:
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| Server host | `localhost` | JiuwenSwarm server hostname |
-| Server port | `19000` | WebSocket port |
-| Channel ID | `ide` | Channel ID reported to the server |
-| Connect automatically on IDE startup | on | Open connection on startup |
-| Require approval before applying agent file edits | off | Show confirmation dialog before every file change |
-| Auto-apply file edits (skip diff dialog) | off | Apply agent file edits immediately without review |
+| Server host | `127.0.0.1` | Hostname or IP of the JiuwenSwarm server |
+| Server port | `19000` | WebSocket port — connects to `ws://host:port/ws` |
+| Channel ID | `ide` | Client identifier shown in server logs |
+| Connect on startup | on | Open the WebSocket when the IDE starts |
+| **Default mode** | `code.plan` | Mode applied to new sessions (Plan & Execute / Execute / Team Coding) |
+| Auto-apply file edits | off | Apply agent edits immediately without opening the diff window |
+| Require approval before edits | off | Show a confirmation prompt before applying any agent file edit |
+| Run commands in IDE terminal | on | Show agent shell commands in a dedicated terminal tab |
+| Keep-alive ping interval | 30 s | Seconds between WebSocket ping frames (5–300) |
+| Include project tree | on | Prepend a directory listing of the project root to every message |
+| Project tree max files | 200 | Max entries in the project tree listing (10–2000) |
+| Load history on session switch | on | Fetch and display past messages when switching to an existing session |
+| Enable checkpoint / rewind | on | Snapshot files before agent edits; show the rewind bar after each turn |
+| **Git quick actions** | off | Show Commit / Push buttons below the message list |
 
-## Usage
+## Keyboard Shortcuts
 
-| Action | Win/Linux | Mac | Description |
-|--------|-----------|-----|-------------|
-| New session | `Ctrl+Shift+J` | `⌘⇧J` | Opens a fresh chat session |
-| Send selection | `Ctrl+Shift+E` | `⌘⇧E` | Sends selected code to the chat |
-| Fix with AI | `Alt+Enter` | `⌥Enter` | Appears on errors/warnings in quick-fix menu |
+| Action | Win / Linux | Mac |
+|--------|-------------|-----|
+| New session | `Ctrl+Shift+J` | `⌘⇧J` |
+| Send selection to chat | `Ctrl+Shift+E` | `⌘⇧E` |
+| Fix with JiuwenSwarm | `Alt+Enter` | `⌥Enter` |
 
-1. Start JiuwenSwarm locally.
-2. Open the JiuwenSwarm tool window from the right sidebar.
-3. A session is created automatically on first connect.
-4. Type a message, or select code and press **Ctrl+Shift+E**, then add your question and send.
+## What the Panel Contains
 
-## What You See
+### Chat input
 
-The chat panel renders inside the IDE via JCEF. It supports:
+Type your message in the textarea at the bottom. Three typing shortcuts trigger inline pickers:
 
-- Markdown rendering with syntax-highlighted code blocks
-- Collapsible tool call cards showing every agent action with live status, inputs, and outputs
-- A mode selector dropdown (`code.plan`, `code.normal`, `code.team`)
-- A session dropdown to create, switch, or delete conversations
-- A skills panel to view and toggle registered skills
-- Clickable file links in agent responses — click to open the file at the referenced line
-- A rewind bar that appears after the agent edits files — click to undo all changes from that turn
-- An attach button to include the current file as context
-- A dark/light theme toggle
+| Trigger | What appears |
+|---------|-------------|
+| `@` | File autocomplete — picks from workspace files and injects the full file content |
+| `#` | Skill picker — lists registered skills and inserts the skill name |
+| `!` | Preset prompts — eight built-in templates (Explain, Fix bug, Write tests, Refactor, Optimize, Document, Review, Implement) |
 
-## File Edit Review
+Use **Arrow keys** to navigate, **Enter** or **Tab** to select, **Escape** to dismiss. **Enter** sends the message; **Shift+Enter** inserts a newline.
 
-When the agent proposes a file edit, the plugin opens a **side-by-side diff window** showing Current vs Proposed. Review the changes and close the window to apply.
+Attach images with the **+** button (PNG, JPEG, WebP, GIF; up to 10 MB each).
 
-Enable **Auto-apply file edits** in settings to skip the diff dialog and apply edits immediately (with a notification confirming what changed).
+### Mode selector
 
-Enable **Require approval** in settings to see a confirmation dialog before the diff window opens or before auto-applying. This gives you a chance to reject unwanted edits.
+| Mode | Key | Behaviour |
+|------|-----|-----------|
+| Plan & Execute | `code.plan` | Agent explores and proposes a plan; waits for your confirmation before editing files |
+| Execute | `code.normal` | Agent edits files and runs commands directly |
+| Team Coding | `code.team` | Leader agent assigns sub-agents in parallel for large tasks |
 
-## Checkpoint / Rewind
+### Message list
 
-After each agent turn that modifies files, a rewind bar appears at the bottom of the chat panel. Click **Undo Changes** to restore all files to their state before that turn. Files that did not exist before the turn are deleted on rewind.
+- Responses stream token-by-token with full Markdown rendering (code blocks, tables, lists, headings).
+- **Thinking blocks** — extended model reasoning appears in a collapsible section above the response.
+- **Tool call cards** — every tool call is shown inline with a live status indicator, collapsible inputs, and collapsible output.
+- **File links** — file paths in agent responses are clickable and open the file at the referenced line.
+- **Symbol links** — PascalCase and SCREAMING_SNAKE_CASE identifiers in backticks are purple links that jump to the symbol in the project.
 
-Rewind is cleared when you send a new message or start a new session.
+### Stats and metrics
 
-## Connection Status
+- **Context bar** — a thin bar below the input shows how full the model's context window is.
+- **Token counter** — per-turn token count next to the send button; session total in the IDE status bar widget.
+- **Session stats chips** — total turns, tokens, cost, tool calls, average latency, and a tools breakdown chip.
+- **Mini charts** — collapsible bar charts showing tokens and duration per turn.
+- **Server memory** — live server RAM usage shown in the stats bar (polled every 10 s).
 
-A widget in the status bar shows the live WebSocket state:
+### Context automatically sent with every message
 
-| Symbol | Meaning |
-|--------|---------|
-| `⬤` | Connected |
-| `◌` | Connecting |
-| `↻` | Reconnecting (exponential back-off: 1 s → 2 s → 4 s → … → 30 s) |
-| `○` | Disconnected — click to reconnect |
+| Field | Source |
+|-------|--------|
+| Active file path and language | `FileEditorManager` + `FileType` |
+| Cursor line | `Editor.caretModel` |
+| Selected code | `Editor.selectionModel` |
+| Editor diagnostics (up to 10) | Document markup model |
+| Other open tabs (up to 10) | `FileEditorManager.openFiles` |
+| Project tree (2-level) | `LocalFileSystem` traversal |
+| Git branch and change count | `git` subprocess |
+| Project rules | `.jiuwenswarm/instructions.md`, `.jiuwenswarm/rules.md`, or `AGENTS.md` |
+| @-mentioned files | Full file contents for each `@path` typed in the message |
 
-The status bar also shows the current session ID and cumulative token usage when available.
+### File edit workflow
+
+When the agent calls a file-editing tool (`str_replace_editor`, `write_file`, `create_file`), the plugin intercepts it:
+
+- **Default**: a side-by-side diff window opens (Current vs Proposed). Close the window to apply.
+- **Auto-apply**: edits are written immediately via `WriteCommandAction` (undoable with `Ctrl+Z`).
+- **Require approval**: a confirmation prompt appears before opening the diff or applying.
+
+### Terminal integration
+
+Agent shell commands (`bash`, `run_command`) run in a dedicated **JiuwenSwarm** terminal tab so output is visible and scrollable. The terminal is created on the first command and reused. Disable in settings to run commands silently.
+
+### Checkpoint / rewind
+
+After any turn that edits files, a rewind bar appears below the message list. Click **Undo Changes** to restore all modified files to their state before that turn. Snapshots are cleared when you send the next message.
+
+### Git quick actions
+
+Enable **Git quick actions** in settings to show **Commit** and **Push** buttons below the message list. **Commit** opens a dialog pre-filled with your last message as the commit message, runs `git add -u && git commit -m <message>`. **Push** runs `git push` immediately.
+
+### Sessions
+
+Click **⚙ → Sessions** to open the session list. Switch, create (New button or `Ctrl+Shift+J`), or delete sessions. With **Load history on session switch** on, past messages stream in automatically after switching.
+
+### Skills
+
+Click **⚙ → Skills** to view registered skills. Each skill shows its name, description, trigger, and an ON/OFF toggle. Type `#` in the chat input to pick a skill without opening the overlay.
 
 ## Alt+Enter Quick Fix
 
-Place the cursor on any highlighted error or warning and press **Alt+Enter**. The quick-fix menu includes **Fix with JiuwenSwarm**, which opens the chat panel and prefills the input with the error message and surrounding code context.
+Place the cursor on any error or warning and press **Alt+Enter**. **Fix with JiuwenSwarm** appears in the menu. It prefills the chat with the error message and ±7 lines of surrounding code.
+
+## Connection Status Bar
+
+The IDE status bar shows live WebSocket state:
+
+| Symbol | Meaning |
+|--------|---------|
+| `⬤ JiuwenSwarm` (teal) | Connected |
+| `◌ JiuwenSwarm` (teal) | Connecting |
+| `↻ JiuwenSwarm` (yellow) | Reconnecting (exponential back-off: 1 s → 30 s max) |
+| `○ JiuwenSwarm` (grey) | Disconnected — click to reconnect |
+
+Token total appears next to the label once tokens are consumed: `⬤ JiuwenSwarm · 42.3k`.
+
+## Project Rules
+
+Create `.jiuwenswarm/instructions.md` (or `.jiuwenswarm/rules.md` or `AGENTS.md`) in the project root. The plugin reads the first file it finds and prepends its contents to every message under **Project rules:**. Use it for per-project coding standards, forbidden patterns, or preferred libraries.
 
 ## Troubleshooting
 
-- **Panel shows blank**: Enable JCEF via **Help → Find Action → Registry** → `ide.browser.jcef.enabled`, then restart.
-- **No connection**: Check that JiuwenSwarm is running on the configured host and port. Click the status bar widget to reconnect.
-- **No responses appear**: Verify the WebSocket endpoint (`ws://host:port/ws`) is reachable. Check **Help → Show Log in Explorer** for plugin logs.
+| Symptom | Fix |
+|---------|-----|
+| Panel is blank | Enable `ide.browser.jcef.enabled` via **Help → Find Action → Registry**, then restart |
+| Status bar shows `○` | Start JiuwenSwarm; verify host/port in settings; click widget to reconnect |
+| No response streams | Enable Debug log (**⚙ → Debug log**) and check for error frames |
+| Diff window opens but file unchanged | Close the diff window — the change applies on close, not immediately |
+| Rewind bar missing | Check **Enable checkpoint / rewind** in settings; verify turn completed normally |
+| Alt+Enter does not show the option | Cursor must be on a line with a red or yellow gutter marker |

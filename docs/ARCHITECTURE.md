@@ -1,55 +1,60 @@
 # JiuwenSwarm IDE Plugins — Architecture
 
-Architecture reference for the JetBrains plugin and VS Code extension. Both plugins share the same protocol, the same webview UI, and the same overall component model — only the host-side language and IDE APIs differ.
+Architecture reference for the JetBrains plugin and VS Code extension. Both plugins share the same WebSocket protocol and the same shared webview UI (`chat.html`). Only the host-side language, IDE APIs, and bridge mechanism differ.
 
 ---
 
 ## 1. System Overview
 
 ```
-┌─────────────────────────────────┐     WebSocket      ┌─────────────────────────────────┐
-│       IDE Plugin                │ ◄─────────────────► │    jiuwenswarm Gateway          │
-│  (JetBrains / VS Code)          │   ws://localhost:   │    ws://localhost:19000/ws       │
-│                                 │   19000/ws          │                                 │
-│  ┌───────────────────────────┐  │                     │  ┌───────────────────────────┐  │
-│  │  Chat Panel (UI)          │  │                     │  │  Web Channel Handler      │  │
-│  │  - Streaming markdown     │  │                     │  │  (reused as-is)           │  │
-│  │  - Tool call cards        │  │                     │  └───────────┬───────────────┘  │
-│  │  - Diff viewer            │  │                     │             │                   │
-│  └───────────────────────────┘  │                     │  ┌──────────▼───────────────┐  │
-│  ┌───────────────────────────┐  │                     │  │  AgentServer             │  │
-│  │  Context Collector        │  │                     │  │  (unchanged)             │  │
-│  │  - Open files             │  │                     │  └──────────────────────────┘  │
-│  │  - Selection / cursor     │  │                     └─────────────────────────────────┘
-│  │  - Git status             │  │
-│  │  - Diagnostics/errors     │  │
-│  └───────────────────────────┘  │
-│  ┌───────────────────────────┐  │
-│  │  Edit Applier             │  │
-│  │  - Parse tool_call events │  │
-│  │  - Show diff in IDE       │  │
-│  │  - Apply/reject hunks     │  │
-│  └───────────────────────────┘  │
-│  ┌───────────────────────────┐  │
-│  │  Terminal Manager         │  │
-│  │  - Run bash in IDE term   │  │
-│  └───────────────────────────┘  │
-│  ┌───────────────────────────┐  │
-│  │  WS Client + Session Mgr  │  │
-│  │  - Reconnect logic        │  │
-│  │  - Session CRUD           │  │
-│  │  - Message queue          │  │
-│  └───────────────────────────┘  │
-└─────────────────────────────────┘
+┌──────────────────────────────────────┐     WebSocket      ┌─────────────────────────────────┐
+│         IDE Plugin                   │ ◄─────────────────► │   JiuwenSwarm Gateway           │
+│   (JetBrains / VS Code)              │  ws://host:19000/ws │   ws://host:19000/ws            │
+│                                      │                     │                                 │
+│  ┌────────────────────────────────┐  │                     │  ┌───────────────────────────┐  │
+│  │  Shared Webview (chat.html)    │  │                     │  │  Web Channel Handler      │  │
+│  │  - Streaming markdown          │  │                     │  └───────────┬───────────────┘  │
+│  │  - Tool call cards             │  │                     │             │                   │
+│  │  - Mode / model selectors      │  │                     │  ┌──────────▼───────────────┐  │
+│  │  - @ / # / ! input pickers     │  │                     │  │  AgentServer             │  │
+│  │  - Session / skills overlays   │  │                     │  └──────────────────────────┘  │
+│  │  - Stats bar + mini charts     │  │                     └─────────────────────────────────┘
+│  │  - Checkpoint rewind bar       │  │
+│  └────────────────────────────────┘  │
+│  ┌────────────────────────────────┐  │
+│  │  Context Collector             │  │
+│  │  - Active file + cursor + sel  │  │
+│  │  - Diagnostics + open tabs     │  │
+│  │  - Project tree (2-level)      │  │
+│  │  - Git status (subprocess)     │  │
+│  │  - Project rules file          │  │
+│  │  - @-mentioned file contents   │  │
+│  └────────────────────────────────┘  │
+│  ┌────────────────────────────────┐  │
+│  │  Edit Applier                  │  │
+│  │  - Intercept tool_call events  │  │
+│  │  - Diff window or auto-apply   │  │
+│  │  - File snapshot (rewind)      │  │
+│  └────────────────────────────────┘  │
+│  ┌────────────────────────────────┐  │
+│  │  Terminal Manager              │  │
+│  │  - Route bash to IDE terminal  │  │
+│  └────────────────────────────────┘  │
+│  ┌────────────────────────────────┐  │
+│  │  WS Client + Session Manager   │  │
+│  │  - OkHttp / ws npm package     │  │
+│  │  - Exponential backoff reconnect│ │
+│  │  - Session CRUD                │  │
+│  │  - Request/response matching   │  │
+│  └────────────────────────────────┘  │
+└──────────────────────────────────────┘
 ```
 
-The IDE plugin connects as a standard WebSocket client to `ws://localhost:19000/ws` — the same endpoint used by the web frontend. No backend changes are required. The `channel_id` field is set to `"ide"` so plugin connections are identifiable in server logs and TraceHound traces.
+The plugin connects to `ws://host:port/ws` as a standard WebSocket client — the same endpoint used by the web frontend. The `channel_id` field is set to `"ide"` so IDE connections are identifiable in server logs.
 
 ---
 
 ## 2. Protocol
-
-The plugin uses the same JSON message protocol as the web frontend.
 
 ### Sending a chat message
 
@@ -68,18 +73,23 @@ The plugin uses the same JSON message protocol as the web frontend.
 }
 ```
 
-IDE context is prepended to `content` as a plain-text block — the backend is unaware of this and does not need any schema changes.
+IDE context (active file, selection, diagnostics, git, project rules, @-mentioned files) is prepended to `content` as a plain-text block. The backend is unaware of this and requires no schema changes.
 
 ### Streaming response events
 
 | Event | Action |
 |-------|--------|
 | `chat.delta` | Append text to the active turn |
-| `chat.reasoning` | Show/append to collapsible "Thinking…" block |
-| `chat.tool_call` | Show tool card with spinner |
+| `chat.reasoning` | Append to the collapsible "Thinking…" block |
+| `chat.tool_call` | Show tool call card with spinner |
 | `chat.tool_result` | Update tool card with result |
-| `chat.final` | Mark turn complete; replace streamed text with canonical content |
-| `chat.usage_metadata` | Update token counter |
+| `chat.final` | Mark turn complete; replace accumulated text with canonical content |
+| `chat.usage_metadata` | Update per-turn token counter |
+| `chat.usage_summary` | Update session-level token and cost totals |
+| `context.usage` | Update context bar occupancy percentage |
+| `context.compression_state` | Show compaction progress indicator |
+| `chat.interrupt_result` | Mark streaming stopped on user interrupt |
+| `chat.human_turn_pending` | Show clarifying question UI |
 
 ### Session methods
 
@@ -91,44 +101,64 @@ req: session.delete  → delete a session
 req: skills.list     → list registered skills
 req: skills.toggle   → enable / disable a skill
 req: models.list     → list available models
+req: memory.compute  → compute server memory stats (JetBrains only)
+req: history.get     → fetch past messages for a session
+req: chat.interrupt  → interrupt an in-progress agent turn
+req: chat.answer     → respond to a human-turn clarifying question
 ```
 
-### Message ID tracking
+### Request/response matching
 
-Every `req` gets a UUID `id`. The plugin keeps a map of in-flight `id → Future`. Responses carry the matching `id` (legacy format) or `request_id` (E2A format). The future is resolved or rejected when the response arrives. Unmatched responses are logged and discarded. Default timeout: 5 s (JetBrains), 15 s (VS Code).
+Every `req` gets a UUID `id`. The plugin keeps a map of in-flight `id → CompletableFuture` (JetBrains, 5 s timeout) or `id → Promise` (VS Code, 15 s timeout). Responses carry the matching `id` (legacy format) or `request_id` (E2A format). Unmatched responses are logged and discarded.
 
-### Streaming text assembly
+### E2A streaming format
+
+The gateway supports an envelope format for streaming responses:
 
 ```
-chat.delta  { request_id, payload: { text: "Hello" } }
-chat.delta  { request_id, payload: { text: " world" } }
-chat.final  { request_id, payload: { ... full content ... } }
+e2a.chunk   → { body: { event_type, delta } }
+e2a.complete → { body: { result: { event_type, ... } } }
+e2a.error   → { body: { message, details } }
 ```
 
-The webview accumulates `delta.text` per `request_id`. On `chat.final` the canonical content replaces the accumulated text, handling any dropped deltas.
+Both plugins convert E2A messages to the legacy `{ event_type, request_id, payload }` shape before dispatching to the webview.
 
 ---
 
 ## 3. Context Injection
 
-On every chat send, the plugin prepends a structured context block to the message content. The agent sees it as part of the user message.
+On every chat send, the plugin prepends a structured block to the message content. Assembly order:
 
-### Fields collected
+1. Active file path, language, cursor line
+2. Selected code (if any)
+3. Editor diagnostics (up to 10)
+4. Other open tabs (up to 10)
+5. Project tree (2-level directory listing, configurable)
+6. Git branch and uncommitted change count
+7. Project rules (content of first matching file: `.jiuwenswarm/instructions.md`, `.jiuwenswarm/rules.md`, `AGENTS.md`)
+8. @-mentioned files (full content for each `@path` typed in the message)
 
-| Field | Source |
-|-------|--------|
-| Active file path + language | `FileEditorManager` / `vscode.window.activeTextEditor` |
-| Cursor line | `Editor.caretModel` / `editor.selection.active` |
-| Selected code | `Editor.selectionModel` / `editor.document.getText(selection)` |
-| Editor diagnostics (up to 10) | Markup model / `vscode.languages.getDiagnostics()` |
-| Other open files (up to 10) | `FileEditorManager.openFiles` / `vscode.window.tabGroups` |
-| Git branch + change count | `git` subprocess (`rev-parse`, `status --porcelain`) |
+### Fields by source
+
+| Field | JetBrains API | VS Code API |
+|-------|--------------|-------------|
+| Active file | `FileEditorManager.selectedFiles` | `vscode.window.activeTextEditor` |
+| Cursor line | `Editor.caretModel` | `editor.selection.active.line` |
+| Selection | `Editor.selectionModel` | `editor.document.getText(selection)` |
+| Diagnostics | Document markup model (error-stripe highlighters) | `vscode.languages.getDiagnostics(uri)` |
+| Open tabs | `FileEditorManager.openFiles` | `vscode.window.tabGroups.all` |
+| Project tree | `LocalFileSystem` VirtualFile traversal | Workspace folder `fs` traversal |
+| Git | `ProcessBuilder` → `git` subprocess | `ProcessBuilder` → `git` subprocess |
+
+### ReadAction boundary (JetBrains only)
+
+IDE APIs (`FileEditorManager`, `selectionModel`, markup model) must be called inside a `ReadAction`. Git subprocess blocks and must run outside. `ContextCollector.collect()` uses `ReadAction.compute {}` for IDE reads, then calls `GitContextProvider.collect()` outside.
 
 ### Example block
 
 ````
 <!-- IDE Context -->
-Active file: /Users/mishka/project/src/api/handler.py  (Python)
+Active file: /project/src/api/handler.py  (Python)
 Cursor line: 87
 
 Selected code:
@@ -142,44 +172,56 @@ Diagnostics (2):
   • Variable 'result' is not used before return (line 87)
   • blocking_call is deprecated
 
-Other open files (3):
-  /Users/mishka/project/src/api/router.py
-  /Users/mishka/project/src/models/request.py
-  /Users/mishka/project/tests/test_handler.py
+Other open files (2):
+  /project/src/api/router.py
+  /project/tests/test_handler.py
+
+Project structure:
+src/
+  api/
+  models/
+tests/
+pyproject.toml
 
 Git: branch=feature/async-refactor, 3 uncommitted changes
+
+Project rules:
+Always use async/await. No blocking calls. Follow PEP 8.
+
+@src/api/models.py:
+```python
+class Request:
+    ...
+```
 <!-- End IDE Context -->
 ````
-
-If there is nothing useful to inject (no open editor, no git repo, no selection) the block is omitted and the message is sent as-is.
 
 ---
 
 ## 4. File Edit Handling
 
-When the agent calls a file-editing tool (`str_replace_editor`, `write_file`, `create_file`), the plugin intercepts the tool call event and handles it natively.
+When the agent invokes a file-editing tool (`str_replace_editor`, `write_file`, `create_file`), the plugin intercepts the `chat.tool_call` event and handles it natively.
 
 ### Supported tools
 
 | Tool | Operation |
 |------|-----------|
-| `str_replace_editor` command=`str_replace` | Replace a specific block in an existing file |
+| `str_replace_editor` command=`str_replace` | Replace a specific block of text in an existing file |
 | `str_replace_editor` command=`create` | Create a new file |
 | `write_file` | Overwrite or create a file |
-| `create_file` | Create a new file; parent dirs created automatically |
+| `create_file` | Create a new file; parent directories created automatically |
 
-### Default: diff review
+### JetBrains
 
-A side-by-side diff window opens showing **Current** vs **Proposed**. The user reviews and closes the window to apply.
+- **Default**: `DiffManager.getInstance().showDiff()` opens a side-by-side diff window. Closing the window applies the change via `WriteCommandAction`.
+- **Auto-apply**: `WriteCommandAction.runWriteCommandAction()` + `Document.replaceString()`, undoable with `Ctrl+Z`.
+- **Approve**: a confirmation dialog appears before the diff or auto-apply runs.
+- **Snapshot**: before the first edit to a file in a turn, the current content is captured in `currentTurnSnapshots`. Promoted to `lastTurnSnapshots` on `chat.final`.
 
-- **JetBrains**: `DiffManager.getInstance().showDiff()` + `WriteCommandAction` + `Document.replaceString()`
-- **VS Code**: `WorkspaceEdit` API + `window.showTextDocument()`
+### VS Code
 
-### Auto-apply mode
-
-A plugin setting skips the diff dialog. Changes are applied immediately and are undoable (`Ctrl+Z`). A notification confirms each applied edit.
-
-Tool call params are parsed identically for both plugins: extract `path`, `old_str`, `new_str` (or `content`).
+- **Default**: edit applied via Node.js `fs.writeFileSync`.
+- **Approve**: `vscode.window.showInformationMessage()` with Approve/Reject buttons.
 
 ---
 
@@ -199,23 +241,23 @@ Tool call params are parsed identically for both plugins: extract `path`, `old_s
 
 ```
 packages/vscode-extension/src/
-├── extension.ts              # activate() / deactivate() entry point
+├── extension.ts                       # activate() / deactivate()
 ├── client/
-│   ├── WsClient.ts           # WebSocket + exponential backoff reconnect
-│   ├── SessionManager.ts     # session.list / switch; request/response matching
-│   └── protocol.ts           # Shared type definitions
+│   ├── WsClient.ts                    # WebSocket + exponential backoff reconnect
+│   ├── SessionManager.ts              # Session CRUD; request/response matching (15 s timeout)
+│   └── protocol.ts                    # Type definitions
 ├── context/
-│   └── ContextCollector.ts   # Active file, selection, diagnostics injection
+│   └── ContextCollector.ts            # Active file, selection, diagnostics, project rules, @-mentions
 ├── editor/
-│   ├── DiffApplier.ts        # File-edit interception + workspace apply
-│   └── DiffViewer.ts         # Native VS Code diff dialog for proposed edits
+│   ├── DiffApplier.ts                 # File-edit interception + workspace apply + snapshot
+│   └── DiffViewer.ts                  # Optional diff dialog for proposed edits
 ├── terminal/
-│   └── TerminalManager.ts    # Run bash commands in IDE terminal
+│   └── TerminalManager.ts             # Run agent shell commands in VS Code terminal
 ├── codeActions/
-│   └── FixWithAiCodeActionProvider.ts   # Lightbulb "Fix with JiuwenSwarm"
+│   └── FixWithAiCodeActionProvider.ts # Lightbulb "Fix with JiuwenSwarm"
 └── ui/
-    ├── ChatPanel.ts           # WebviewPanel wrapper + message bridge
-    └── StatusBar.ts           # Connection status indicator
+    ├── ChatPanel.ts                   # WebviewPanel wrapper + message bridge
+    └── StatusBar.ts                   # Connection status indicator
 ```
 
 ### Key VS Code APIs
@@ -225,17 +267,14 @@ packages/vscode-extension/src/
 | Chat panel | `vscode.window.createWebviewPanel()` |
 | Active file | `vscode.window.activeTextEditor` |
 | Selection | `editor.selection`, `editor.document.getText(selection)` |
-| Apply edit | `vscode.workspace.applyEdit(WorkspaceEdit)` |
+| Apply edit | Node.js `fs` (or `vscode.workspace.applyEdit` for WorkspaceEdit) |
 | Diagnostics | `vscode.languages.getDiagnostics()` |
 | Quick action | `vscode.languages.registerCodeActionsProvider()` |
-| Keybinding | `contributes.keybindings` in `package.json` |
 | Status bar | `vscode.window.createStatusBarItem()` |
 | Terminal | `vscode.window.createTerminal()` |
 | Settings | `vscode.workspace.getConfiguration('jiuwenswarm')` |
 
 ### Webview bridge
-
-VS Code webviews are sandboxed iframes. Communication is via `postMessage`:
 
 ```
 Extension host ──postMessage──► Webview (chat.html)
@@ -251,34 +290,34 @@ Extension host ◄──postMessage── Webview (chat.html)
 | Concern | Choice |
 |---------|--------|
 | Language | Kotlin |
-| Build | Gradle + `org.jetbrains.intellij.platform` plugin |
-| WebSocket | OkHttp (bundled with IntelliJ) |
+| Build | Gradle 8.7 + `org.jetbrains.intellij.platform` |
+| WebSocket | OkHttp |
 | UI | JCEF (`JBCefBrowser`) — embedded Chromium running `chat.html` |
-| JSON | Gson (bundled) |
+| JSON | Gson |
 
 ### Source layout
 
 ```
 packages/jetbrains-plugin/src/main/kotlin/com/jiuwenswarm/plugin/
-├── JiuwenSwarmService.kt          # Application-level singleton
+├── JiuwenSwarmService.kt              # Application-level singleton
 ├── client/
-│   ├── WsClient.kt                # OkHttp WebSocket + exponential backoff
-│   └── SessionManager.kt          # Session CRUD; request/response matching (5 s timeout)
+│   ├── WsClient.kt                    # OkHttp WebSocket + exponential backoff
+│   └── SessionManager.kt              # Session CRUD; request/response matching (5 s timeout)
 ├── context/
-│   ├── ContextCollector.kt        # ReadAction: active file, selection, diagnostics, open tabs
-│   └── GitContextProvider.kt      # ProcessBuilder → git subprocess (outside ReadAction)
+│   ├── ContextCollector.kt            # ReadAction: file, selection, diagnostics, open tabs, rules, @-mentions
+│   └── GitContextProvider.kt          # ProcessBuilder → git subprocess (outside ReadAction)
 ├── editor/
-│   └── DiffApplier.kt             # File-edit interception + diff window + apply
+│   └── DiffApplier.kt                 # File-edit interception + diff window + apply + snapshot
 ├── terminal/
-│   └── TerminalManager.kt         # Reflection-based routing to Terminal plugin
+│   └── TerminalManager.kt             # Reflection-based routing to Terminal plugin
 ├── ui/
-│   ├── ChatToolWindow.kt          # ToolWindowFactory + JCEF panel + message bridge
-│   ├── Actions.kt                 # NewSessionAction, SendSelectionAction
-│   ├── FixWithAiIntention.kt      # IntentionAction — Alt+Enter quick-fix
-│   └── StatusBarWidgetFactory.kt  # Connection state + token count tooltip
+│   ├── ChatToolWindow.kt              # ToolWindowFactory + JCEF panel + message bridge
+│   ├── Actions.kt                     # NewSessionAction, SendSelectionAction
+│   ├── FixWithAiIntention.kt          # IntentionAction — Alt+Enter quick-fix
+│   └── StatusBarWidgetFactory.kt      # Connection state + token count tooltip
 └── settings/
-    ├── JiuwenSwarmSettings.kt     # PersistentStateComponent
-    └── SettingsConfigurable.kt    # Settings UI panel
+    ├── JiuwenSwarmSettings.kt         # PersistentStateComponent
+    └── SettingsConfigurable.kt        # Settings UI panel
 ```
 
 ### Key JetBrains APIs
@@ -292,127 +331,150 @@ packages/jetbrains-plugin/src/main/kotlin/com/jiuwenswarm/plugin/
 | Diagnostics | Document markup model (error-stripe highlighters) |
 | Quick fix | `IntentionAction` (Alt+Enter menu) |
 | Git context | `ProcessBuilder` → `git rev-parse` + `git status --porcelain` |
-| Settings | `PersistentStateComponent<State>` |
+| Settings | `PersistentStateComponent<State>` → `jiuwenswarm.xml` |
 | Status bar | `StatusBarWidgetFactory` |
 | Diff view | `DiffManager.getInstance().showDiff()` |
-| Terminal | Reflection on `org.jetbrains.plugins.terminal.TerminalView` |
+| Terminal | `TerminalView` (reflection-based; graceful fallback if Terminal plugin absent) |
 | Symbol nav | `PsiSearchHelper.findFilesWithPlainTextWords()` |
-| Keyboard | `<action>` + `<keyboard-shortcut>` in `plugin.xml` |
 
 ### JCEF bridge
 
 ```kotlin
 // Kotlin → JS
 browser.cefBrowser.executeJavaScript(
-    "if(window.__jb_dispatch) window.__jb_dispatch('$escapedJson');", "", 0)
+    "if(window.__jb_dispatch) window.__jb_dispatch('$escapedJson');", "", 0
+)
 
-// JS → Kotlin (CefMessageRouter / __jb_send)
-window.__jb_send = function(jsonStr) { /* routed to handleWebviewMessage() */ }
+// JS → Kotlin (registered via JBCefJSQuery)
+window.__jb_send = function(jsonStr) { /* routes to handleWebviewMessage() */ }
 ```
-
-### ReadAction boundary
-
-IDE APIs (`FileEditorManager`, `selectionModel`, markup model) must run inside a `ReadAction`. Git subprocess (`ProcessBuilder`) blocks and must run **outside** `ReadAction`. `ContextCollector.collect()` calls `ReadAction.compute {}` for IDE reads, then calls `GitContextProvider.collect()` outside.
 
 ---
 
-## 7. Shared Webview (`chat.html`)
+## 7. Shared Webview (chat.html)
 
-Both plugins load the same self-contained `chat.html` file — vanilla HTML/JS, no build step. The file detects the host environment at startup and attaches the appropriate bridge.
+Both plugins load the same self-contained `chat.html` — vanilla HTML + JavaScript, no build step. The file lives at `packages/shared-webview/chat.html` and is copied to each plugin's resource directory at build time.
 
 ### Bridge detection
 
 ```javascript
-// JetBrains host exposes window.__jb_send and calls window.__jb_dispatch
-// VS Code host exposes acquireVsCodeApi()
-if (typeof acquireVsCodeApi !== 'undefined') {
-    vscodeApi = acquireVsCodeApi();
-    // send via vscodeApi.postMessage
-} else if (window.__jb_send) {
-    // send via window.__jb_send(jsonStr)
+function send(msg) {
+  if (typeof acquireVsCodeApi !== 'undefined') {
+    vscodeApi.postMessage(msg);          // VS Code
+  } else if (window.__jb_send) {
+    window.__jb_send(JSON.stringify(msg)); // JetBrains
+  }
 }
+
+window.__jb_dispatch = function(jsonStr) {
+  handleHostMessage(JSON.parse(jsonStr));
+};
+window.addEventListener('message', function(e) { // VS Code
+  handleHostMessage(e.data);
+});
 ```
 
-### Host messages dispatched to webview
+### Host → Webview messages
 
-| Type | Payload | Effect |
-|------|---------|--------|
-| `connected` | `sessionId`, `sessionTitle`, `models`, `activeModel` | Update header, enable input |
-| `disconnected` | — | Show disconnected state |
-| `jiuwen_event` | Raw gateway event | Route to streaming/tool card handlers |
-| `prefill` | `content` | Pre-fill chat input |
+| Type | Key fields | Effect |
+|------|-----------|--------|
+| `connected` | `sessionId`, `sessionTitle`, `models`, `activeModel`, `defaultMode` | Update header, enable input, apply default mode if user hasn't customized it |
+| `disconnected` | — | Show disconnected state, disable input |
+| `reconnecting` | — | Show reconnecting indicator |
+| `jiuwen_event` | `event` (object) | Route to streaming / tool card handlers |
+| `prefill` | `content` | Pre-fill the chat textarea |
 | `sessions` | `sessions[]` | Render session list overlay |
-| `skills` | `skills[]` | Render skills overlay |
-| `skill_toggled` | `skillId`, `enabled` | Update skill toggle button |
-| `rewindable` | `enabled` | Show/hide the checkpoint rewind bar |
-| `rewind_done` | `message` | Display rewind result in chat |
+| `sessions_error` | `message` | Show error in sessions overlay |
+| `session_deleted` | `sessionId` | Remove session from the overlay list |
+| `skills` | `skills[]` | Populate skills overlay and `#` picker cache |
+| `skills_error` | `message` | Show error in skills overlay |
+| `skill_toggled` | `skillId`, `enabled` | Update skill toggle button state |
+| `files` | `files[]` | Populate `@` file mention picker |
+| `git_status` | `branch`, `changedCount` | Update git branch chip and changed files count |
+| `git_committed` | `hash` | Show commit confirmation in git bar |
+| `git_pushed` | — | Show push confirmation in git bar |
+| `git_error` | `message` | Show git error message |
+| `rewindable` | `enabled` | Show or hide the checkpoint rewind bar |
+| `rewind_done` | `message`, `restored`, `failed` | Display rewind result |
+| `history_loading` | `loading` | Show or hide the "Loading history…" indicator |
+| `memory` | `rssMb`, `totalMb`, `availableMb` | Update server memory chip |
+| `metrics` | `metrics` | Update host metrics display |
 | `debug_log` | `line` | Append line to debug panel |
+| `error` | `message`, `requestId` | Show error inline in the active turn |
 
-### Webview messages sent to host
+### Webview → Host messages
 
 | Type | Sent when |
 |------|-----------|
-| `send` | User submits a message |
+| `ready` | Page load complete — host sends current status in response |
+| `send` | User submits a message (`content`, `mode`, `requestId`, `media_items`, `mentionedPaths`) |
+| `answer` | User answers a `chat.human_turn_pending` prompt |
+| `stop` | User clicks the Stop button during streaming |
 | `new_session` | User clicks New or confirms mode switch |
 | `list_sessions` | Sessions overlay opens |
-| `switch_session` | User clicks a session item |
+| `switch_session` | User clicks a session row |
+| `delete_session` | User confirms session deletion |
 | `list_skills` | Skills overlay opens |
-| `toggle_skill` | User clicks ON/OFF button |
+| `toggle_skill` | User clicks ON/OFF on a skill |
+| `files_request` | User types `@` for the first time (triggers workspace file scan) |
 | `open_file` | User clicks a file link in the chat |
-| `navigate_symbol` | User clicks a symbol link in the chat |
-| `rewind` | User clicks the rewind button |
-| `debug` | Debug log entry |
+| `navigate_symbol` | User clicks a symbol link |
+| `rewind` | User clicks the Undo Changes button |
+| `git_status_request` | Git status chip is refreshed |
+| `git_commit_request` | User clicks the Commit button |
+| `git_push_request` | User clicks the Push button |
+| `input_changed` | Textarea content changes (used by host for typing indicators) |
+| `toggle_debug` | User toggles the debug log |
 
----
+### State object (key fields)
 
-## 8. Optional: IDE-Specific Backend Channel
-
-The current implementation reuses the standard web channel. A dedicated `ide` channel type would enable advanced features that the generic web channel cannot support:
-
-- **Per-file permission scoping** — agent only touches files within the open project
-- **Bidirectional cursor sync** — agent requests "jump to line 42 in foo.py"; IDE executes it
-- **IDE-native tool routing** — edits go back to IDE APIs instead of being written by the agent
-- **Inline completion fast path** — sub-50 ms latency for ghost text
-
-```python
-# jiuwenswarm/common/schema/message.py (future)
-class ReqMethod(str, Enum):
-    IDE_CONTEXT_PUSH = "ide.context_push"
-    IDE_APPLY_EDIT   = "ide.apply_edit"
-    IDE_OPEN_FILE    = "ide.open_file"
-    IDE_RUN_TERMINAL = "ide.run_terminal"
-    IDE_COMPLETION   = "ide.completion"
+```javascript
+let state = {
+  connected: false,
+  sessionId: null,
+  sessionTitle: 'JiuwenSwarm',
+  mode: 'code.plan',
+  modeCustomized: false,      // true once user manually picks a mode
+  models: [],
+  activeModel: null,
+  streaming: false,
+  turns: [],
+  pendingTurns: {},
+  skills: [],
+  mentionFiles: [],
+  pendingMentions: [],        // @-mentioned paths in the current input
+  mentionQuery: '',           // current @ token being typed
+  skillQuery: '',             // current # token being typed
+  promptQuery: '',            // current ! token being typed
+  gitBranch: null,
+  gitChangedCount: 0,
+  rewindable: false,
+  contextUsagePercent: null,
+  sessionStats: { ... },
+};
 ```
 
-Not required for the current feature set.
+---
+
+## 8. Connection Management
+
+- Reconnect with exponential backoff: 1 s → 2 s → 4 s → 8 s → … → 30 s cap
+- On reconnect: restore last active session via `session.switch`
+- Keep-alive: configurable ping interval (default 30 s, range 5–300 s) to prevent server-side timeout
+- Status states: `DISCONNECTED` → `CONNECTING` → `CONNECTED` / `RECONNECTING`
+- The 15-second reconnect retry in VS Code runs at constant interval independent of the WS backoff
 
 ---
 
-## 9. Connection Management
+## 9. Memory Polling (JetBrains)
 
-- Reconnect with exponential backoff: 1 s → 2 s → 4 s → 8 s → … → 30 s max
-- On reconnect: restore last active session via `session.switch`
-- Heartbeat: ping frame every 15–20 s to prevent server-side timeout
-- Status states: `DISCONNECTED` → `CONNECTING` → `CONNECTED` / `RECONNECTING`
+After connecting, `ChatPanel` starts a `Timer` that fires every 10 seconds. It calls `session.getMemoryUsage()` (a synchronous `memory.compute` request to the server) and dispatches the result to the webview as a `memory` message, which updates the server RAM chip in the stats bar. The timer is cancelled on panel dispose.
 
 ---
 
 ## 10. Security
 
-- The plugin connects only to `localhost` by default (configurable for enterprise)
-- jiuwenswarm itself enforces tool permissions — the plugin does not sandbox anything
-- The approval workflow feature (Phase 4) will use `permissions.approval_overrides.*` to configure which tools require user confirmation before execution
-
----
-
-## 11. Open Questions
-
-1. **Auth for enterprise**: The plugin currently connects without credentials. Enterprise deployments may want `Authorization: Bearer <token>` on the WS handshake — would require a minor gateway change.
-
-2. **Multiple projects**: Each VS Code workspace folder should map to its own jiuwenswarm session (keyed on workspace path hash, stored in extension global state).
-
-3. **No server running**: The plugin should show a helpful setup prompt rather than a raw "connection refused". Could bundle a launcher command.
-
-4. **Inline completions latency**: `code.plan` / `code.normal` have 1–3 s latency — too slow for ghost text. A dedicated fast model path (`code.complete` mode) would need to be added to `ReqMethod`.
-
-5. **Project-wide indexing**: Proactively sending all project file contents is expensive for large repos. Start with active file + selection; add opt-in "send project index" for smaller repos.
+- The plugin connects to `127.0.0.1` (JetBrains) or `localhost` (VS Code) by default. Enterprise deployments can change the host/port in settings.
+- JiuwenSwarm enforces tool permissions server-side. The plugin does not sandbox file operations beyond optionally requiring user approval.
+- The approval workflow (`approveEdits`) gives the user a chance to reject individual file edits before they are written to disk.
+- Secrets and credentials must never be committed to the project rules files injected into context.
