@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';"/>
+<style>
+/* ── Reset ── */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
+  font-size: 12px;
+  background: var(--vscode-sideBar-background, #1e1e1e);
+  color: var(--vscode-foreground, #ccc);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Header ── */
+#header {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border, #333);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--vscode-sideBarSectionHeader-foreground, #aaa);
+  flex-shrink: 0;
+}
+
+/* ── Task board ── */
+#task-board {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border, #333);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex-shrink: 0;
+  min-height: 30px;
+}
+.task-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  font-size: 11px;
+  max-width: 220px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.task-pill.in_progress { background: #1e3a1e; border: 1px solid #3a7a3a; color: #7ec87e; }
+.task-pill.pending     { background: #2a2a1e; border: 1px solid #6a6a3a; color: #c8c87e; }
+.task-pill.completed   { background: #1a1a1a; border: 1px solid #444;   color: #666; }
+.task-pill.cancelled   { background: #1a1a1a; border: 1px solid #444;   color: #666; text-decoration: line-through; }
+.task-assignee { font-size: 10px; opacity: .7; }
+
+/* ── Lane list ── */
+#lanes {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+/* ── Lane card ── */
+.lane-card {
+  border: 1px solid var(--vscode-widget-border, #333);
+  border-radius: 5px;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: border-color .15s;
+  position: relative;
+}
+.lane-card:hover { border-color: var(--vscode-focusBorder, #007acc); }
+.lane-card.status-SHUTDOWN { opacity: .45; }
+.lane-card.status-BUSY   { border-left: 3px solid #3a7a3a; }
+.lane-card.status-PAUSED { border-left: 3px solid #7a7a3a; }
+.lane-card.status-READY  { border-left: 3px solid #444; }
+
+.lane-name {
+  font-weight: 600;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.lane-role-badge {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 8px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  background: #333;
+  color: #aaa;
+}
+.lane-role-badge.LEADER { background: #2a2045; color: #a07ae8; }
+
+.status-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.status-dot.BUSY     { background: #4ec94e; animation: pulse 1.4s ease-in-out infinite; }
+.status-dot.PAUSED   { background: #c9c94e; }
+.status-dot.READY    { background: #666; }
+.status-dot.SHUTDOWN { background: #444; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: .35; }
+}
+
+.lane-activity {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground, #888);
+  font-family: var(--vscode-editor-font-family, monospace);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lane-task {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground, #888);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lane-idle-warning {
+  position: absolute;
+  top: 8px; right: 8px;
+  font-size: 10px;
+  color: #c9c94e;
+}
+
+/* ── Timeline bar ── */
+#timeline {
+  height: 28px;
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-top: 1px solid var(--vscode-sideBarSectionHeader-border, #333);
+  position: relative;
+  overflow: hidden;
+}
+.timeline-track {
+  position: absolute;
+  top: 8px; height: 4px;
+  border-radius: 2px;
+  opacity: .75;
+}
+
+/* ── Empty state ── */
+#empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--vscode-descriptionForeground, #666);
+  font-size: 12px;
+  text-align: center;
+  padding: 20px;
+}
+</style>
+</head>
+<body>
+
+<div id="header">JiuwenSwarm · Swarm Map</div>
+
+<div id="task-board"></div>
+
+<div id="lanes">
+  <div id="empty">No active team session.<br>Start a conversation in <code>code.team</code> mode.</div>
+</div>
+
+<div id="timeline"></div>
+
+<script>
+// ── Constants ──────────────────────────────────────────
+var IDLE_WARN_MS       = 30000;   // show amber warning after 30s of BUSY with no activity
+var TIMELINE_WINDOW_MS = 90000;   // last 90 seconds shown in timeline bar
+
+// Colour per member (assigned round-robin from this palette)
+var LANE_COLOURS = ['#4ec94e','#4ea8e8','#e8a84e','#c94ee8','#e84e4e','#4ee8c9'];
+var _laneColourMap = {};  // memberName → colour
+
+// ── State ──────────────────────────────────────────────
+var _state = null;        // SwarmSnapshot | null
+
+// ── Entry point ────────────────────────────────────────
+// Called by JetBrains (via executeJavaScript) or VS Code (via window.addEventListener)
+window.__swarmReceive = function(snapshot) {
+  _state = snapshot;
+  render();
+};
+
+// VS Code host → webview message bridge
+window.addEventListener('message', function(e) {
+  var msg = e.data;
+  if (msg && msg.type === 'swarm_snapshot') {
+    window.__swarmReceive(msg.snapshot);
+  }
+});
+
+// Signal ready to VS Code host (no-op in JetBrains where acquireVsCodeApi is undefined)
+var _vscode;
+if (typeof acquireVsCodeApi !== 'undefined') {
+  _vscode = acquireVsCodeApi();
+  _vscode.postMessage({ type: 'swarm_ready' });
+}
+
+// ── Rendering ──────────────────────────────────────────
+function render() {
+  if (!_state || _state.lanes.length === 0) {
+    showEmpty(true);
+    return;
+  }
+  showEmpty(false);
+  renderTaskBoard(_state.tasks);
+  renderLanes(_state.lanes);
+  renderTimeline(_state.lanes);
+}
+
+function showEmpty(visible) {
+  document.getElementById('empty').style.display = visible ? 'flex' : 'none';
+}
+
+function renderTaskBoard(tasks) {
+  var board = document.getElementById('task-board');
+  board.innerHTML = '';
+  tasks.forEach(function(task) {
+    var pill = document.createElement('div');
+    pill.className = 'task-pill ' + task.status;
+    var icon = task.status === 'completed' ? '✓'
+             : task.status === 'cancelled' ? '✗'
+             : '⚙';
+    var assigneePart = task.assignee
+      ? ' <span class="task-assignee">\u2192 ' + esc(task.assignee) + '</span>'
+      : '';
+    pill.innerHTML = icon + ' ' + esc(truncate(task.title, 28)) + assigneePart;
+    pill.title = task.title + (task.assignee ? ' \u2192 ' + task.assignee : '');
+    board.appendChild(pill);
+  });
+}
+
+function renderLanes(lanes) {
+  var container = document.getElementById('lanes');
+
+  // Build a map of existing cards by memberName for in-place update
+  var existing = {};
+  container.querySelectorAll('.lane-card').forEach(function(el) {
+    existing[el.dataset.member] = el;
+  });
+
+  // Render in sorted order; append missing, update existing
+  var rendered = {};
+  lanes.forEach(function(lane, i) {
+    rendered[lane.memberName] = true;
+    assignColour(lane.memberName);
+    var card = existing[lane.memberName] || createLaneCard(lane.memberName);
+    updateLaneCard(card, lane, i);
+    if (!existing[lane.memberName]) container.appendChild(card);
+  });
+
+  // Remove cards for members no longer in state
+  Object.keys(existing).forEach(function(name) {
+    if (!rendered[name]) existing[name].remove();
+  });
+}
+
+function createLaneCard(memberName) {
+  var card = document.createElement('div');
+  card.className = 'lane-card';
+  card.dataset.member = memberName;
+  card.innerHTML = [
+    '<div class="lane-name">',
+    '  <span class="status-dot"></span>',
+    '  <span class="lane-display-name"></span>',
+    '  <span class="lane-role-badge"></span>',
+    '</div>',
+    '<div class="lane-activity"></div>',
+    '<div class="lane-task"></div>',
+    '<span class="lane-idle-warning"></span>',
+  ].join('');
+  card.addEventListener('click', function() {
+    sendMessage({ type: 'open_lane', memberName: memberName });
+  });
+  return card;
+}
+
+function updateLaneCard(card, lane, sortIndex) {
+  card.className = 'lane-card status-' + lane.status;
+  card.style.order = String(sortIndex);
+
+  var dot = card.querySelector('.status-dot');
+  dot.className = 'status-dot ' + lane.status;
+
+  card.querySelector('.lane-display-name').textContent = lane.displayName;
+
+  var badge = card.querySelector('.lane-role-badge');
+  badge.textContent = lane.role;
+  badge.className   = 'lane-role-badge ' + lane.role;
+
+  var actEl = card.querySelector('.lane-activity');
+  actEl.textContent = lane.currentActivity || (lane.status === 'SHUTDOWN' ? 'Finished' : '\u2014');
+
+  var taskEl = card.querySelector('.lane-task');
+  taskEl.textContent = lane.currentTaskTitle ? 'Task: ' + lane.currentTaskTitle : '';
+
+  // Idle warning: BUSY but no activity update for > IDLE_WARN_MS
+  var warnEl = card.querySelector('.lane-idle-warning');
+  var idleMs = Date.now() - lane.lastActiveAt;
+  if (lane.status === 'BUSY' && idleMs > IDLE_WARN_MS) {
+    warnEl.textContent = '\u26a0 idle ' + Math.floor(idleMs / 1000) + 's';
+  } else {
+    warnEl.textContent = '';
+  }
+}
+
+function renderTimeline(lanes) {
+  var bar   = document.getElementById('timeline');
+  var width = bar.clientWidth - 20;  // 10px padding each side
+  var now   = Date.now();
+  var start = now - TIMELINE_WINDOW_MS;
+
+  bar.innerHTML = '';
+  lanes.forEach(function(lane) {
+    if (lane.status === 'SHUTDOWN' && lane.lastActiveAt < start) return;
+    var colour   = _laneColourMap[lane.memberName] || '#666';
+    var segStart = Math.max(lane.lastActiveAt - 5000, start);  // approximate 5s window
+    var segEnd   = lane.status === 'BUSY' ? now : lane.lastActiveAt;
+    if (segEnd <= segStart) return;
+
+    var left = ((segStart - start) / TIMELINE_WINDOW_MS) * width + 10;
+    var segW = ((segEnd - segStart)  / TIMELINE_WINDOW_MS) * width;
+    var track = document.createElement('div');
+    track.className = 'timeline-track';
+    track.style.cssText = 'left:' + left + 'px;width:' + segW + 'px;background:' + colour + ';';
+    track.title = lane.displayName;
+    bar.appendChild(track);
+  });
+}
+
+// ── Helpers ────────────────────────────────────────────
+function assignColour(memberName) {
+  if (!_laneColourMap[memberName]) {
+    var idx = Object.keys(_laneColourMap).length % LANE_COLOURS.length;
+    _laneColourMap[memberName] = LANE_COLOURS[idx];
+  }
+}
+
+function sendMessage(obj) {
+  // JetBrains bridge
+  if (typeof window.__swarmSend === 'function') {
+    window.__swarmSend(JSON.stringify(obj));
+  }
+  // VS Code bridge
+  if (typeof _vscode !== 'undefined') {
+    _vscode.postMessage(obj);
+  }
+}
+
+function esc(s) {
+  return String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function truncate(s, n) {
+  return s && s.length > n ? s.slice(0, n) + '\u2026' : (s || '');
+}
+
+// Refresh idle timers every 5s without a full server push
+setInterval(function() { if (_state) render(); }, 5000);
+</script>
+</body>
+</html>

@@ -33,6 +33,7 @@ import com.jiuwenswarm.plugin.context.ContextCollector
 import com.jiuwenswarm.plugin.editor.DiffApplier
 import com.jiuwenswarm.plugin.terminal.TerminalManager
 import com.jiuwenswarm.plugin.settings.JiuwenSwarmSettings
+import com.jiuwenswarm.plugin.swarm.SwarmStateManager
 import org.cef.browser.CefBrowser
 import org.cef.browser.CefFrame
 import org.cef.handler.CefLoadHandlerAdapter
@@ -113,6 +114,10 @@ class ChatPanel(
     // lastTurnSnapshots: promoted from currentTurnSnapshots on chat.final; used for rewind.
     private val currentTurnSnapshots = mutableMapOf<String, String?>()
     @Volatile private var lastTurnSnapshots = mapOf<String, String?>()
+
+    // Swarm state — updated on every team event; feeds the Swarm Map panel
+    val swarmStateManager = SwarmStateManager()
+    var swarmMapPanel: SwarmMapPanel? = null
 
     val component: JComponent get() = browser.component
 
@@ -507,6 +512,8 @@ class ChatPanel(
 
     private fun onSessionChange(sid: String?) {
         debug("Session → $sid")
+        swarmStateManager.reset(sid ?: "")
+        swarmMapPanel?.postSnapshot(swarmStateManager.snapshot())
         sendCurrentStatus()
     }
 
@@ -516,6 +523,28 @@ class ChatPanel(
         if (msg.get("type")?.asString == "res") return
 
         debug("RAW ← ${gson.toJson(msg)}")
+
+        // ── Swarm team event interception ──
+        // Team events arrive either as E2A chat.delta with "team.event:" prefix,
+        // or as old-format { type:"event", event:"team.*" } messages.
+        // Consume them here and do not forward to the webview.
+        val rawTeamEvent = extractTeamEventDelta(msg)
+        if (rawTeamEvent != null) {
+            swarmStateManager.applyTeamEvent(rawTeamEvent)
+            val snap = swarmStateManager.snapshot()
+            if (swarmMapPanel == null) {
+                swarmMapPanel = SwarmMapToolWindowFactory.getPanel(project)
+            }
+            swarmMapPanel?.postSnapshot(snap)
+            // Auto-open the Swarm Map tool window when the first agent spawns
+            if (snap.lanes.size == 1 && snap.lanes[0].status != "SHUTDOWN") {
+                ApplicationManager.getApplication().invokeLater {
+                    SwarmMapToolWindowFactory.openOrReveal(project)
+                }
+            }
+            return
+        }
+
         // Route file-edit tool calls to DiffApplier (show diff or auto-apply).
         // Gateway sends tool_name inside payload on raw events.
         if (msg.get("type")?.asString == "event" &&
@@ -558,6 +587,15 @@ class ChatPanel(
                         TerminalManager.runCommand(project, cmd)
                     }
                 }
+                // Swarm tool attribution — update the agent lane's current activity
+                val tcArgs = payload.getAsJsonObject("tool_call")?.getAsJsonObject("arguments")
+                    ?: payload.getAsJsonObject("tool_input")
+                    ?: payload.getAsJsonObject("input")
+                val filePath = tcArgs?.get("path")?.asString
+                val memberName = payload.get("member_name")?.asString
+                swarmStateManager.applyToolCall(toolName, filePath, memberName)
+                if (swarmMapPanel == null) swarmMapPanel = SwarmMapToolWindowFactory.getPanel(project)
+                swarmMapPanel?.postSnapshot(swarmStateManager.snapshot())
             }
             // ── On turn end, promote snapshots and show rewind bar ──
             if (et == "chat.final") {
@@ -593,6 +631,39 @@ class ChatPanel(
         ApplicationManager.getApplication().invokeLater {
             WindowManager.getInstance().getStatusBar(project)?.updateWidget("JiuwenSwarmStatusWidget")
         }
+    }
+
+    /**
+     * Extract the raw team-event JSON from a server message, or return null if
+     * the message is not a team event.
+     *
+     * Two wire formats are supported:
+     *  - E2A chunk: response_kind="e2a.chunk", body.event_type="chat.delta",
+     *               body.delta starts with "team.event:" — the rest is the JSON payload.
+     *  - Old format: type="event", event starts with "team." — wrap payload in envelope.
+     *
+     * The returned string is always in the { "event": { "type": ..., ... } } shape
+     * that SwarmStateManager.applyTeamEvent() expects (or the flat fallback it tolerates).
+     */
+    private fun extractTeamEventDelta(msg: JsonObject): String? {
+        val responseKind = msg.get("response_kind")?.asString
+        // E2A chunk path
+        if (responseKind == "e2a.chunk") {
+            val body = msg.getAsJsonObject("body") ?: return null
+            if (body.get("event_type")?.asString != "chat.delta") return null
+            val delta = body.get("delta")?.asString ?: return null
+            if (!delta.startsWith("team.event:")) return null
+            return delta.removePrefix("team.event:")
+        }
+        // Old-format path
+        if (msg.get("type")?.asString == "event") {
+            val eventName = msg.get("event")?.asString ?: return null
+            if (!eventName.startsWith("team.")) return null
+            val payload = msg.getAsJsonObject("payload")?.deepCopy() ?: JsonObject()
+            payload.addProperty("type", eventName)
+            return gson.toJson(JsonObject().apply { add("event", payload) })
+        }
+        return null
     }
 
     /** Convert server messages (E2A or old format) to the legacy event format the webview expects.

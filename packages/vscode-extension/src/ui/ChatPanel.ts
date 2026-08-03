@@ -10,6 +10,8 @@ import { StatusBar } from './StatusBar';
 import * as DiffApplier from '../editor/DiffApplier';
 import { runCommand, extractCommand } from '../terminal/TerminalManager';
 import { showDiffAndPrompt, computeProposedContent } from '../editor/DiffViewer';
+import { SwarmStateManager } from '../swarm/SwarmStateManager';
+import { SwarmMapPanel } from '../swarm/SwarmMapPanel';
 
 export class ChatPanel implements vscode.Disposable {
   public static readonly viewId = 'jiuwenswarm.chatView';
@@ -31,6 +33,10 @@ export class ChatPanel implements vscode.Disposable {
   private latestContextMetrics: SessionMetrics = this.emptyMetrics();
   private memoryTimer?: NodeJS.Timeout;
 
+  // Swarm state — updated on every team event; feeds the Swarm Map panel
+  readonly swarmStateManager = new SwarmStateManager();
+  private swarmMapPanel?: SwarmMapPanel;
+
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly ws: WsClient,
@@ -38,6 +44,7 @@ export class ChatPanel implements vscode.Disposable {
     private readonly statusBar: StatusBar,
   ) {
     this.webviewHtmlPath = path.join(context.extensionPath, 'resources', 'chat.html');
+    this.swarmMapPanel = new SwarmMapPanel(context);
     const statusListener = (s: WsStatus) => this.onStatusChange(s);
     const msgListener = (m: JiuwenMessage) => this.onJiuwenMessage(m);
     const sessionListener = (sid: string | null) => this.onSessionChange(sid);
@@ -110,6 +117,7 @@ export class ChatPanel implements vscode.Disposable {
     this.disposables.forEach((d) => d.dispose());
     this.disposables = [];
     this.panel?.dispose();
+    this.swarmMapPanel?.dispose();
   }
 
   // ──────────────────────────────────────────
@@ -309,6 +317,22 @@ export class ChatPanel implements vscode.Disposable {
 
     this.debug(`RAW ← ${JSON.stringify(msg)}`);
 
+    // ── Swarm team event interception ──
+    // Team events arrive either as E2A chat.delta with "team.event:" prefix,
+    // or as old-format { type:"event", event:"team.*" } messages.
+    // Consume them here and do not forward to the webview.
+    const rawTeamEvent = this.extractTeamEventDelta(msg);
+    if (rawTeamEvent !== null) {
+      this.swarmStateManager.applyTeamEvent(rawTeamEvent);
+      const snap = this.swarmStateManager.snapshot();
+      this.swarmMapPanel?.postSnapshot(snap);
+      // Auto-open the Swarm Map panel when the first agent spawns
+      if (snap.lanes.length === 1 && snap.lanes[0].status !== 'SHUTDOWN') {
+        this.swarmMapPanel?.show();
+      }
+      return;
+    }
+
     const converted = this.convertServerMessageToLegacyEvent(msg);
     if (!converted) {
       this.debug('CONV  → dropped (not a recognised chat event)');
@@ -378,6 +402,18 @@ export class ChatPanel implements vscode.Disposable {
           }
         }
       }
+
+      // ── Swarm tool attribution — update the agent lane's current activity ──
+      const tcArgs = (payload['tool_call'] as Record<string, unknown>)?.['arguments'] as Record<string, unknown>
+        || (payload['tool_input'] as Record<string, unknown>)
+        || (payload['input'] as Record<string, unknown>)
+        || {};
+      const tcFilePath = tcArgs['path'] as string | undefined;
+      const memberName = payload['member_name'] as string | undefined;
+      if (toolName) {
+        this.swarmStateManager.applyToolCall(toolName, tcFilePath, memberName);
+        this.swarmMapPanel?.postSnapshot(this.swarmStateManager.snapshot());
+      }
     }
 
     // ── On turn end, promote snapshots and show rewind bar ──
@@ -392,6 +428,40 @@ export class ChatPanel implements vscode.Disposable {
     this.debug(`CONV  → event_type=${et} request_id=${converted.request_id}`);
     this.postToWebview({ type: 'jiuwen_event', event: converted });
     this.trackTokenUsage(converted);
+  }
+
+  /**
+   * Extract the raw team-event JSON from a server message, or return null if
+   * the message is not a team event.
+   *
+   * Two wire formats:
+   *  - E2A chunk: response_kind="e2a.chunk", body.event_type="chat.delta",
+   *               body.delta starts with "team.event:" — the rest is the JSON payload.
+   *  - Old format: type="event", event starts with "team." — wrap payload in envelope.
+   *
+   * The returned string is always in the { "event": { "type": ..., ... } } shape
+   * that SwarmStateManager.applyTeamEvent() expects.
+   */
+  private extractTeamEventDelta(msg: JiuwenMessage): string | null {
+    const responseKind = (msg as Record<string, unknown>)['response_kind'] as string | undefined;
+
+    // E2A chunk path
+    if (responseKind === 'e2a.chunk') {
+      const body = (msg as Record<string, unknown>)['body'] as Record<string, unknown> | undefined;
+      if (!body) return null;
+      if (body['event_type'] !== 'chat.delta') return null;
+      const delta = body['delta'] as string | undefined;
+      if (!delta?.startsWith('team.event:')) return null;
+      return delta.slice('team.event:'.length);
+    }
+
+    // Old-format path
+    if (msg.type === 'event' && typeof msg.event === 'string' && msg.event.startsWith('team.')) {
+      const payload = { ...(msg.payload || {}), type: msg.event };
+      return JSON.stringify({ event: payload });
+    }
+
+    return null;
   }
 
   /** Convert server messages (E2A or old format) to the legacy event format the webview expects.
@@ -495,6 +565,8 @@ export class ChatPanel implements vscode.Disposable {
   private onSessionChange(sid: string | null): void {
     this.statusBar.setSessionId(sid);
     this.resetSessionMetrics();
+    this.swarmStateManager.reset(sid ?? '');
+    this.swarmMapPanel?.postSnapshot(this.swarmStateManager.snapshot());
     if (this.ws.isConnected()) {
       this.sendCurrentStatus();
     }

@@ -102,6 +102,14 @@
             anchor="right"
             factoryClass="com.jiuwenswarm.plugin.ui.ChatToolWindowFactory"/>
 
+        <!-- Tool window (swarm map) — auto-opens on first team.member.spawned event -->
+        <toolWindow
+            id="JiuwenSwarm Swarm"
+            secondary="true"
+            icon="/icons/jiuwenswarm.svg"
+            anchor="bottom"
+            factoryClass="com.jiuwenswarm.plugin.ui.SwarmMapToolWindowFactory"/>
+
         <!-- Application-level settings storage -->
         <applicationService
             serviceInterface="com.jiuwenswarm.plugin.settings.JiuwenSwarmSettings"
