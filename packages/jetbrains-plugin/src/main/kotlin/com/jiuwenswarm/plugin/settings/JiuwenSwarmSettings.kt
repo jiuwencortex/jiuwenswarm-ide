@@ -35,6 +35,8 @@ class JiuwenSwarmSettings : PersistentStateComponent<JiuwenSwarmSettings.State> 
         var loadHistoryOnSwitch: Boolean = true,
         /** When true, snapshot files before agent edits so the rewind feature can restore them. */
         var rewindEnabled: Boolean = true,
+        /** When true, show the Commit / Push quick actions in the chat panel. */
+        var gitEnabled: Boolean = false,
     )
 
     private var state = State()
@@ -100,6 +102,10 @@ class JiuwenSwarmSettings : PersistentStateComponent<JiuwenSwarmSettings.State> 
     var rewindEnabled: Boolean
         get() = state.rewindEnabled
         set(v) { state = state.copy(rewindEnabled = v) }
+
+    var gitEnabled: Boolean
+        get() = state.gitEnabled
+        set(v) { state = state.copy(gitEnabled = v) }
 
     val wsUrl: String get() = "ws://$host:$port/ws"
 

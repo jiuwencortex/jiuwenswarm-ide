@@ -42,7 +42,12 @@ export type ExtToWebviewMsg =
   | { type: 'prefill'; content: string }
   | { type: 'history_loading'; loading: boolean }
   | { type: 'rewindable'; enabled: boolean }
-  | { type: 'rewind_done'; message: string; restored: number; failed: number };
+  | { type: 'rewind_done'; message: string; restored: number; failed: number }
+  | { type: 'files'; files: Array<{ name: string; path: string; rel: string }> }
+  | { type: 'git_status'; branch: string; changedCount: number }
+  | { type: 'git_committed'; hash: string }
+  | { type: 'git_error'; message: string }
+  | { type: 'git_pushed' };
 
 export interface SessionMetrics {
   contextBytes: number;

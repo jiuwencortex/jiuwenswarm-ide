@@ -1462,11 +1462,11 @@
     <!-- Mode selector -->
     <div id="mode-wrap">
       <button id="mode-btn" onclick="toggleModeDropdown()" title="Coding mode — choose how the agent works">
-        <span id="mode-label">Plan & Explore</span>
+        <span id="mode-label">Plan & Execute</span>
         <span class="chevron">▾</span>
       </button>
       <div id="mode-dropdown">
-        <div class="mode-option selected" data-mode="code.plan"    onclick="selectMode('code.plan')">Plan & Explore</div>
+        <div class="mode-option selected" data-mode="code.plan"    onclick="selectMode('code.plan')">Plan & Execute</div>
         <div class="mode-desc">Explore files, design a plan, wait for your approval — no edits yet</div>
         <div class="mode-option"          data-mode="code.normal"  onclick="selectMode('code.normal')">Execute</div>
         <div class="mode-desc">Edit files, run commands, verify and deliver results directly</div>
@@ -2189,7 +2189,7 @@ function selectMode(mode) {
 function applyMode(mode) {
   state.mode = mode;
   var labels = {
-    'code.plan':   'Plan & Explore',
+    'code.plan':   'Plan & Execute',
     'code.normal': 'Execute',
     'code.team':   'Team Coding'
   };
@@ -3147,7 +3147,7 @@ function renderMentionPopup(matches) {
   if (!matches.length) { hideMentionPopup(); return; }
   mentionPopupEl.innerHTML = matches.map(function(f, i) {
     var active = i === state.mentionActive ? ' active' : '';
-    return '<div class="mention-item' + active + '" data-path="' + f.path.replace(/"/g, '&quot;') + '">' +
+    return '<div class="mention-item' + active + '" data-path="' + f.path.replace(/"/g, '&quot;') + '" data-rel="' + f.rel.replace(/"/g, '&quot;') + '">' +
       f.name + '<span class="mi-rel">' + f.rel.replace(/</g, '&lt;') + '</span></div>';
   }).join('');
   mentionPopupEl.classList.remove('hidden');
@@ -3157,7 +3157,7 @@ function renderMentionPopup(matches) {
   // Click handler
   mentionPopupEl.onclick = function(e) {
     var item = e.target.closest('.mention-item');
-    if (item) selectMention({ path: item.dataset.path, name: item.dataset.path.split('/').pop(), rel: '' });
+    if (item) selectMention({ path: item.dataset.path, name: item.dataset.path.split('/').pop(), rel: item.dataset.rel || '' });
   };
 }
 
@@ -3177,8 +3177,10 @@ function selectMention(file) {
   inputEl.value = replaced + after;
   var newPos = replaced.length;
   inputEl.setSelectionRange(newPos, newPos);
+  // Programmatic value changes don't fire 'input' — update the send button state here
+  sendBtn.disabled = !inputEl.value.trim() || !state.connected || state.streaming;
   // Track this path so submitMessage can forward it to the host
-  if (!state.pendingMentions.includes(file.path)) {
+  if (file.path && !state.pendingMentions.includes(file.path)) {
     state.pendingMentions.push(file.path);
   }
   hideMentionPopup();

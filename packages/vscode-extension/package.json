@@ -97,7 +97,12 @@
             "code.normal",
             "code.team"
           ],
-          "description": "Default coding mode: Plan & Explore / Execute / Team Coding"
+          "enumItemLabels": [
+            "Plan & Execute",
+            "Execute",
+            "Team Coding"
+          ],
+          "description": "Default coding mode: Plan & Execute / Execute / Team Coding"
         },
         "jiuwenswarm.channelId": {
           "type": "string",
@@ -157,6 +162,11 @@
           "minimum": 10,
           "maximum": 2000,
           "description": "Maximum number of files listed in the injected project tree (10–2000)"
+        },
+        "jiuwenswarm.gitEnabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable Git Commit / Push quick actions in the chat panel (requires a git repository)"
         }
       }
     }

@@ -451,8 +451,12 @@ class ChatPanel(
                     dispatchToWebview(mapOf("type" to "files", "files" to files))
                 }
                 "git_status_request" -> sendGitStatus()
-                "git_commit_request" -> ApplicationManager.getApplication().invokeLater { handleGitCommit() }
-                "git_push_request"   -> ApplicationManager.getApplication().executeOnPooledThread { handleGitPush() }
+                "git_commit_request" -> if (JiuwenSwarmSettings.instance().gitEnabled) {
+                    ApplicationManager.getApplication().invokeLater { handleGitCommit() }
+                }
+                "git_push_request" -> if (JiuwenSwarmSettings.instance().gitEnabled) {
+                    ApplicationManager.getApplication().executeOnPooledThread { handleGitPush() }
+                }
             }
         } catch (e: Exception) {
             LOG.warn("Failed to parse webview message: $jsonStr", e)
@@ -658,6 +662,7 @@ class ChatPanel(
     }
 
     private fun sendGitStatus() {
+        if (!JiuwenSwarmSettings.instance().gitEnabled) return
         ApplicationManager.getApplication().executeOnPooledThread {
             val branch = execGitCommand("git", "rev-parse", "--abbrev-ref", "HEAD")
             if (branch.isEmpty() || branch == "HEAD") return@executeOnPooledThread

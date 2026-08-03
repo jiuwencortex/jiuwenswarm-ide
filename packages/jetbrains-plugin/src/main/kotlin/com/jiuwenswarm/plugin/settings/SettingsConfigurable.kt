@@ -24,8 +24,8 @@ class SettingsConfigurable : Configurable {
     private val keepAliveIntervalSpinner = JSpinner(SpinnerNumberModel(settings.keepAliveInterval, 5, 300, 5))
 
     // ── Chat behaviour ──
-    private val defaultModeCombo = JComboBox(arrayOf("code.plan", "code.normal", "code.team")).also {
-        it.selectedItem = settings.defaultMode
+    private val defaultModeCombo = JComboBox(arrayOf("Plan & Execute", "Execute", "Team Coding")).also {
+        it.selectedItem = modeLabel(settings.defaultMode)
     }
     private val loadHistoryOnSwitchBox = JBCheckBox(
         "Load message history when switching to an existing session",
@@ -49,6 +49,10 @@ class SettingsConfigurable : Configurable {
         "Enable checkpoint / rewind (snapshot files before agent edits)",
         settings.rewindEnabled,
     )
+    private val gitEnabledBox = JBCheckBox(
+        "Enable Git Commit / Push quick actions",
+        settings.gitEnabled,
+    )
 
     // ── Context injection ──
     private val projectTreeEnabledBox = JBCheckBox(
@@ -60,6 +64,18 @@ class SettingsConfigurable : Configurable {
     )
 
     private var panel: JPanel? = null
+
+    private fun modeLabel(code: String): String = when (code) {
+        "code.normal" -> "Execute"
+        "code.team" -> "Team Coding"
+        else -> "Plan & Execute"
+    }
+
+    private fun modeCode(label: String): String = when (label) {
+        "Execute" -> "code.normal"
+        "Team Coding" -> "code.team"
+        else -> "code.plan"
+    }
 
     override fun getDisplayName() = "JiuwenSwarm"
 
@@ -83,6 +99,7 @@ class SettingsConfigurable : Configurable {
             .addComponent(autoApplyEditsBox, 1)
             .addComponent(runInTerminalBox, 1)
             .addComponent(rewindEnabledBox, 1)
+            .addComponent(gitEnabledBox, 1)
             // Context injection
             .addSeparator()
             .addComponent(projectTreeEnabledBox, 1)
@@ -99,12 +116,13 @@ class SettingsConfigurable : Configurable {
         autoConnectBox.isSelected != settings.autoConnect ||
         keepAliveBox.isSelected != settings.keepAliveEnabled ||
         (keepAliveIntervalSpinner.value as Int) != settings.keepAliveInterval ||
-        defaultModeCombo.selectedItem as String != settings.defaultMode ||
+        modeCode(defaultModeCombo.selectedItem as String) != settings.defaultMode ||
         loadHistoryOnSwitchBox.isSelected != settings.loadHistoryOnSwitch ||
         approveEditsBox.isSelected != settings.approveEdits ||
         autoApplyEditsBox.isSelected != settings.autoApplyEdits ||
         runInTerminalBox.isSelected != settings.runCommandsInTerminal ||
         rewindEnabledBox.isSelected != settings.rewindEnabled ||
+        gitEnabledBox.isSelected != settings.gitEnabled ||
         projectTreeEnabledBox.isSelected != settings.projectTreeEnabled ||
         (projectTreeMaxFilesSpinner.value as Int) != settings.projectTreeMaxFiles
 
@@ -115,12 +133,13 @@ class SettingsConfigurable : Configurable {
         settings.autoConnect = autoConnectBox.isSelected
         settings.keepAliveEnabled = keepAliveBox.isSelected
         settings.keepAliveInterval = (keepAliveIntervalSpinner.value as Int).coerceIn(5, 300)
-        settings.defaultMode = defaultModeCombo.selectedItem as String
+        settings.defaultMode = modeCode(defaultModeCombo.selectedItem as String)
         settings.loadHistoryOnSwitch = loadHistoryOnSwitchBox.isSelected
         settings.approveEdits = approveEditsBox.isSelected
         settings.autoApplyEdits = autoApplyEditsBox.isSelected
         settings.runCommandsInTerminal = runInTerminalBox.isSelected
         settings.rewindEnabled = rewindEnabledBox.isSelected
+        settings.gitEnabled = gitEnabledBox.isSelected
         settings.projectTreeEnabled = projectTreeEnabledBox.isSelected
         settings.projectTreeMaxFiles = (projectTreeMaxFilesSpinner.value as Int).coerceIn(10, 2000)
     }
@@ -132,12 +151,13 @@ class SettingsConfigurable : Configurable {
         autoConnectBox.isSelected = settings.autoConnect
         keepAliveBox.isSelected = settings.keepAliveEnabled
         keepAliveIntervalSpinner.value = settings.keepAliveInterval
-        defaultModeCombo.selectedItem = settings.defaultMode
+        defaultModeCombo.selectedItem = modeLabel(settings.defaultMode)
         loadHistoryOnSwitchBox.isSelected = settings.loadHistoryOnSwitch
         approveEditsBox.isSelected = settings.approveEdits
         autoApplyEditsBox.isSelected = settings.autoApplyEdits
         runInTerminalBox.isSelected = settings.runCommandsInTerminal
         rewindEnabledBox.isSelected = settings.rewindEnabled
+        gitEnabledBox.isSelected = settings.gitEnabled
         projectTreeEnabledBox.isSelected = settings.projectTreeEnabled
         projectTreeMaxFilesSpinner.value = settings.projectTreeMaxFiles
     }

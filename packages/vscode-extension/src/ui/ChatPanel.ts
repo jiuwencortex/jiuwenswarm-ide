@@ -267,12 +267,12 @@ export class ChatPanel implements vscode.Disposable {
       }
 
       case 'git_commit_request': {
-        void this.handleGitCommit();
+        if (this.gitEnabled()) void this.handleGitCommit();
         break;
       }
 
       case 'git_push_request': {
-        void this.handleGitPush();
+        if (this.gitEnabled()) void this.handleGitPush();
         break;
       }
     }
@@ -670,7 +670,12 @@ export class ChatPanel implements vscode.Disposable {
     return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   }
 
+  private gitEnabled(): boolean {
+    return vscode.workspace.getConfiguration('jiuwenswarm').get<boolean>('gitEnabled', false);
+  }
+
   private sendGitStatus(): void {
+    if (!this.gitEnabled()) return;
     const root = this.gitRoot();
     if (!root) return;
     try {
