@@ -3242,9 +3242,10 @@ function renderPromptPopup(matches) {
   promptPopupEl.classList.remove('hidden');
   var activeEl = promptPopupEl.querySelector('.active');
   if (activeEl) activeEl.scrollIntoView({ block: 'nearest' });
-  promptPopupEl.onclick = function(e) {
+  promptPopupEl.onmousedown = function(e) {
     var item = e.target.closest('.prompt-item');
     if (item) {
+      e.preventDefault();
       var idx = parseInt(item.dataset.idx, 10);
       if (matches[idx]) selectPrompt(matches[idx]);
     }
@@ -3258,15 +3259,8 @@ function hidePromptPopup() {
 }
 
 function selectPrompt(preset) {
-  var val = inputEl.value;
-  var pos = inputEl.selectionStart;
-  var before = val.substring(0, pos);
-  var after  = val.substring(pos);
-  // Replace the !query token with the preset text
-  var replaced = before.replace(/!([^\s!]*)$/, preset.text);
-  inputEl.value = replaced + after;
-  var newPos = replaced.length;
-  inputEl.setSelectionRange(newPos, newPos);
+  inputEl.value = inputEl.value.replace(/!([^\s!]*)$/, preset.text);
+  inputEl.setSelectionRange(inputEl.value.length, inputEl.value.length);
   sendBtn.disabled = !inputEl.value.trim() || !state.connected || state.streaming;
   hidePromptPopup();
   inputEl.focus();
@@ -3291,9 +3285,12 @@ function renderMentionPopup(matches) {
   var activeEl = mentionPopupEl.querySelector('.active');
   if (activeEl) activeEl.scrollIntoView({ block: 'nearest' });
   // Click handler
-  mentionPopupEl.onclick = function(e) {
+  mentionPopupEl.onmousedown = function(e) {
     var item = e.target.closest('.mention-item');
-    if (item) selectMention({ path: item.dataset.path, name: item.dataset.path.split('/').pop(), rel: item.dataset.rel || '' });
+    if (item) {
+      e.preventDefault();
+      selectMention({ path: item.dataset.path, name: item.dataset.path.split('/').pop(), rel: item.dataset.rel || '' });
+    }
   };
 }
 
@@ -3305,14 +3302,8 @@ function hideMentionPopup() {
 
 function selectMention(file) {
   // Replace the @query in the textarea with @rel-path + space
-  var val = inputEl.value;
-  var pos = inputEl.selectionStart;
-  var before = val.substring(0, pos);
-  var after  = val.substring(pos);
-  var replaced = before.replace(/@([^\s@]*)$/, '@' + file.rel + ' ');
-  inputEl.value = replaced + after;
-  var newPos = replaced.length;
-  inputEl.setSelectionRange(newPos, newPos);
+  inputEl.value = inputEl.value.replace(/@([^\s@]*)$/, '@' + file.rel + ' ');
+  inputEl.setSelectionRange(inputEl.value.length, inputEl.value.length);
   // Programmatic value changes don't fire 'input' — update the send button state here
   sendBtn.disabled = !inputEl.value.trim() || !state.connected || state.streaming;
   // Track this path so submitMessage can forward it to the host
@@ -3345,9 +3336,12 @@ function renderSkillPopup(matches) {
   skillPopupEl.classList.remove('hidden');
   var activeEl = skillPopupEl.querySelector('.active');
   if (activeEl) activeEl.scrollIntoView({ block: 'nearest' });
-  skillPopupEl.onclick = function(e) {
+  skillPopupEl.onmousedown = function(e) {
     var item = e.target.closest('.skill-item');
-    if (item) selectSkill({ id: item.dataset.id, name: item.dataset.name });
+    if (item) {
+      e.preventDefault();
+      selectSkill({ id: item.dataset.id, name: item.dataset.name });
+    }
   };
 }
 
@@ -3358,14 +3352,8 @@ function hideSkillPopup() {
 }
 
 function selectSkill(skill) {
-  var val = inputEl.value;
-  var pos = inputEl.selectionStart;
-  var before = val.substring(0, pos);
-  var after  = val.substring(pos);
-  var replaced = before.replace(/#([^\s#]*)$/, '#' + skill.id + ' ');
-  inputEl.value = replaced + after;
-  var newPos = replaced.length;
-  inputEl.setSelectionRange(newPos, newPos);
+  inputEl.value = inputEl.value.replace(/#([^\s#]*)$/, '#' + (skill.name || skill.id) + ' ');
+  inputEl.setSelectionRange(inputEl.value.length, inputEl.value.length);
   sendBtn.disabled = !inputEl.value.trim() || !state.connected || state.streaming;
   hideSkillPopup();
   inputEl.focus();
