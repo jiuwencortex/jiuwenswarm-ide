@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { AgentLane, TeamTask, SwarmSnapshot } from './SwarmState';
+import { AgentLane, TeamTask, TeamMessage, SwarmSnapshot } from './SwarmState';
 
 /**
  * Mirrors SwarmStateManager.kt — maintains in-memory swarm state built from
@@ -12,6 +12,7 @@ export class SwarmStateManager {
   // Map preserves insertion order so join order is maintained
   private lanes = new Map<string, AgentLane>();
   private tasks = new Map<string, TeamTask>();
+  private messages: TeamMessage[] = [];  // ring buffer, max 50
   private lastEventAt = 0;
 
   // ──────────────────────────────────────────
@@ -59,6 +60,7 @@ export class SwarmStateManager {
     const lane = this.getOrStubLane(memberName);
     lane.lastToolName = toolName;
     lane.currentActivity = this.formatActivity(toolName, filePath);
+    lane.lastActivePath = filePath ?? null;
     lane.lastActiveAt = Date.now();
     this.lastEventAt = lane.lastActiveAt;
   }
@@ -77,6 +79,7 @@ export class SwarmStateManager {
       teamName: this.teamName,
       lanes: sortedLanes,
       tasks: sortedTasks,
+      messages: [...this.messages],
       lastEventAt: this.lastEventAt,
     };
   }
@@ -86,6 +89,7 @@ export class SwarmStateManager {
     this.teamName = '';
     this.lanes.clear();
     this.tasks.clear();
+    this.messages = [];
     this.lastEventAt = 0;
   }
 
@@ -117,6 +121,7 @@ export class SwarmStateManager {
         currentTaskTitle: null,
         currentActivity: null,
         lastToolName: null,
+        lastActivePath: null,
         lastActiveAt: this.lastEventAt,
         messageCount: 0,
         tasksDone: 0,
@@ -227,6 +232,13 @@ export class SwarmStateManager {
     const lane = this.getOrStubLane(from);
     lane.messageCount++;
     lane.lastActiveAt = this.lastEventAt;
+    // Capture message content for the inter-agent message log
+    const content = e['content'] as string | undefined;
+    if (content) {
+      const to = (e['to_member'] as string | undefined) ?? null;
+      this.messages.push({ from, to, content, timestamp: this.lastEventAt });
+      if (this.messages.length > 50) this.messages.shift();
+    }
   }
 
   // ──────────────────────────────────────────
@@ -246,6 +258,7 @@ export class SwarmStateManager {
       currentTaskTitle: null,
       currentActivity: null,
       lastToolName: null,
+      lastActivePath: null,
       lastActiveAt: this.lastEventAt,
       messageCount: 0,
       tasksDone: 0,

@@ -28,6 +28,18 @@ body {
   text-transform: uppercase;
   color: var(--vscode-sideBarSectionHeader-foreground, #aaa);
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+#progress-chip {
+  font-size: 10px;
+  font-weight: normal;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--vscode-descriptionForeground, #888);
+  white-space: nowrap;
 }
 
 /* ── Task board ── */
@@ -82,6 +94,16 @@ body {
 .lane-card.status-BUSY   { border-left: 3px solid #3a7a3a; }
 .lane-card.status-PAUSED { border-left: 3px solid #7a7a3a; }
 .lane-card.status-READY  { border-left: 3px solid #444; }
+
+/* Jump-to-file hint on cards that have a live path */
+.lane-card.has-path:hover::after {
+  content: '↗ open file';
+  position: absolute;
+  top: 8px; right: 8px;
+  font-size: 10px;
+  color: var(--vscode-focusBorder, #007acc);
+  opacity: .85;
+}
 
 .lane-name {
   font-weight: 600;
@@ -141,6 +163,33 @@ body {
   color: #c9c94e;
 }
 
+/* ── Summary card (shown when all lanes SHUTDOWN) ── */
+#summary-card {
+  display: none;
+  margin: 6px;
+  border: 1px solid var(--vscode-widget-border, #333);
+  border-radius: 5px;
+  padding: 12px 14px;
+  background: #1a1a1a;
+}
+#summary-card h3 {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: var(--vscode-foreground, #ccc);
+}
+.summary-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground, #888);
+  margin-bottom: 3px;
+}
+.summary-row .summary-val {
+  color: var(--vscode-foreground, #ccc);
+  font-weight: 600;
+}
+
 /* ── Timeline bar ── */
 #timeline {
   height: 28px;
@@ -155,6 +204,66 @@ body {
   top: 8px; height: 4px;
   border-radius: 2px;
   opacity: .75;
+}
+
+/* ── Message log ── */
+#msg-section {
+  flex-shrink: 0;
+  border-top: 1px solid var(--vscode-sideBarSectionHeader-border, #333);
+  display: none;
+}
+#msg-toggle {
+  padding: 4px 10px;
+  font-size: 10px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--vscode-descriptionForeground, #888);
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+#msg-toggle:hover { color: var(--vscode-foreground, #ccc); }
+#msg-list {
+  max-height: 120px;
+  overflow-y: auto;
+  padding: 0 10px 6px;
+  display: none;
+}
+.msg-row {
+  display: flex;
+  gap: 6px;
+  padding: 2px 0;
+  border-bottom: 1px solid #2a2a2a;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.msg-from {
+  flex-shrink: 0;
+  font-weight: 600;
+  min-width: 70px;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.msg-arrow { color: #555; flex-shrink: 0; }
+.msg-to {
+  flex-shrink: 0;
+  min-width: 50px;
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--vscode-descriptionForeground, #888);
+}
+.msg-content {
+  flex: 1;
+  color: var(--vscode-descriptionForeground, #888);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── Empty state ── */
@@ -172,15 +281,27 @@ body {
 </head>
 <body>
 
-<div id="header">JiuwenSwarm · Swarm Map</div>
+<div id="header">
+  <span>JiuwenSwarm · Swarm Map</span>
+  <span id="progress-chip"></span>
+</div>
 
 <div id="task-board"></div>
 
 <div id="lanes">
   <div id="empty">No active team session.<br>Start a conversation in <code>code.team</code> mode.</div>
+  <div id="summary-card"></div>
 </div>
 
 <div id="timeline"></div>
+
+<div id="msg-section">
+  <div id="msg-toggle" onclick="toggleMsgLog()">
+    <span id="msg-chevron">▶</span>
+    <span id="msg-label">Messages</span>
+  </div>
+  <div id="msg-list"></div>
+</div>
 
 <script>
 // ── Constants ──────────────────────────────────────────
@@ -193,6 +314,7 @@ var _laneColourMap = {};  // memberName → colour
 
 // ── State ──────────────────────────────────────────────
 var _state = null;        // SwarmSnapshot | null
+var _msgOpen = false;     // message log expanded?
 
 // ── Entry point ────────────────────────────────────────
 // Called by JetBrains (via executeJavaScript) or VS Code (via window.addEventListener)
@@ -220,18 +342,65 @@ if (typeof acquireVsCodeApi !== 'undefined') {
 function render() {
   if (!_state || _state.lanes.length === 0) {
     showEmpty(true);
+    renderProgress(null);
+    hideMsgSection();
     return;
   }
   showEmpty(false);
+  renderProgress(_state);
   renderTaskBoard(_state.tasks);
-  renderLanes(_state.lanes);
+  var allShutdown = _state.lanes.every(function(l) { return l.status === 'SHUTDOWN'; });
+  if (allShutdown) {
+    renderSummaryCard(_state);
+    hideLanes();
+  } else {
+    hideSummaryCard();
+    renderLanes(_state.lanes);
+  }
   renderTimeline(_state.lanes);
+  renderMessages(_state.messages || []);
 }
 
 function showEmpty(visible) {
   document.getElementById('empty').style.display = visible ? 'flex' : 'none';
 }
 
+function hideLanes() {
+  // Hide all lane cards, leave summary card visible
+  document.querySelectorAll('.lane-card').forEach(function(el) {
+    el.style.display = 'none';
+  });
+}
+
+function hideSummaryCard() {
+  document.getElementById('summary-card').style.display = 'none';
+  // Restore any hidden lane cards
+  document.querySelectorAll('.lane-card').forEach(function(el) {
+    el.style.display = '';
+  });
+}
+
+// ── Progress chip ──────────────────────────────────────
+function renderProgress(state) {
+  var chip = document.getElementById('progress-chip');
+  if (!state || state.lanes.length === 0) {
+    chip.textContent = '';
+    return;
+  }
+  var tasks = state.tasks || [];
+  var done  = tasks.filter(function(t) { return t.status === 'completed'; }).length;
+  var total = tasks.length;
+  var active = state.lanes.filter(function(l) {
+    return l.status === 'BUSY' || l.status === 'READY';
+  }).length;
+
+  var parts = [];
+  if (total > 0) parts.push(done + '/' + total + ' tasks');
+  if (active > 0) parts.push(active + ' agent' + (active !== 1 ? 's' : ''));
+  chip.textContent = parts.join(' · ');
+}
+
+// ── Task board ─────────────────────────────────────────
 function renderTaskBoard(tasks) {
   var board = document.getElementById('task-board');
   board.innerHTML = '';
@@ -250,6 +419,7 @@ function renderTaskBoard(tasks) {
   });
 }
 
+// ── Lane list ──────────────────────────────────────────
 function renderLanes(lanes) {
   var container = document.getElementById('lanes');
 
@@ -266,6 +436,7 @@ function renderLanes(lanes) {
     assignColour(lane.memberName);
     var card = existing[lane.memberName] || createLaneCard(lane.memberName);
     updateLaneCard(card, lane, i);
+    card.style.display = '';
     if (!existing[lane.memberName]) container.appendChild(card);
   });
 
@@ -296,7 +467,8 @@ function createLaneCard(memberName) {
 }
 
 function updateLaneCard(card, lane, sortIndex) {
-  card.className = 'lane-card status-' + lane.status;
+  var hasPath = !!lane.lastActivePath;
+  card.className = 'lane-card status-' + lane.status + (hasPath ? ' has-path' : '');
   card.style.order = String(sortIndex);
 
   var dot = card.querySelector('.status-dot');
@@ -315,6 +487,7 @@ function updateLaneCard(card, lane, sortIndex) {
   taskEl.textContent = lane.currentTaskTitle ? 'Task: ' + lane.currentTaskTitle : '';
 
   // Idle warning: BUSY but no activity update for > IDLE_WARN_MS
+  // (don't render if has-path hint will show on hover)
   var warnEl = card.querySelector('.lane-idle-warning');
   var idleMs = Date.now() - lane.lastActiveAt;
   if (lane.status === 'BUSY' && idleMs > IDLE_WARN_MS) {
@@ -324,6 +497,30 @@ function updateLaneCard(card, lane, sortIndex) {
   }
 }
 
+// ── Summary card ───────────────────────────────────────
+function renderSummaryCard(state) {
+  var card = document.getElementById('summary-card');
+  var tasks = state.tasks || [];
+  var done  = tasks.filter(function(t) { return t.status === 'completed'; }).length;
+  var cancelled = tasks.filter(function(t) { return t.status === 'cancelled'; }).length;
+  var msgs  = (state.messages || []).length;
+  var agents = state.lanes.length;
+  var teamName = state.teamName || 'Team';
+
+  card.innerHTML = [
+    '<h3>✓ ' + esc(teamName) + ' · Session complete</h3>',
+    row('Agents', agents),
+    row('Tasks completed', done + (cancelled ? ' (' + cancelled + ' cancelled)' : '')),
+    row('Messages exchanged', msgs),
+  ].join('');
+  card.style.display = 'block';
+}
+
+function row(label, value) {
+  return '<div class="summary-row"><span>' + esc(label) + '</span><span class="summary-val">' + esc(String(value)) + '</span></div>';
+}
+
+// ── Timeline bar ───────────────────────────────────────
 function renderTimeline(lanes) {
   var bar   = document.getElementById('timeline');
   var width = bar.clientWidth - 20;  // 10px padding each side
@@ -346,6 +543,54 @@ function renderTimeline(lanes) {
     track.title = lane.displayName;
     bar.appendChild(track);
   });
+}
+
+// ── Message log ────────────────────────────────────────
+function renderMessages(messages) {
+  var section = document.getElementById('msg-section');
+  if (!messages || messages.length === 0) {
+    section.style.display = 'none';
+    return;
+  }
+  section.style.display = 'block';
+
+  var label = document.getElementById('msg-label');
+  label.textContent = 'Messages (' + messages.length + ')';
+
+  if (!_msgOpen) return;  // list content only updated when open
+
+  var list = document.getElementById('msg-list');
+  list.innerHTML = '';
+  // Show most-recent last (chronological)
+  messages.forEach(function(m) {
+    var div = document.createElement('div');
+    div.className = 'msg-row';
+    var colour = _laneColourMap[m.from] || '#888';
+    div.innerHTML = [
+      '<span class="msg-from" style="color:' + colour + '">' + esc(truncate(m.from, 14)) + '</span>',
+      '<span class="msg-arrow">→</span>',
+      '<span class="msg-to">' + esc(truncate(m.to || 'all', 12)) + '</span>',
+      '<span class="msg-content">' + esc(truncate(m.content, 60)) + '</span>',
+    ].join('');
+    div.title = (m.to ? m.from + ' → ' + m.to + ': ' : m.from + ': ') + m.content;
+    list.appendChild(div);
+  });
+  // Scroll to bottom
+  list.scrollTop = list.scrollHeight;
+}
+
+function hideMsgSection() {
+  document.getElementById('msg-section').style.display = 'none';
+}
+
+function toggleMsgLog() {
+  _msgOpen = !_msgOpen;
+  var list = document.getElementById('msg-list');
+  var chevron = document.getElementById('msg-chevron');
+  list.style.display = _msgOpen ? 'block' : 'none';
+  chevron.textContent = _msgOpen ? '▼' : '▶';
+  // Re-render content if opening
+  if (_msgOpen && _state) renderMessages(_state.messages || []);
 }
 
 // ── Helpers ────────────────────────────────────────────

@@ -15,7 +15,7 @@ class SwarmMapToolWindowFactory : ToolWindowFactory {
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
         try {
             val panel = SwarmMapPanel(toolWindow)
-            panel.onMessage = { /* Phase 3: open_lane, redirect, pause */ }
+            panel.onMessage = { raw -> findChatPanel(project)?.handleSwarmMessage(raw) }
 
             val content = ContentFactory.getInstance().createContent(panel.component, "", false)
             toolWindow.contentManager.addContent(content)

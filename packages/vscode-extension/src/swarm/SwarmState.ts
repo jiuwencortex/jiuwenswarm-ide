@@ -8,6 +8,7 @@ export interface AgentLane {
   currentTaskTitle: string | null;
   currentActivity: string | null; // e.g. "writing · auth.service.ts"
   lastToolName: string | null;
+  lastActivePath: string | null;  // full file path — used for jump-to-file on lane click
   lastActiveAt: number;
   messageCount: number;
   tasksDone: number;
@@ -21,10 +22,19 @@ export interface TeamTask {
   createdAt: number;
 }
 
+/** A single inter-agent message (p2p or broadcast). */
+export interface TeamMessage {
+  from: string;
+  to: string | null;   // null = broadcast
+  content: string;
+  timestamp: number;
+}
+
 export interface SwarmSnapshot {
   sessionId: string;
   teamName: string;
   lanes: AgentLane[];
   tasks: TeamTask[];
+  messages: TeamMessage[];  // last 50 inter-agent messages, chronological
   lastEventAt: number;
 }

@@ -15,6 +15,9 @@ export class SwarmMapPanel {
   private pendingSnapshot?: SwarmSnapshot;
   private webviewReady = false;
 
+  /** Called by ChatPanel to handle open_lane and future steerable messages. */
+  onMessage?: (msg: Record<string, unknown>) => void;
+
   constructor(private readonly context: vscode.ExtensionContext) {}
 
   /** Open the panel (or bring it to front if already open). */
@@ -45,8 +48,10 @@ export class SwarmMapPanel {
           void this.panel?.webview.postMessage({ type: 'swarm_snapshot', snapshot: this.pendingSnapshot });
           this.pendingSnapshot = undefined;
         }
+        return;
       }
-      // Phase 3: handle open_lane, redirect, pause messages from the webview
+      // Delegate all other messages (open_lane, etc.) to ChatPanel
+      this.onMessage?.(msg);
     });
 
     this.panel.onDidDispose(() => {

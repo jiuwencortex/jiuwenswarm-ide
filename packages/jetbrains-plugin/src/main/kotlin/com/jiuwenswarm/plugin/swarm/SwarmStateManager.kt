@@ -21,6 +21,7 @@ class SwarmStateManager {
     private var teamName: String = ""
     private val lanes = LinkedHashMap<String, AgentLane>()   // insertion order = join order
     private val tasks = LinkedHashMap<String, TeamTask>()
+    private val messages = ArrayDeque<TeamMessage>()          // ring buffer, max 50
     @Volatile private var lastEventAt: Long = 0L
 
     // ──────────────────────────────────────────
@@ -68,6 +69,7 @@ class SwarmStateManager {
         val lane = lanes.getOrPut(name) { stubLane(name) }
         lane.lastToolName = toolName
         lane.currentActivity = formatActivity(toolName, filePath)
+        lane.lastActivePath = filePath
         lane.lastActiveAt = System.currentTimeMillis()
         lastEventAt = lane.lastActiveAt
     }
@@ -91,6 +93,7 @@ class SwarmStateManager {
             teamName = teamName,
             lanes = sortedLanes,
             tasks = sortedTasks,
+            messages = messages.toList(),
             lastEventAt = lastEventAt,
         )
     }
@@ -101,6 +104,7 @@ class SwarmStateManager {
         teamName = ""
         lanes.clear()
         tasks.clear()
+        messages.clear()
         lastEventAt = 0L
     }
 
@@ -221,6 +225,11 @@ class SwarmStateManager {
         val lane = lanes.getOrPut(from) { stubLane(from) }
         lane.messageCount++
         lane.lastActiveAt = lastEventAt
+        // Capture message content for the inter-agent message log
+        val content = e.get("content")?.asString ?: return
+        val to = e.get("to_member")?.asString
+        messages.addLast(TeamMessage(from = from, to = to, content = content, timestamp = lastEventAt))
+        if (messages.size > 50) messages.removeFirst()
     }
 
     // ──────────────────────────────────────────

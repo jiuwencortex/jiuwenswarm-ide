@@ -10,6 +10,7 @@ data class AgentLane(
     var currentTaskTitle: String? = null,
     var currentActivity: String? = null,      // e.g. "writing · auth.service.ts"
     var lastToolName: String? = null,
+    var lastActivePath: String? = null,       // full file path — used for jump-to-file on lane click
     var lastActiveAt: Long = System.currentTimeMillis(),
     var messageCount: Int = 0,
     var tasksDone: Int = 0,
@@ -23,10 +24,19 @@ data class TeamTask(
     val createdAt: Long = System.currentTimeMillis(),
 )
 
+/** A single inter-agent message (p2p or broadcast). */
+data class TeamMessage(
+    val from: String,
+    val to: String?,      // null = broadcast
+    val content: String,
+    val timestamp: Long,
+)
+
 data class SwarmSnapshot(
     val sessionId: String,
     val teamName: String,
     val lanes: List<AgentLane>,
     val tasks: List<TeamTask>,
+    val messages: List<TeamMessage>,   // last 50 inter-agent messages, chronological
     val lastEventAt: Long,
 )

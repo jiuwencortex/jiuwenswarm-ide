@@ -268,6 +268,28 @@ class ChatPanel(
     }
 
     // ──────────────────────────────────────────
+    // Swarm Map → Plugin messages (open_lane etc.)
+    // ──────────────────────────────────────────
+    fun handleSwarmMessage(raw: String) {
+        try {
+            val msg = gson.fromJson(raw, com.google.gson.JsonObject::class.java)
+            when (msg.get("type")?.asString) {
+                "open_lane" -> {
+                    val memberName = msg.get("memberName")?.asString ?: return
+                    val filePath = swarmStateManager.snapshot().lanes
+                        .firstOrNull { it.memberName == memberName }
+                        ?.lastActivePath ?: return
+                    ApplicationManager.getApplication().invokeLater {
+                        val vf = LocalFileSystem.getInstance().findFileByPath(filePath)
+                            ?: LocalFileSystem.getInstance().refreshAndFindFileByPath(filePath)
+                        if (vf != null) OpenFileDescriptor(project, vf).navigate(true)
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
+    // ──────────────────────────────────────────
     // Webview → Plugin messages
     // ──────────────────────────────────────────
     private fun handleWebviewMessage(jsonStr: String) {

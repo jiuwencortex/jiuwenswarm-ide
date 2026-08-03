@@ -45,6 +45,7 @@ export class ChatPanel implements vscode.Disposable {
   ) {
     this.webviewHtmlPath = path.join(context.extensionPath, 'resources', 'chat.html');
     this.swarmMapPanel = new SwarmMapPanel(context);
+    this.swarmMapPanel.onMessage = (msg) => this.handleSwarmMessage(msg);
     const statusListener = (s: WsStatus) => this.onStatusChange(s);
     const msgListener = (m: JiuwenMessage) => this.onJiuwenMessage(m);
     const sessionListener = (sid: string | null) => this.onSessionChange(sid);
@@ -712,6 +713,19 @@ export class ChatPanel implements vscode.Disposable {
     } catch (e) {
       this.debug(`toggle_skill failed: ${e}`);
       this.postToWebview({ type: 'skills_error', message: String(e) });
+    }
+  }
+
+  // ──────────────────────────────────────────
+  // Swarm Map → Extension messages
+  // ──────────────────────────────────────────
+  private handleSwarmMessage(msg: Record<string, unknown>): void {
+    if (msg['type'] === 'open_lane') {
+      const memberName = msg['memberName'] as string | undefined;
+      if (!memberName) return;
+      const lane = this.swarmStateManager.snapshot().lanes.find((l) => l.memberName === memberName);
+      const filePath = lane?.lastActivePath;
+      if (filePath) void this.openFile(filePath, 0);
     }
   }
 
