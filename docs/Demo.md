@@ -1,144 +1,251 @@
-## JiuwenSwarm IDE Plugin — Demo Scenario
+# JiuwenSwarm IDE Plugin — Demo Scenario
+
+A self-contained walkthrough. The only assumption is that the JiuwenSwarm
+server process is already running. No code, no project, no files are needed
+in advance — the swarm builds everything from zero.
 
 ---
 
-### 0. Prerequisites (already done)
+## 0. Before you start
 
-- JiuwenSwarm server is running (WebSocket endpoint reachable, e.g. `ws://localhost:8765`)
-- PyCharm is open with a project that has some Python files
-- The JiuwenSwarm plugin is installed (visible in *Settings → Plugins*)
-
----
-
-### 1. Open the Chat panel
-
-1. In the right sidebar click **JiuwenSwarm** (or *View → Tool Windows → JiuwenSwarm*).
-2. The chat panel loads. The status bar at the bottom of PyCharm shows the connection state.
-3. If the server is reachable the status indicator turns green / shows "Connected".
+| What | Required state |
+|------|---------------|
+| JiuwenSwarm server | Running (note the WebSocket URL, e.g. `ws://localhost:8765`) |
+| PyCharm | Installed, JiuwenSwarm plugin installed |
+| Demo project | **Empty directory** — create a new folder anywhere, e.g. `~/demo-swarm` |
 
 ---
 
-### 2. Start a team session
+## 1. Open the empty project in PyCharm
 
-In the chat input box type a request that invokes multi-agent mode. Example:
+1. *File → Open* → select `~/demo-swarm`.
+2. Confirm it is empty in the *Project* sidebar (left panel). No files, no `src/`, nothing.
+
+> This is the starting point. The audience sees a blank canvas.
+
+---
+
+## 2. Configure the server connection (first run only)
+
+1. Open *Settings (⌘,) → Tools → JiuwenSwarm*.
+2. Set **Server URL** to the WebSocket address the server is listening on.
+3. Click **OK**.
+
+Skip this step on subsequent runs — the setting is persisted.
+
+---
+
+## 3. Open the Chat panel
+
+1. Click **JiuwenSwarm** in the right sidebar strip, or go to
+   *View → Tool Windows → JiuwenSwarm*.
+2. The chat panel slides open on the right side of the IDE.
+3. The status bar at the very bottom of PyCharm shows the connection state.
+   Wait until it reads **Connected** (green dot or similar indicator).
+
+> If it stays "Disconnected": check the server URL in Settings and confirm
+> the server process is up.
+
+---
+
+## 4. Send the demo prompt
+
+Click the chat input box and paste this prompt exactly:
 
 ```
-/code.team Refactor the payment module: split billing logic from invoice
-generation, add unit tests for both, and update the README.
+Build a Python CLI task manager from scratch. The project should have:
+1. tasks.py — a module with add_task, list_tasks, complete_task, delete_task
+   functions, persisting tasks to tasks.json
+2. cli.py — a thin CLI wrapper using argparse that exposes add / list /
+   complete / delete subcommands
+3. tests/test_tasks.py — unit tests covering all four operations, using
+   only stdlib (no pytest required)
+4. README.md — usage examples for every subcommand
+
+Start with a plan, then write each file, run the tests, and confirm they pass.
 ```
 
-Press **Enter** (or the send button).
-
-> The `/code.team` prefix (or equivalent mode flag your server recognises) tells the gateway to spawn a swarm instead of a single agent.
+Press **Enter** (or click the send button).
 
 ---
 
-### 3. Watch the Swarm Map appear
+## 5. Swarm Map appears automatically
 
-Within a second or two the first `team.member.spawned` event arrives.
+Within 1–2 seconds the first `team.member.spawned` event arrives from the server.
 
-- The **Swarm Map** tool window pops open automatically at the bottom of PyCharm.
-- A lane card appears for the first agent (e.g. **Planner**) with a green pulsing dot and role badge.
-- The **header chip** (`0/3 tasks · 1 agent`) updates immediately.
+- The **JiuwenSwarm Swarm** tool window pops open at the **bottom** of PyCharm
+  without any manual action.
+- A lane card appears for the first agent — typically the **Planner** — with:
+  - A **pulsing green dot** (BUSY status)
+  - A **LEADER** role badge in purple
+- The **header chip** in the top-right of the Swarm Map shows: `0/4 tasks · 1 agent`
 
----
-
-### 4. Observe agents spawning
-
-As more members join you see additional lane cards:
-
-| Lane | Role | Status | Activity |
-|------|------|--------|----------|
-| planner | LEADER | BUSY | — |
-| coder-1 | TEAMMATE | READY | — |
-| tester | TEAMMATE | READY | — |
-
-The leader's dot pulses green. Teammates show grey dots until they pick up tasks.
+> Point out: nobody clicked anything. The panel opened on its own when the
+> first agent joined the session.
 
 ---
 
-### 5. Watch tasks flow through the board
+## 6. More agents spawn
 
-Once the planner emits `team.task.created` events:
+Two or three more agents join within seconds. The Swarm Map fills in:
 
-- **Task pills** appear at the top of the Swarm Map: yellow for *pending*, green for *in_progress*, grey for *completed*.
-- The progress chip updates: `1/3 tasks · 3 agents`.
+| Lane | Role | Dot | What it will do |
+|------|------|-----|-----------------|
+| planner | LEADER | green pulse | Decompose the request into tasks |
+| coder | TEAMMATE | grey | Write tasks.py and cli.py |
+| tester | TEAMMATE | grey | Write and run tests/test_tasks.py |
+| writer | TEAMMATE | grey | Write README.md |
 
-When `team.task.started` fires for **coder-1**:
-- Its lane card border turns bright green (BUSY).
-- `Task: Split billing logic from invoice` appears under its name.
-
----
-
-### 6. Watch file-level activity
-
-As **coder-1** calls tools (`read_file`, `str_replace_editor`, `write_file`):
-
-- The **activity line** under its name updates live: `editing · billing.py`, `writing · invoice.py`, etc.
-- The lane card gains the `.has-path` class — hovering over it shows the **↗ open file** hint.
-
-**Click the lane card** → PyCharm opens `billing.py` at the top of the editor and moves focus there.
+The progress chip updates to `0/4 tasks · 4 agents`.
 
 ---
 
-### 7. Watch inter-agent messages
+## 7. Tasks appear as pills
 
-When the planner sends a subtask description to coder-1 via `team.message.*`:
+The planner emits `team.task.created` events for each work item. Four pills
+appear across the top of the Swarm Map:
 
-- At the bottom of the Swarm Map a **Messages (3)** toggle appears.
-- Click the **▶ Messages** toggle to expand the log.
-- Rows show: `planner → coder-1 · implement split_billing(order) keeping…`
-- The sender name is colour-coded to match their lane dot colour.
+- **yellow** pills: *pending* tasks waiting to be claimed
+- As agents claim and start them, the pill turns **green** (in_progress)
+- When finished, the pill turns **grey** (completed)
 
----
-
-### 8. Observe the tester lane
-
-While coder-1 is writing, **tester** claims its task:
-
-- Second pill turns green: `2/3 tasks`.
-- tester's activity shows `running · pytest tests/test_billing.py`.
+The progress chip counts up: `1/4 tasks`, `2/4 tasks`, …
 
 ---
 
-### 9. Session completes — summary card
+## 8. Live file activity on each lane card
 
-When all agents send `team.member.shutdown`:
+As **coder** starts writing:
 
-- All lane dots turn grey and fade (opacity 45%).
-- Live lane cards are replaced by the **summary card**:
+- Its dot turns green (BUSY) and its border highlights in green.
+- The activity line updates in real time:
+  - `reading · tasks.json` when it inspects the schema
+  - `writing · tasks.py` when it creates the file
+  - `editing · tasks.py` when it refines a function
+  - `writing · cli.py` when it moves to the next file
+
+**At this point, hover over the coder lane card.** Because it has an active file,
+the hint **↗ open file** appears in the top-right corner of the card.
+
+**Click the lane card** → PyCharm opens `tasks.py` directly in the editor and
+moves focus to it. The audience can read the code the agent just wrote.
+
+Go back to the Swarm Map and do the same for the tester lane once it is active
+— clicking it jumps to `tests/test_tasks.py`.
+
+---
+
+## 9. Inter-agent messages
+
+When the planner sends a task description to coder:
+
+- A **Messages (N)** toggle appears at the bottom edge of the Swarm Map panel.
+- Click **▶ Messages** to expand the log.
+- Rows appear in the format:
+
+  ```
+  planner  →  coder    implement add_task(title) writing to tasks.json…
+  planner  →  tester   write unit tests for all four task operations…
+  coder    →  tester   tasks.py is ready, file is at /…/tasks.py
+  ```
+
+- Each sender name is colour-coded to match the dot on their lane card.
+- The log scrolls automatically to the most recent message.
+
+Collapse the log again by clicking **▼ Messages**.
+
+---
+
+## 10. Tests run
+
+The tester lane shows `running · tests/test_tasks.py` in its activity line,
+indicating the agent has called a shell command to execute the test suite.
+
+Once the tests pass, the tester's task pill turns grey (completed) and its
+tasksDone counter increments internally.
+
+---
+
+## 11. Session completes — summary card
+
+When every agent has finished and sends `team.member.shutdown`:
+
+- All lane dots turn grey and the cards fade to 45% opacity.
+- The live lane list is **replaced** by the summary card:
+
+  ```
+  ✓ TaskManager Team · Session complete
+  Agents              4
+  Tasks completed     4
+  Messages            9
+  ```
+
+- The progress chip shows **4/4 tasks**.
+
+Now look at the *Project* sidebar — files that didn't exist five minutes ago:
 
 ```
-✓ PaymentRefactor Team · Session complete
-Agents            3
-Tasks completed   3
-Messages          12
+demo-swarm/
+├── tasks.py
+├── cli.py
+├── tasks.json          ← created on first run by the agent
+├── README.md
+└── tests/
+    └── test_tasks.py
 ```
 
-The progress chip shows `3/3 tasks`.
+Open any of them in the editor to show the audience real, working code.
 
 ---
 
-### 10. What to highlight during the demo
+## 12. Optional: try the CLI
 
-| What to show | Where to look |
-|---|---|
-| Automatic panel open | Swarm Map appears without manual click |
-| Real-time status dots | Pulsing green vs. grey vs. amber idle |
-| File navigation | Click lane card → editor jumps to file |
-| Progress chip | Header: `done/total tasks · N agents` |
-| Task pills | Colour changes: yellow → green → grey |
-| Inter-agent messages | Collapsible log at bottom of Swarm Map |
-| Summary card | Replaces lanes when session ends |
-| Idle warning | Amber `⚠ idle 35s` if BUSY agent goes quiet |
+Open the PyCharm **Terminal** tab and run the app the swarm built:
+
+```bash
+python cli.py add "Buy milk"
+python cli.py add "Write demo docs"
+python cli.py list
+python cli.py complete 1
+python cli.py list
+python cli.py delete 2
+```
+
+Then run the tests:
+
+```bash
+python -m unittest tests/test_tasks.py -v
+```
 
 ---
 
-### Common issues during demo
+## What to highlight at each stage
 
-| Symptom | Fix |
-|---|---|
-| Status stays "Disconnected" | Check server URL in *Settings → Tools → JiuwenSwarm* |
-| Swarm Map never opens | Confirm server sends `team.member.spawned` events; check plugin log (*Help → Show Log*) |
-| Lane cards appear but no file activity | `member_name` field may be missing from server's `chat.tool_call` payload |
-| Messages toggle never appears | Confirm server sends `team.message.*` events with `content` field |
+| Moment | What to point at |
+|--------|-----------------|
+| Server sends first event | Swarm Map opens — no button click needed |
+| Multiple lane cards | Real parallel agents, not sequential steps |
+| Pulsing green dot | Visual feedback: BUSY = actively running tools |
+| Activity line updates | Sub-second granularity on what the agent is doing |
+| Hover → ↗ open file | One click to jump into the file the agent last touched |
+| Click lane card | PyCharm focus moves to that exact file instantly |
+| Messages toggle | Agents coordinating with each other, not just user ↔ agent |
+| Message colour coding | Matches lane card colour — easy to trace who said what |
+| Progress chip | Always visible: `done/total tasks · N agents` |
+| Task pills | Colour shift from yellow to green to grey tells the story |
+| Summary card | Clean end state — session concluded, results visible |
+| Project sidebar | Empty dir → 5 files with working code |
+
+---
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---------|-------------|-----|
+| Status bar stays "Disconnected" | Server not running or wrong URL | Check *Settings → Tools → JiuwenSwarm* |
+| Chat panel loads but no response | Server up but agent pool not started | Check server logs |
+| Swarm Map never opens | Server not sending `team.member.spawned` | Verify server emits team events; check *Help → Show Log* in PyCharm |
+| Lane cards show but no file activity | `member_name` missing from `chat.tool_call` payload | Check server event schema |
+| Messages toggle never appears | `team.message.*` events not emitted, or `content` field missing | Check server event schema |
+| ↗ open file hint absent | Agent ran no file-touching tools yet | Wait for first read/write tool call |
+| File navigation does nothing | File path in event doesn't match local filesystem mount | Check server sends absolute paths matching the local project root |
