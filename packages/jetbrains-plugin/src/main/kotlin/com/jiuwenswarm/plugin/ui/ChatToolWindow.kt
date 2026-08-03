@@ -97,6 +97,11 @@ class ChatPanel(
     // Currently selected model (from the webview model selector); sent per-message.
     @Volatile private var activeModel: String? = null
 
+    // Last session id we loaded history for, so history is fetched exactly once
+    // per session even though sendCurrentStatus() may be called many times
+    // (status changes, session changes, explicit switch, panel load).
+    @Volatile private var historyLoadedForSession: String? = null
+
     // Debug logging is toggled from the webview; when true we log to IDEA log.
     @Volatile private var debugEnabled = false
 
@@ -124,6 +129,9 @@ class ChatPanel(
         browser.jbCefClient.addLoadHandler(object : CefLoadHandlerAdapter() {
             override fun onLoadEnd(b: CefBrowser, frame: CefFrame, httpStatusCode: Int) {
                 if (frame.isMain) {
+                    // Reset the history guard on (re)load so a panel opened after an
+                    // early (possibly dropped) connect still fetches the session history.
+                    historyLoadedForSession = null
                     injectBridge()
                     sendCurrentStatus()
                 }
@@ -328,12 +336,10 @@ class ChatPanel(
                     ApplicationManager.getApplication().executeOnPooledThread {
                         try {
                             service.session.switchSession(sid, "code.team")
-                            val loadHistory = JiuwenSwarmSettings.instance().loadHistoryOnSwitch
-                            dispatchToWebview(mapOf("type" to "history_loading", "loading" to loadHistory))
+                            // sendCurrentStatus() loads the new session's history exactly
+                            // once (guarded by historyLoadedForSession) — no separate
+                            // loadHistory call here, which used to triple-load history.
                             sendCurrentStatus()
-                            if (loadHistory) {
-                                service.session.loadHistory(sid)
-                            }
                         } catch (e: Exception) {
                             dispatchToWebview(mapOf("type" to "error", "message" to e.message))
                         }
@@ -738,8 +744,9 @@ class ChatPanel(
                     "sessionTitle" to service.session.sessionTitle,
                     "defaultMode" to service.settings.defaultMode,
                 ))
-                // Load history on connect/reconnect (same guard as switch_session)
-                if (service.settings.loadHistoryOnSwitch) {
+                // Load history exactly once per session (connect / reconnect / switch).
+                if (service.settings.loadHistoryOnSwitch && sid != null && historyLoadedForSession != sid) {
+                    historyLoadedForSession = sid
                     dispatchToWebview(mapOf("type" to "history_loading", "loading" to true))
                     ApplicationManager.getApplication().executeOnPooledThread {
                         service.session.loadHistory(sid)
