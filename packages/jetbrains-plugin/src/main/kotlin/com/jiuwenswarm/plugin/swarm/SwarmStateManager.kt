@@ -101,34 +101,35 @@ class SwarmStateManager {
     }
 
     /**
-     * Called from the chat.tool_call branch of onJiuwenMessage.
+     * Called from the chat.tool_call / chat.tool_update branches of onJiuwenMessage.
      * memberName may be null if the server does not include it in the payload.
+     * args (the parsed tool arguments) lets the feed say what an action touches —
+     * e.g. a file_path, a glob pattern, or the shell command.
      */
     @Synchronized
-    fun applyToolCall(toolName: String, filePath: String?, memberName: String?) {
+    fun applyToolCall(toolName: String, filePath: String?, memberName: String?, args: JsonObject? = null) {
         val name = memberName ?: return   // cannot attribute without a member name
         val lane = lanes.getOrPut(name) { stubLane(name) }
         lane.lastToolName = toolName
-        lane.currentActivity = formatActivity(toolName, filePath)
+        val activity = formatActivity(toolName, filePath, args)
+        lane.currentActivity = activity
         lane.lastActivePath = filePath
         lane.lastActiveAt = System.currentTimeMillis()
         lane.status = "BUSY"
+        pushFeed(lane, activity, lane.lastActiveAt)
         lastEventAt = lane.lastActiveAt
     }
 
     @Synchronized
     fun snapshot(): SwarmSnapshot {
-        val sortedLanes = lanes.values.sortedWith(
-            compareBy(
-                { statusPriority(it.status) },
-                { -it.lastActiveAt }
-            )
-        )
+        // Stable insertion order (join order) — lanes must not jump around as
+        // statuses change; the webview renders status separately from position.
+        val lanesList = lanes.values.toList()
         val sortedTasks = tasks.values.sortedWith(compareBy { it.createdAt })
         return SwarmSnapshot(
             sessionId = sessionId,
             teamName = teamName,
-            lanes = sortedLanes,
+            lanes = lanesList,
             tasks = sortedTasks,
             messages = messages.toList(),
             lastEventAt = lastEventAt,
@@ -165,6 +166,8 @@ class SwarmStateManager {
                 existing.currentTaskTitle = prompt
                 existing.currentActivity = "starting"
             }
+            existing.startedAt = existing.startedAt ?: lastEventAt
+            pushFeed(existing, "spawned", lastEventAt)
             existing.lastActiveAt = lastEventAt
         } else {
             lanes[name] = AgentLane(
@@ -175,6 +178,8 @@ class SwarmStateManager {
                 currentTaskTitle = prompt,
                 currentActivity = if (prompt.isNullOrEmpty()) null else "starting",
                 lastActiveAt = lastEventAt,
+                startedAt = lastEventAt,
+                activityFeed = mutableListOf(LaneFeedEntry(text = "spawned", at = lastEventAt)),
             )
         }
     }
@@ -190,6 +195,8 @@ class SwarmStateManager {
         if (!outcome.isNullOrEmpty() && status == "SHUTDOWN") {
             lane.currentActivity = "done · $outcome"
         }
+        if (status == "SHUTDOWN") pushFeed(lane, "finished", lastEventAt)
+        else if (status == "PAUSED") pushFeed(lane, "paused", lastEventAt)
         lane.lastActiveAt = lastEventAt
     }
 
@@ -209,6 +216,7 @@ class SwarmStateManager {
         val lane = lanes.getOrPut(name) { stubLane(name) }
         lane.status = "BUSY"
         lane.currentActivity = activity
+        pushFeed(lane, activity, lastEventAt)
         lane.lastActiveAt = lastEventAt
     }
 
@@ -218,6 +226,7 @@ class SwarmStateManager {
         lane.status = "SHUTDOWN"
         lane.executionStatus = "IDLE"
         lane.currentActivity = null
+        pushFeed(lane, "shutdown", lastEventAt)
         lane.lastActiveAt = lastEventAt
     }
 
@@ -327,26 +336,44 @@ class SwarmStateManager {
         displayName = memberName,
         role = "TEAMMATE",
         lastActiveAt = lastEventAt,
+        startedAt = lastEventAt.takeIf { it != 0L } ?: System.currentTimeMillis(),
     )
 
-    private fun formatActivity(toolName: String, filePath: String?): String {
-        val base = filePath?.let { File(it).name } ?: filePath
-        return when (toolName) {
-            "write_file", "create_file" -> if (base != null) "writing · $base" else "writing"
-            "str_replace_editor"        -> if (base != null) "editing · $base" else "editing"
-            "read_file"                 -> if (base != null) "reading · $base" else "reading"
-            "bash", "run_command"       -> if (filePath != null) "running · ${filePath.take(40)}" else "running"
-            "search_files", "grep"      -> if (base != null) "searching · $base" else "searching"
-            else                        -> toolName
+    /** Append one entry to a lane's activity feed, keeping it capped.
+     *  A duplicate of the previous entry within 1s (the tool_call + tool_update
+     *  pair for one call) is collapsed into the existing row instead of flooding
+     *  the feed; genuinely separate calls still get their own rows. */
+    private fun pushFeed(lane: AgentLane, text: String, at: Long) {
+        val last = lane.activityFeed.lastOrNull()
+        if (last != null && last.text == text && at - last.at < 1000) {
+            last.at = at
+            return
         }
+        lane.activityFeed.add(LaneFeedEntry(text = text, at = at))
+        while (lane.activityFeed.size > 10) lane.activityFeed.removeAt(0)
     }
 
-    private fun statusPriority(status: String) = when (status) {
-        "BUSY"     -> 0
-        "RUNNING"  -> 1
-        "READY"    -> 2
-        "PAUSED"   -> 3
-        "SHUTDOWN" -> 4
-        else       -> 5
+    private fun formatActivity(toolName: String, filePath: String?, args: JsonObject?): String {
+        val base = filePath?.let { File(it).name } ?: filePath
+        val pattern = args?.get("pattern")?.takeIf { it.isJsonPrimitive }?.asString
+        val command = args?.get("command")?.takeIf { it.isJsonPrimitive }?.asString
+            ?: args?.get("cmd")?.takeIf { it.isJsonPrimitive }?.asString
+            ?: args?.get("command_line")?.takeIf { it.isJsonPrimitive }?.asString
+        val taskId = args?.get("task_id")?.takeIf { it.isJsonPrimitive }?.asString
+        val to = args?.get("to")?.takeIf { it.isJsonPrimitive }?.asString
+        return when (toolName) {
+            "write_file", "create_file" -> if (base != null) "writing · $base" else "writing"
+            "str_replace_editor", "edit_file" -> if (base != null) "editing · $base" else "editing"
+            "read_file"                 -> if (base != null) "reading · $base" else "reading"
+            "bash", "run_command", "powershell", "shell", "cmd"
+                                        -> if (command != null) "running · ${command.take(40)}" else "running command"
+            "list_files"                -> if (pattern != null) "listing · $pattern" else if (base != null) "listing · $base" else "listing"
+            "glob", "grep", "search_files"
+                                        -> if (pattern != null) "searching · $pattern" else if (base != null) "searching · $base" else "searching"
+            "view_task"                 -> if (taskId != null) "viewing task · $taskId" else "viewing task"
+            "claim_task"                -> if (taskId != null) "claiming task · $taskId" else "claiming task"
+            "send_message"              -> if (to != null) "messaging · $to" else "messaging"
+            else                        -> toolName
+        }
     }
 }

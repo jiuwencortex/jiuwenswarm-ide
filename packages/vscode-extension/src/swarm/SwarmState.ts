@@ -1,3 +1,8 @@
+export interface LaneFeedEntry {
+  text: string;
+  at: number;
+}
+
 export interface AgentLane {
   memberName: string;
   displayName: string;
@@ -10,6 +15,8 @@ export interface AgentLane {
   lastToolName: string | null;
   lastActivePath: string | null;  // full file path — used for jump-to-file on lane click
   lastActiveAt: number;
+  startedAt: number | null;       // when this lane became active (spawn / first tool)
+  activityFeed: LaneFeedEntry[];  // recent activity, chronological, capped
   messageCount: number;
   tasksDone: number;
 }

@@ -428,9 +428,10 @@ export class ChatPanel implements vscode.Disposable {
       } else if (rawArgs && typeof rawArgs === 'object') {
         attrArgs = rawArgs as Record<string, unknown>;
       }
-      const attrFilePath = attrArgs['path'] as string | undefined;
+      const attrFilePath = (attrArgs['path'] as string | undefined)
+        || (attrArgs['file_path'] as string | undefined);
       if (attrToolName) {
-        this.swarmStateManager.applyToolCall(attrToolName, attrFilePath, memberName);
+        this.swarmStateManager.applyToolCall(attrToolName, attrFilePath, memberName, attrArgs);
         this.swarmDebug(`tool: ${attrToolName}${memberName ? ' · ' + memberName : ''}`);
         this.swarmMapPanel?.postSnapshot(this.swarmStateManager.snapshot());
       }

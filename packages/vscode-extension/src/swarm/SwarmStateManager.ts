@@ -82,30 +82,33 @@ export class SwarmStateManager {
   }
 
   /**
-   * Called from the chat.tool_call branch of onJiuwenMessage.
+   * Called from the chat.tool_call / chat.tool_update branches of onJiuwenMessage.
    * memberName may be undefined if the server does not include it in the payload.
+   * args (the parsed tool arguments) lets the feed say what an action touches —
+   * e.g. a file_path, a glob pattern, or the shell command.
    */
-  applyToolCall(toolName: string, filePath: string | undefined, memberName: string | undefined): void {
+  applyToolCall(toolName: string, filePath: string | undefined, memberName: string | undefined, args?: Record<string, unknown>): void {
     if (!memberName) return;
     const lane = this.getOrStubLane(memberName);
     lane.lastToolName = toolName;
-    lane.currentActivity = this.formatActivity(toolName, filePath);
+    const activity = this.formatActivity(toolName, filePath, args);
+    lane.currentActivity = activity;
     lane.lastActivePath = filePath ?? null;
     lane.lastActiveAt = Date.now();
     lane.status = 'BUSY';
+    this.pushFeed(lane, activity, lane.lastActiveAt);
     this.lastEventAt = lane.lastActiveAt;
   }
 
   snapshot(): SwarmSnapshot {
-    const sortedLanes = [...this.lanes.values()].sort((a, b) => {
-      const pd = this.statusPriority(a.status) - this.statusPriority(b.status);
-      return pd !== 0 ? pd : b.lastActiveAt - a.lastActiveAt;
-    });
+    // Stable insertion order (join order) — lanes must not jump around as
+    // statuses change; the webview renders status separately from position.
+    const lanes = [...this.lanes.values()];
     const sortedTasks = [...this.tasks.values()].sort((a, b) => a.createdAt - b.createdAt);
     return {
       sessionId: this.sessionId,
       teamName: this.teamName,
-      lanes: sortedLanes,
+      lanes,
       tasks: sortedTasks,
       messages: [...this.messages],
       lastEventAt: this.lastEventAt,
@@ -143,6 +146,8 @@ export class SwarmStateManager {
         existing.currentTaskTitle = prompt;
         existing.currentActivity = 'starting';
       }
+      existing.startedAt = existing.startedAt ?? this.lastEventAt;
+      this.pushFeed(existing, 'spawned', this.lastEventAt);
       existing.lastActiveAt = this.lastEventAt;
     } else {
       this.lanes.set(name, {
@@ -157,6 +162,8 @@ export class SwarmStateManager {
         lastToolName: null,
         lastActivePath: null,
         lastActiveAt: this.lastEventAt,
+        startedAt: this.lastEventAt,
+        activityFeed: [{ text: 'spawned', at: this.lastEventAt }],
         messageCount: 0,
         tasksDone: 0,
       });
@@ -173,6 +180,8 @@ export class SwarmStateManager {
     if (outcome && status === 'SHUTDOWN') {
       lane.currentActivity = `done · ${outcome}`;
     }
+    if (status === 'SHUTDOWN') this.pushFeed(lane, 'finished', this.lastEventAt);
+    else if (status === 'PAUSED') this.pushFeed(lane, 'paused', this.lastEventAt);
     lane.lastActiveAt = this.lastEventAt;
   }
 
@@ -194,6 +203,7 @@ export class SwarmStateManager {
     const lane = this.getOrStubLane(name);
     lane.status = 'BUSY';
     lane.currentActivity = activity;
+    this.pushFeed(lane, activity, this.lastEventAt);
     lane.lastActiveAt = this.lastEventAt;
   }
 
@@ -205,6 +215,7 @@ export class SwarmStateManager {
     lane.status = 'SHUTDOWN';
     lane.executionStatus = 'IDLE';
     lane.currentActivity = null;
+    this.pushFeed(lane, 'shutdown', this.lastEventAt);
     lane.lastActiveAt = this.lastEventAt;
   }
 
@@ -323,6 +334,7 @@ export class SwarmStateManager {
   private getOrStubLane(memberName: string): AgentLane {
     const existing = this.lanes.get(memberName);
     if (existing) return existing;
+    const now = this.lastEventAt || Date.now();
     const stub: AgentLane = {
       memberName,
       displayName: memberName,
@@ -334,7 +346,9 @@ export class SwarmStateManager {
       currentActivity: null,
       lastToolName: null,
       lastActivePath: null,
-      lastActiveAt: this.lastEventAt,
+      lastActiveAt: now,
+      startedAt: now,
+      activityFeed: [],
       messageCount: 0,
       tasksDone: 0,
     };
@@ -342,22 +356,51 @@ export class SwarmStateManager {
     return stub;
   }
 
-  private formatActivity(toolName: string, filePath: string | undefined): string {
+  /** Append one entry to a lane's activity feed, keeping it capped.
+   *  A duplicate of the previous entry within 1s (the tool_call + tool_update
+   *  pair for one call) is collapsed into the existing row instead of flooding
+   *  the feed; genuinely separate calls still get their own rows. */
+  private pushFeed(lane: AgentLane, text: string, at: number): void {
+    const last = lane.activityFeed[lane.activityFeed.length - 1];
+    if (last && last.text === text && at - last.at < 1000) {
+      last.at = at;
+      return;
+    }
+    lane.activityFeed.push({ text, at });
+    if (lane.activityFeed.length > 10) lane.activityFeed.shift();
+  }
+
+  private formatActivity(toolName: string, filePath: string | undefined, args?: Record<string, unknown>): string {
     const base = filePath ? path.basename(filePath) : undefined;
+    const pattern = args && typeof args['pattern'] === 'string' ? args['pattern'] : undefined;
+    const command = args && (
+      (typeof args['command'] === 'string' && args['command']) ||
+      (typeof args['cmd'] === 'string' && args['cmd']) ||
+      (typeof args['command_line'] === 'string' && args['command_line'])
+    );
     switch (toolName) {
       case 'write_file':
       case 'create_file':        return base ? `writing · ${base}` : 'writing';
-      case 'str_replace_editor': return base ? `editing · ${base}` : 'editing';
+      case 'str_replace_editor':
+      case 'edit_file':          return base ? `editing · ${base}` : 'editing';
       case 'read_file':          return base ? `reading · ${base}` : 'reading';
       case 'bash':
-      case 'run_command':        return filePath ? `running · ${filePath.substring(0, 40)}` : 'running';
-      case 'search_files':
-      case 'grep':               return base ? `searching · ${base}` : 'searching';
+      case 'run_command':
+      case 'powershell':
+      case 'shell':
+      case 'cmd':                return command ? `running · ${this.trunc(command, 40)}` : 'running command';
+      case 'list_files':         return pattern ? `listing · ${pattern}` : base ? `listing · ${base}` : 'listing';
+      case 'glob':
+      case 'grep':
+      case 'search_files':       return pattern ? `searching · ${pattern}` : base ? `searching · ${base}` : 'searching';
+      case 'view_task':          return args && args['task_id'] ? `viewing task · ${args['task_id']}` : 'viewing task';
+      case 'claim_task':         return args && args['task_id'] ? `claiming task · ${args['task_id']}` : 'claiming task';
+      case 'send_message':       return args && args['to'] ? `messaging · ${args['to']}` : 'messaging';
       default:                   return toolName;
     }
   }
 
-  private statusPriority(status: string): number {
-    return ({ BUSY: 0, RUNNING: 1, READY: 2, PAUSED: 3, SHUTDOWN: 4 } as Record<string, number>)[status] ?? 5;
+  private trunc(s: string, n: number): string {
+    return s.length > n ? s.slice(0, n) + '\u2026' : s;
   }
 }

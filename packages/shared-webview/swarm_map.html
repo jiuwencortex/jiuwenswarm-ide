@@ -12,24 +12,15 @@
    same behaviour as the chat webview. */
 :root {
   --swarm-bg: #1e1e1e;
+  --swarm-bg2: #252526;
   --swarm-fg: #ccc;
   --swarm-muted: #888;
   --swarm-dim: #666;
   --swarm-border: #333;
   --swarm-header-fg: #aaa;
   --swarm-focus: #007acc;
-  --swarm-pill-in-progress-bg: #1e3a1e;
-  --swarm-pill-in-progress-border: #3a7a3a;
-  --swarm-pill-in-progress-fg: #7ec87e;
-  --swarm-pill-pending-bg: #2a2a1e;
-  --swarm-pill-pending-border: #6a6a3a;
-  --swarm-pill-pending-fg: #c8c87e;
-  --swarm-pill-done-bg: #1a1a1a;
-  --swarm-pill-done-border: #444;
-  --swarm-pill-done-fg: #666;
-  --swarm-busy-edge: #3a7a3a;
-  --swarm-paused-edge: #7a7a3a;
-  --swarm-ready-edge: #444;
+  --swarm-good: #4ec94e;
+  --swarm-warn: #c9c94e;
   --swarm-role-bg: #333;
   --swarm-role-fg: #aaa;
   --swarm-role-leader-bg: #2a2045;
@@ -39,28 +30,20 @@
   --swarm-arrow: #555;
   --swarm-idle-warn: #c9c94e;
   --swarm-debug-text: #4ec9b0;
+  --swarm-feed-fg: #9c9c9c;
 }
 
 :root[data-theme="light"] {
   --swarm-bg: #f6f6f6;
+  --swarm-bg2: #ffffff;
   --swarm-fg: #242424;
   --swarm-muted: #5f6b7a;
   --swarm-dim: #9e9e9e;
   --swarm-border: #d4d4d4;
   --swarm-header-fg: #6e6e6e;
   --swarm-focus: #0078d4;
-  --swarm-pill-in-progress-bg: #e8f5e9;
-  --swarm-pill-in-progress-border: #4caf50;
-  --swarm-pill-in-progress-fg: #1b5e20;
-  --swarm-pill-pending-bg: #fff8e1;
-  --swarm-pill-pending-border: #fbc02d;
-  --swarm-pill-pending-fg: #6d5b00;
-  --swarm-pill-done-bg: #f0f0f0;
-  --swarm-pill-done-border: #d4d4d4;
-  --swarm-pill-done-fg: #8a8a8a;
-  --swarm-busy-edge: #2e7d32;
-  --swarm-paused-edge: #a18c0a;
-  --swarm-ready-edge: #d4d4d4;
+  --swarm-good: #2e7d32;
+  --swarm-warn: #b8860b;
   --swarm-role-bg: #e0e0e0;
   --swarm-role-fg: #444;
   --swarm-role-leader-bg: #e8e0f7;
@@ -70,6 +53,7 @@
   --swarm-arrow: #8a8a8a;
   --swarm-idle-warn: #b8860b;
   --swarm-debug-text: #007a6e;
+  --swarm-feed-fg: #5f6b7a;
 }
 
 /* ── Reset ── */
@@ -100,6 +84,7 @@ body {
   justify-content: space-between;
 }
 
+#header-right { display: flex; align-items: center; gap: 8px; }
 #progress-chip {
   font-size: 10px;
   font-weight: normal;
@@ -107,6 +92,19 @@ body {
   text-transform: none;
   color: var(--swarm-muted);
   white-space: nowrap;
+}
+
+/* ── Overall progress bar ── */
+#progress-track {
+  height: 3px;
+  flex-shrink: 0;
+  background: var(--swarm-border);
+}
+#progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--swarm-good);
+  transition: width .4s ease;
 }
 
 /* ── Task board ── */
@@ -126,15 +124,20 @@ body {
   padding: 2px 7px;
   border-radius: 10px;
   font-size: 11px;
-  max-width: 220px;
+  max-width: 240px;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.task-pill.in_progress { background: var(--swarm-pill-in-progress-bg); border: 1px solid var(--swarm-pill-in-progress-border); color: var(--swarm-pill-in-progress-fg); }
-.task-pill.pending     { background: var(--swarm-pill-pending-bg); border: 1px solid var(--swarm-pill-pending-border); color: var(--swarm-pill-pending-fg); }
-.task-pill.completed   { background: var(--swarm-pill-done-bg); border: 1px solid var(--swarm-pill-done-border); color: var(--swarm-pill-done-fg); }
-.task-pill.cancelled   { background: var(--swarm-pill-done-bg); border: 1px solid var(--swarm-pill-done-border); color: var(--swarm-pill-done-fg); text-decoration: line-through; }
+.task-pill.in_progress { background: #1e3a1e; border: 1px solid #3a7a3a; color: #7ec87e; }
+.task-pill.pending     { background: #2a2a1e; border: 1px solid #6a6a3a; color: #c8c87e; }
+.task-pill.blocked     { background: #2a1e1e; border: 1px solid #7a3a3a; color: #c87e7e; }
+.task-pill.completed   { background: #1a1a1a; border: 1px solid #444;   color: #666; }
+.task-pill.cancelled   { background: #1a1a1a; border: 1px solid #444;   color: #666; text-decoration: line-through; }
+:root[data-theme="light"] .task-pill.in_progress { background: #e8f5e9; border-color: #4caf50; color: #1b5e20; }
+:root[data-theme="light"] .task-pill.pending     { background: #fff8e1; border-color: #fbc02d; color: #6d5b00; }
+:root[data-theme="light"] .task-pill.blocked     { background: #ffebee; border-color: #ef5350; color: #b71c1c; }
+:root[data-theme="light"] .task-pill.completed   { background: #f0f0f0; border-color: #d4d4d4; color: #8a8a8a; }
 .task-assignee { font-size: 10px; opacity: .7; }
 
 /* ── Lane list ── */
@@ -144,24 +147,25 @@ body {
   padding: 6px;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 6px;
 }
 
 /* ── Lane card ── */
 .lane-card {
   border: 1px solid var(--swarm-border);
-  border-radius: 5px;
+  border-radius: 6px;
   padding: 8px 10px;
   cursor: pointer;
-  transition: border-color .15s;
+  transition: border-color .15s, background .15s;
   position: relative;
+  background: var(--swarm-bg2);
 }
 .lane-card:hover { border-color: var(--swarm-focus); }
-.lane-card.status-SHUTDOWN { opacity: .45; }
-.lane-card.status-BUSY    { border-left: 3px solid var(--swarm-busy-edge); }
-.lane-card.status-RUNNING { border-left: 3px solid var(--swarm-busy-edge); }
-.lane-card.status-PAUSED  { border-left: 3px solid var(--swarm-paused-edge); }
-.lane-card.status-READY   { border-left: 3px solid var(--swarm-ready-edge); }
+.lane-card.status-SHUTDOWN { opacity: .7; }
+.lane-card.status-BUSY    { border-left: 3px solid var(--swarm-good); }
+.lane-card.status-RUNNING { border-left: 3px solid var(--swarm-good); }
+.lane-card.status-PAUSED  { border-left: 3px solid var(--swarm-warn); }
+.lane-card.status-READY   { border-left: 3px solid var(--swarm-border); }
 
 /* Jump-to-file hint on cards that have a live path */
 .lane-card.has-path:hover::after {
@@ -173,12 +177,30 @@ body {
   opacity: .85;
 }
 
-.lane-name {
-  font-weight: 600;
-  font-size: 12px;
+/* Head row: dot, name, role, status chip, elapsed */
+.lane-head {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
+}
+.status-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.status-dot.BUSY     { background: var(--swarm-good); animation: pulse 1.4s ease-in-out infinite; }
+.status-dot.RUNNING  { background: var(--swarm-good); animation: pulse 1.4s ease-in-out infinite; }
+.status-dot.PAUSED   { background: var(--swarm-warn); }
+.status-dot.READY    { background: #8a8a8a; }
+.status-dot.SHUTDOWN { background: #4a4a4a; }
+
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+
+.lane-display-name {
+  font-weight: 600;
+  font-size: 12px;
 }
 .lane-role-badge {
   font-size: 9px;
@@ -191,61 +213,93 @@ body {
 }
 .lane-role-badge.LEADER { background: var(--swarm-role-leader-bg); color: var(--swarm-role-leader-fg); }
 
-.status-dot {
-  width: 7px; height: 7px;
-  border-radius: 50%;
-  display: inline-block;
-  flex-shrink: 0;
+/* Status chip */
+.lane-status-chip {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  padding: 1px 6px;
+  border-radius: 8px;
+  margin-left: 2px;
 }
-.status-dot.BUSY     { background: #4ec94e; animation: pulse 1.4s ease-in-out infinite; }
-.status-dot.RUNNING  { background: #4ec94e; animation: pulse 1.4s ease-in-out infinite; }
-.status-dot.PAUSED   { background: #c9c94e; }
-.status-dot.READY    { background: #8a8a8a; }
-.status-dot.SHUTDOWN { background: #4a4a4a; }
+.lane-status-chip.WORKING { color: var(--swarm-good); background: rgba(78, 201, 78, .15); }
+.lane-status-chip.IDLE    { color: var(--swarm-muted); background: rgba(136, 136, 136, .15); }
+.lane-status-chip.PAUSED  { color: var(--swarm-warn); background: rgba(201, 201, 78, .18); }
+.lane-status-chip.DONE    { color: var(--swarm-dim); background: rgba(102, 102, 102, .16); }
 
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: .35; }
+/* Elapsed */
+.lane-elapsed {
+  font-size: 10px;
+  color: var(--swarm-dim);
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.lane-idle-warning {
+  font-size: 10px;
+  color: var(--swarm-idle-warn);
+  margin-left: 6px;
+  white-space: nowrap;
 }
 
-.lane-activity {
+/* Current task + current action */
+.lane-task {
   margin-top: 4px;
   font-size: 11px;
   color: var(--swarm-muted);
-  font-family: var(--vscode-editor-font-family, monospace);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.lane-task {
+.lane-current {
   margin-top: 2px;
   font-size: 11px;
-  color: var(--swarm-muted);
+  font-weight: 600;
+  color: var(--swarm-fg);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.lane-idle-warning {
-  position: absolute;
-  top: 8px; right: 8px;
-  font-size: 10px;
-  color: var(--swarm-idle-warn);
-}
+.lane-card.status-BUSY .lane-current, .lane-card.status-RUNNING .lane-current { color: var(--swarm-good); }
 
-/* ── Summary card (shown when all lanes SHUTDOWN) ── */
+/* Activity feed */
+.lane-feed {
+  margin-top: 4px;
+  border-top: 1px dashed var(--swarm-border);
+  padding-top: 4px;
+  max-height: 96px;
+  overflow-y: auto;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 10px;
+  line-height: 1.55;
+}
+.lane-feed::-webkit-scrollbar { width: 4px; }
+.lane-feed::-webkit-scrollbar-thumb { background: var(--swarm-border); border-radius: 2px; }
+.feed-row {
+  display: flex;
+  gap: 6px;
+  color: var(--swarm-feed-fg);
+  white-space: nowrap;
+}
+.feed-row .feed-time { color: var(--swarm-dim); flex-shrink: 0; }
+.feed-row.feed-done { color: var(--swarm-dim); }
+.feed-row.feed-tool .feed-mark { color: var(--swarm-focus); }
+
+/* ── Summary card (shown when all lanes DONE) ── */
 #summary-card {
   display: none;
   margin: 6px;
   border: 1px solid var(--swarm-border);
-  border-radius: 5px;
-  padding: 12px 14px;
+  border-radius: 8px;
+  padding: 14px;
   background: var(--swarm-summary-bg);
 }
 #summary-card h3 {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
-  margin-bottom: 8px;
-  color: var(--swarm-fg);
+  margin-bottom: 10px;
+  color: var(--swarm-good);
 }
 .summary-row {
   display: flex;
@@ -254,32 +308,24 @@ body {
   color: var(--swarm-muted);
   margin-bottom: 3px;
 }
-.summary-row .summary-val {
-  color: var(--swarm-fg);
-  font-weight: 600;
+.summary-row .summary-val { color: var(--swarm-fg); font-weight: 600; }
+.summary-agents { margin-top: 8px; border-top: 1px dashed var(--swarm-border); padding-top: 8px; }
+.summary-agent {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--swarm-muted);
+  padding: 2px 0;
 }
-
-/* ── Timeline bar ── */
-#timeline {
-  height: 28px;
-  flex-shrink: 0;
-  padding: 4px 10px;
-  border-top: 1px solid var(--swarm-border);
-  position: relative;
-  overflow: hidden;
-}
-.timeline-track {
-  position: absolute;
-  top: 8px; height: 4px;
-  border-radius: 2px;
-  opacity: .75;
-}
+.summary-agent .sa-name { color: var(--swarm-fg); }
+.summary-agent .sa-dur { font-variant-numeric: tabular-nums; }
 
 /* ── Message log ── */
 #msg-section {
   flex-shrink: 0;
   border-top: 1px solid var(--swarm-border);
   display: none;
+  max-height: 45%;
 }
 #msg-toggle {
   padding: 4px 10px;
@@ -295,7 +341,7 @@ body {
 }
 #msg-toggle:hover { color: var(--swarm-fg); }
 #msg-list {
-  max-height: 120px;
+  max-height: 130px;
   overflow-y: auto;
   padding: 0 10px 6px;
   display: none;
@@ -303,7 +349,7 @@ body {
 .msg-row {
   display: flex;
   gap: 6px;
-  padding: 2px 0;
+  padding: 3px 0;
   border-bottom: 1px solid var(--swarm-msg-sep);
   font-size: 11px;
   line-height: 1.4;
@@ -312,7 +358,7 @@ body {
   flex-shrink: 0;
   font-weight: 600;
   min-width: 70px;
-  max-width: 90px;
+  max-width: 100px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -321,7 +367,7 @@ body {
 .msg-to {
   flex-shrink: 0;
   min-width: 50px;
-  max-width: 80px;
+  max-width: 90px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -348,11 +394,6 @@ body {
 }
 
 /* ── Header menu (dropdown) ── */
-#header-right {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
 .header-btn {
   background: none;
   border: none;
@@ -392,7 +433,7 @@ body {
 }
 .dropdown-item:hover { background: var(--swarm-border); }
 
-/* ── Debug console (closed by default; toggled from the menu) ── */
+/* ── Debug console ── */
 #debug-panel {
   display: none;
   height: 140px;
@@ -439,6 +480,86 @@ body {
 #debug-log::-webkit-scrollbar { width: 4px; }
 #debug-log::-webkit-scrollbar-thumb { background: var(--swarm-border); border-radius: 2px; }
 .debug-line { color: var(--swarm-debug-text); white-space: pre-wrap; word-break: break-all; }
+
+/* ── View mode toggle (Map / List) ── */
+.mode-toggle { display: flex; gap: 2px; }
+.mode-btn {
+  background: none;
+  border: 1px solid var(--swarm-border);
+  color: var(--swarm-muted);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  letter-spacing: .03em;
+}
+.mode-btn:hover { color: var(--swarm-fg); }
+.mode-btn.active { background: var(--swarm-focus); border-color: var(--swarm-focus); color: #fff; }
+
+/* ── Map view ── */
+#map-view {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  display: none;
+}
+#map-view.visible { display: block; }
+#map-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
+#map-canvas.dragging { cursor: grabbing; }
+#map-hint {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  color: var(--swarm-dim);
+  font-size: 12px;
+  pointer-events: none;
+  text-align: center;
+  padding: 20px;
+}
+#map-legend {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  font-size: 9px;
+  color: var(--swarm-dim);
+  letter-spacing: .03em;
+  pointer-events: none;
+  user-select: none;
+}
+#map-detail {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  width: 270px;
+  max-height: 250px;
+  background: var(--swarm-bg2);
+  border: 1px solid var(--swarm-border);
+  border-radius: 8px;
+  padding: 10px;
+  display: none;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .4);
+  overflow-y: auto;
+}
+#map-detail.visible { display: block; }
+#map-detail .md-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+#map-detail .md-name { font-weight: 600; font-size: 12px; flex: 1; }
+#map-detail .md-close { background: none; border: none; color: var(--swarm-dim); cursor: pointer; font-size: 12px; }
+#map-detail .md-close:hover { color: var(--swarm-fg); }
+#map-detail .md-status { font-size: 11px; color: var(--swarm-muted); }
+#map-detail .md-action { font-size: 11px; font-weight: 600; margin-top: 2px; color: var(--swarm-fg); }
+#map-detail .md-feed {
+  margin-top: 6px;
+  border-top: 1px dashed var(--swarm-border);
+  padding-top: 4px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 10px;
+  line-height: 1.55;
+  color: var(--swarm-feed-fg);
+}
+#map-detail .md-feed .frow { display: flex; gap: 6px; white-space: nowrap; }
+#map-detail .md-feed .ftime { color: var(--swarm-dim); flex-shrink: 0; }
 </style>
 </head>
 <body>
@@ -446,6 +567,10 @@ body {
 <div id="header">
   <span>JiuwenSwarm · Swarm Map</span>
   <div id="header-right">
+    <div class="mode-toggle">
+      <button id="mode-map" class="mode-btn active" onclick="setMapMode('map')" title="Map view">Map</button>
+      <button id="mode-list" class="mode-btn" onclick="setMapMode('list')" title="List view">List</button>
+    </div>
     <span id="progress-chip"></span>
     <div class="header-dropdown">
       <button class="header-btn" onclick="toggleMenu()" title="Menu">☰</button>
@@ -458,14 +583,21 @@ body {
   </div>
 </div>
 
+<div id="progress-track"><div id="progress-fill"></div></div>
+
 <div id="task-board"></div>
+
+<div id="map-view">
+  <canvas id="map-canvas"></canvas>
+  <div id="map-hint">No active team session.<br>Start a conversation in <code>code.team</code> mode.</div>
+  <div id="map-legend">drag to move · scroll to zoom · click an agent</div>
+  <div id="map-detail"></div>
+</div>
 
 <div id="lanes">
   <div id="empty">No active team session.<br>Start a conversation in <code>code.team</code> mode.</div>
   <div id="summary-card"></div>
 </div>
-
-<div id="timeline"></div>
 
 <div id="msg-section">
   <div id="msg-toggle" onclick="toggleMsgLog()">
@@ -487,12 +619,15 @@ body {
 
 <script>
 // ── Constants ──────────────────────────────────────────
-var IDLE_WARN_MS       = 30000;   // show amber warning after 30s of BUSY with no activity
-var TIMELINE_WINDOW_MS = 90000;   // last 90 seconds shown in timeline bar
+var IDLE_WARN_MS       = 30000;   // show amber warning after 30s of working with no activity
+var FEED_MAX           = 8;       // max feed rows rendered per lane
 
 // Colour per member (assigned round-robin from this palette)
 var LANE_COLOURS = ['#4ec94e','#4ea8e8','#e8a84e','#c94ee8','#e84e4e','#4ee8c9'];
 var _laneColourMap = {};  // memberName → colour
+
+// The orchestrator (session owner) is not a worker — skip its lane.
+var ORCHESTRATOR_NAME = 'team-leader';
 
 // ── State ──────────────────────────────────────────────
 var _state = null;        // SwarmSnapshot | null
@@ -500,9 +635,6 @@ var _msgOpen = false;     // message log expanded?
 var _debugOpen = false;   // debug console expanded?
 
 // ── Theme ──────────────────────────────────────────────
-// Match the host theme: VS Code webviews set .vscode-dark/.vscode-light on <body>;
-// JetBrains JCEF has no such classes, so fall back to the OS colour scheme —
-// the same behaviour as the chat webview.
 function applySwarmTheme() {
   var isDark;
   var isVsCodeDark  = document.body.classList.contains('vscode-dark') || document.body.classList.contains('vscode-high-contrast');
@@ -518,18 +650,15 @@ applySwarmTheme();
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applySwarmTheme);
 
 // ── Entry point ────────────────────────────────────────
-// Called by JetBrains (via executeJavaScript) or VS Code (via window.addEventListener)
 window.__swarmReceive = function(snapshot) {
   _state = snapshot;
   render();
 };
 
-// Called by JetBrains for debug-log lines (host → webview)
 window.__swarmDebug = function(line) {
   appendDebugLog(line);
 };
 
-// VS Code host → webview message bridge
 window.addEventListener('message', function(e) {
   var msg = e.data;
   if (!msg) return;
@@ -540,7 +669,6 @@ window.addEventListener('message', function(e) {
   }
 });
 
-// Signal ready to VS Code host (no-op in JetBrains where acquireVsCodeApi is undefined)
 var _vscode;
 if (typeof acquireVsCodeApi !== 'undefined') {
   _vscode = acquireVsCodeApi();
@@ -548,26 +676,37 @@ if (typeof acquireVsCodeApi !== 'undefined') {
 }
 
 // ── Rendering ──────────────────────────────────────────
+function workersOf(state) {
+  if (!state) return [];
+  return state.lanes.filter(function(l) { return l.memberName !== ORCHESTRATOR_NAME; });
+}
+
 function render() {
+  var workers = workersOf(_state);
+  if (_mapMode) updateMap(workers);
   if (!_state || _state.lanes.length === 0) {
     showEmpty(true);
     renderProgress(null);
-    hideTimeline();
+    renderProgressBar(null);
     hideMsgSection();
     return;
   }
-  showEmpty(false);
-  renderProgress(_state);
+  showEmpty(workers.length === 0);
+  if (workers.length === 0) {
+    renderProgress(null);
+    renderProgressBar(null);
+    return;
+  }
+  renderProgress(workers);
+  renderProgressBar(workers);
   renderTaskBoard(_state.tasks);
-  var allShutdown = _state.lanes.every(function(l) { return l.status === 'SHUTDOWN'; });
-  if (allShutdown) {
-    renderSummaryCard(_state);
+  var allDone = workers.every(function(l) { return l.status === 'SHUTDOWN'; });
+  if (allDone) {
+    renderSummaryCard(workers);
     hideLanes();
-    hideTimeline();
   } else {
     hideSummaryCard();
-    renderLanes(_state.lanes);
-    renderTimeline(_state.lanes);
+    renderLanes(workers);
   }
   renderMessages(_state.messages || []);
 }
@@ -577,38 +716,35 @@ function showEmpty(visible) {
 }
 
 function hideLanes() {
-  // Hide all lane cards, leave summary card visible
-  document.querySelectorAll('.lane-card').forEach(function(el) {
-    el.style.display = 'none';
-  });
+  document.querySelectorAll('.lane-card').forEach(function(el) { el.style.display = 'none'; });
 }
 
 function hideSummaryCard() {
   document.getElementById('summary-card').style.display = 'none';
-  // Restore any hidden lane cards
-  document.querySelectorAll('.lane-card').forEach(function(el) {
-    el.style.display = '';
-  });
+  document.querySelectorAll('.lane-card').forEach(function(el) { el.style.display = ''; });
 }
 
-// ── Progress chip ──────────────────────────────────────
-function renderProgress(state) {
+// ── Progress chip + bar ────────────────────────────────
+function renderProgress(workers) {
   var chip = document.getElementById('progress-chip');
-  if (!state || state.lanes.length === 0) {
-    chip.textContent = '';
-    return;
-  }
-  var tasks = state.tasks || [];
-  var done  = tasks.filter(function(t) { return t.status === 'completed'; }).length;
-  var total = tasks.length;
-  var active = state.lanes.filter(function(l) {
-    return l.status === 'BUSY' || l.status === 'RUNNING' || l.status === 'READY';
+  if (!workers || workers.length === 0) { chip.textContent = ''; return; }
+  var tasks = _state.tasks || [];
+  var done = tasks.filter(function(t) { return t.status === 'completed'; }).length;
+  var working = workers.filter(function(l) {
+    return l.status === 'BUSY' || l.status === 'RUNNING';
   }).length;
-
-  var parts = [];
-  if (total > 0) parts.push(done + '/' + total + ' tasks');
-  if (active > 0) parts.push(active + ' agent' + (active !== 1 ? 's' : ''));
+  var parts = [done + '/' + tasks.length + ' tasks', workers.length + ' agent' + (workers.length !== 1 ? 's' : '')];
+  if (working > 0) parts.push(working + ' working');
   chip.textContent = parts.join(' · ');
+}
+
+function renderProgressBar(workers) {
+  var fill = document.getElementById('progress-fill');
+  if (!workers || workers.length === 0) { fill.style.width = '0%'; return; }
+  var tasks = _state.tasks || [];
+  var done = tasks.filter(function(t) { return t.status === 'completed'; }).length;
+  var pct = tasks.length ? Math.round((done / tasks.length) * 100) : 0;
+  fill.style.width = pct + '%';
 }
 
 // ── Task board ─────────────────────────────────────────
@@ -617,14 +753,17 @@ function renderTaskBoard(tasks) {
   board.innerHTML = '';
   tasks.forEach(function(task) {
     var pill = document.createElement('div');
-    pill.className = 'task-pill ' + task.status;
+    pill.className = 'task-pill ' + (task.status === 'in_progress' ? 'in_progress'
+      : task.status === 'pending' ? 'pending'
+      : task.status === 'blocked' ? 'blocked'
+      : task.status === 'cancelled' ? 'cancelled' : 'completed');
     var icon = task.status === 'completed' ? '✓'
              : task.status === 'cancelled' ? '✗'
              : '⚙';
     var assigneePart = task.assignee
       ? ' <span class="task-assignee">\u2192 ' + esc(task.assignee) + '</span>'
       : '';
-    pill.innerHTML = icon + ' ' + esc(truncate(task.title, 28)) + assigneePart;
+    pill.innerHTML = icon + ' ' + esc(truncate(task.title, 34)) + assigneePart;
     pill.title = task.title + (task.assignee ? ' \u2192 ' + task.assignee : '');
     board.appendChild(pill);
   });
@@ -633,14 +772,11 @@ function renderTaskBoard(tasks) {
 // ── Lane list ──────────────────────────────────────────
 function renderLanes(lanes) {
   var container = document.getElementById('lanes');
-
-  // Build a map of existing cards by memberName for in-place update
   var existing = {};
   container.querySelectorAll('.lane-card').forEach(function(el) {
     existing[el.dataset.member] = el;
   });
 
-  // Render in sorted order; append missing, update existing
   var rendered = {};
   lanes.forEach(function(lane, i) {
     rendered[lane.memberName] = true;
@@ -651,7 +787,6 @@ function renderLanes(lanes) {
     if (!existing[lane.memberName]) container.appendChild(card);
   });
 
-  // Remove cards for members no longer in state
   Object.keys(existing).forEach(function(name) {
     if (!rendered[name]) existing[name].remove();
   });
@@ -662,14 +797,17 @@ function createLaneCard(memberName) {
   card.className = 'lane-card';
   card.dataset.member = memberName;
   card.innerHTML = [
-    '<div class="lane-name">',
+    '<div class="lane-head">',
     '  <span class="status-dot"></span>',
     '  <span class="lane-display-name"></span>',
     '  <span class="lane-role-badge"></span>',
+    '  <span class="lane-status-chip"></span>',
+    '  <span class="lane-elapsed"></span>',
+    '  <span class="lane-idle-warning"></span>',
     '</div>',
-    '<div class="lane-activity"></div>',
     '<div class="lane-task"></div>',
-    '<span class="lane-idle-warning"></span>',
+    '<div class="lane-current"></div>',
+    '<div class="lane-feed"></div>',
   ].join('');
   card.addEventListener('click', function() {
     sendMessage({ type: 'open_lane', memberName: memberName });
@@ -677,28 +815,66 @@ function createLaneCard(memberName) {
   return card;
 }
 
+function statusWord(status) {
+  switch (status) {
+    case 'BUSY': case 'RUNNING': return 'working';
+    case 'PAUSED': return 'paused';
+    case 'SHUTDOWN': return 'done';
+    default: return 'idle';
+  }
+}
+
+function statusChipClass(status) {
+  switch (status) {
+    case 'BUSY': case 'RUNNING': return 'WORKING';
+    case 'PAUSED': return 'PAUSED';
+    case 'SHUTDOWN': return 'DONE';
+    default: return 'IDLE';
+  }
+}
+
+function formatDur(ms) {
+  if (ms == null || isNaN(ms) || ms < 0) return '\u2014';
+  var s = Math.floor(ms / 1000);
+  var m = Math.floor(s / 60);
+  s = s % 60;
+  if (m >= 60) {
+    var h = Math.floor(m / 60);
+    m = m % 60;
+    return h + 'h ' + pad2(m) + 'm';
+  }
+  return m + ':' + pad2(s);
+}
+
+function pad2(n) { return (n < 10 ? '0' : '') + n; }
+
+function laneElapsed(lane) {
+  var now = Date.now();
+  var end = lane.status === 'SHUTDOWN' ? lane.lastActiveAt : now;
+  return formatDur(end - (lane.startedAt || lane.lastActiveAt));
+}
+
+function feedTime(ts) {
+  var d = new Date(ts);
+  return pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds());
+}
+
 function updateLaneCard(card, lane, sortIndex) {
   var hasPath = !!lane.lastActivePath;
   card.className = 'lane-card status-' + lane.status + (hasPath ? ' has-path' : '');
   card.style.order = String(sortIndex);
 
-  var dot = card.querySelector('.status-dot');
-  dot.className = 'status-dot ' + lane.status;
-
+  card.querySelector('.status-dot').className = 'status-dot ' + lane.status;
   card.querySelector('.lane-display-name').textContent = lane.displayName;
 
   var badge = card.querySelector('.lane-role-badge');
   badge.textContent = lane.role;
-  badge.className   = 'lane-role-badge ' + lane.role;
+  badge.className = 'lane-role-badge ' + lane.role;
 
-  var actEl = card.querySelector('.lane-activity');
-  actEl.textContent = lane.currentActivity || (lane.status === 'SHUTDOWN' ? 'Finished' : '\u2014');
+  card.querySelector('.lane-status-chip').textContent = statusWord(lane.status);
+  card.querySelector('.lane-status-chip').className = 'lane-status-chip ' + statusChipClass(lane.status);
+  card.querySelector('.lane-elapsed').textContent = laneElapsed(lane);
 
-  var taskEl = card.querySelector('.lane-task');
-  taskEl.textContent = lane.currentTaskTitle ? 'Task: ' + lane.currentTaskTitle : '';
-
-  // Idle warning: BUSY but no activity update for > IDLE_WARN_MS
-  // (don't render if has-path hint will show on hover)
   var warnEl = card.querySelector('.lane-idle-warning');
   var idleMs = Date.now() - lane.lastActiveAt;
   if ((lane.status === 'BUSY' || lane.status === 'RUNNING') && idleMs > IDLE_WARN_MS) {
@@ -706,59 +882,67 @@ function updateLaneCard(card, lane, sortIndex) {
   } else {
     warnEl.textContent = '';
   }
+
+  var taskEl = card.querySelector('.lane-task');
+  taskEl.textContent = lane.currentTaskTitle ? 'Task: ' + truncate(lane.currentTaskTitle, 60) : '';
+
+  var currentEl = card.querySelector('.lane-current');
+  var cur = lane.currentActivity;
+  if (!cur) {
+    cur = lane.status === 'SHUTDOWN' ? 'finished'
+        : (lane.status === 'BUSY' || lane.status === 'RUNNING') ? 'working\u2026' : 'standing by';
+  }
+  currentEl.textContent = cur;
+
+  renderLaneFeed(card.querySelector('.lane-feed'), lane);
+}
+
+function renderLaneFeed(feedEl, lane) {
+  feedEl.innerHTML = '';
+  var entries = (lane.activityFeed || []).slice(-FEED_MAX);
+  if (entries.length === 0) { feedEl.style.display = 'none'; return; }
+  feedEl.style.display = '';
+  entries.forEach(function(entry) {
+    var text = entry.text || '';
+    var row = document.createElement('div');
+    row.className = 'feed-row' + (text === 'finished' || text === 'shutdown' || text === 'paused' ? ' feed-done' : ' feed-tool');
+    row.innerHTML =
+      '<span class="feed-time">' + feedTime(entry.at) + '</span>' +
+      '<span class="feed-mark">' + esc(text) + '</span>';
+    row.title = text;
+    feedEl.appendChild(row);
+  });
+  feedEl.scrollTop = feedEl.scrollHeight;
 }
 
 // ── Summary card ───────────────────────────────────────
-function renderSummaryCard(state) {
+function renderSummaryCard(workers) {
   var card = document.getElementById('summary-card');
-  var tasks = state.tasks || [];
-  var done  = tasks.filter(function(t) { return t.status === 'completed'; }).length;
+  var tasks = _state.tasks || [];
+  var done = tasks.filter(function(t) { return t.status === 'completed'; }).length;
   var cancelled = tasks.filter(function(t) { return t.status === 'cancelled'; }).length;
-  var msgs  = (state.messages || []).length;
-  var agents = state.lanes.length;
-  var teamName = state.teamName || 'Team';
+  var msgs = (_state.messages || []).length;
+  var teamName = _state.teamName || 'Team';
+
+  var agentRows = workers.map(function(l) {
+    return '<div class="summary-agent">' +
+      '<span class="sa-name">' + esc(l.displayName) + ' \u00b7 ' + esc(l.role) + '</span>' +
+      '<span class="sa-dur">' + laneElapsed(l) + '</span>' +
+      '</div>';
+  }).join('');
 
   card.innerHTML = [
-    '<h3>✓ ' + esc(teamName) + ' · Session complete</h3>',
-    row('Agents', agents),
+    '<h3>\u2713 ' + esc(teamName) + ' \u00b7 Session complete</h3>',
     row('Tasks completed', done + (cancelled ? ' (' + cancelled + ' cancelled)' : '')),
+    row('Agents', workers.length),
     row('Messages exchanged', msgs),
+    '<div class="summary-agents">' + agentRows + '</div>',
   ].join('');
   card.style.display = 'block';
 }
 
 function row(label, value) {
   return '<div class="summary-row"><span>' + esc(label) + '</span><span class="summary-val">' + esc(String(value)) + '</span></div>';
-}
-
-// ── Timeline bar ───────────────────────────────────────
-function hideTimeline() {
-  document.getElementById('timeline').style.display = 'none';
-}
-
-function renderTimeline(lanes) {
-  var bar   = document.getElementById('timeline');
-  bar.style.display = 'block';
-  var width = bar.clientWidth - 20;  // 10px padding each side
-  var now   = Date.now();
-  var start = now - TIMELINE_WINDOW_MS;
-
-  bar.innerHTML = '';
-  lanes.forEach(function(lane) {
-    if (lane.status === 'SHUTDOWN' && lane.lastActiveAt < start) return;
-    var colour   = _laneColourMap[lane.memberName] || '#666';
-    var segStart = Math.max(lane.lastActiveAt - 5000, start);  // approximate 5s window
-    var segEnd   = (lane.status === 'BUSY' || lane.status === 'RUNNING') ? now : lane.lastActiveAt;
-    if (segEnd <= segStart) return;
-
-    var left = ((segStart - start) / TIMELINE_WINDOW_MS) * width + 10;
-    var segW = ((segEnd - segStart)  / TIMELINE_WINDOW_MS) * width;
-    var track = document.createElement('div');
-    track.className = 'timeline-track';
-    track.style.cssText = 'left:' + left + 'px;width:' + segW + 'px;background:' + colour + ';';
-    track.title = lane.displayName;
-    bar.appendChild(track);
-  });
 }
 
 // ── Message log ────────────────────────────────────────
@@ -773,25 +957,23 @@ function renderMessages(messages) {
   var label = document.getElementById('msg-label');
   label.textContent = 'Messages (' + messages.length + ')';
 
-  if (!_msgOpen) return;  // list content only updated when open
+  if (!_msgOpen) return;
 
   var list = document.getElementById('msg-list');
   list.innerHTML = '';
-  // Show most-recent last (chronological)
   messages.forEach(function(m) {
     var div = document.createElement('div');
     div.className = 'msg-row';
     var colour = _laneColourMap[m.from] || '#888';
     div.innerHTML = [
       '<span class="msg-from" style="color:' + colour + '">' + esc(truncate(m.from, 14)) + '</span>',
-      '<span class="msg-arrow">→</span>',
+      '<span class="msg-arrow">\u2192</span>',
       '<span class="msg-to">' + esc(truncate(m.to || 'all', 12)) + '</span>',
-      '<span class="msg-content">' + esc(truncate(m.content, 60)) + '</span>',
+      '<span class="msg-content">' + esc(truncate(m.content, 90)) + '</span>',
     ].join('');
-    div.title = (m.to ? m.from + ' → ' + m.to + ': ' : m.from + ': ') + m.content;
+    div.title = (m.to ? m.from + ' \u2192 ' + m.to + ': ' : m.from + ': ') + m.content;
     list.appendChild(div);
   });
-  // Scroll to bottom
   list.scrollTop = list.scrollHeight;
 }
 
@@ -804,20 +986,18 @@ function toggleMsgLog() {
   var list = document.getElementById('msg-list');
   var chevron = document.getElementById('msg-chevron');
   list.style.display = _msgOpen ? 'block' : 'none';
-  chevron.textContent = _msgOpen ? '▼' : '▶';
-  // Re-render content if opening
+  chevron.textContent = _msgOpen ? '\u25bc' : '\u25b6';
   if (_msgOpen && _state) renderMessages(_state.messages || []);
 }
 
 // ── Menu & debug console ───────────────────────────────
 function toggleMenu() {
-  var menu = document.getElementById('swarm-menu');
-  menu.classList.toggle('visible');
+  document.getElementById('swarm-menu').classList.toggle('visible');
 }
 
 function toggleDebugFromMenu() {
   _debugOpen = !_debugOpen;
-  document.getElementById('debug-check').textContent = _debugOpen ? '☑' : '☐';
+  document.getElementById('debug-check').textContent = _debugOpen ? '\u2611' : '\u2610';
   document.getElementById('swarm-menu').classList.remove('visible');
   document.getElementById('debug-panel').classList.toggle('visible', _debugOpen);
 }
@@ -829,7 +1009,6 @@ function appendDebugLog(line) {
   lineEl.className = 'debug-line';
   lineEl.textContent = '[' + new Date().toLocaleTimeString() + '] ' + line;
   log.appendChild(lineEl);
-  // Keep at most 500 lines to avoid memory growth
   while (log.children.length > 500) log.removeChild(log.firstChild);
   log.scrollTop = log.scrollHeight;
 }
@@ -843,9 +1022,7 @@ function copyDebugLog() {
   var log = document.getElementById('debug-log');
   if (!log) return;
   var lines = [];
-  for (var i = 0; i < log.children.length; i++) {
-    lines.push(log.children[i].textContent);
-  }
+  for (var i = 0; i < log.children.length; i++) lines.push(log.children[i].textContent);
   var text = lines.join('\n');
   if (!text) return;
   if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -880,11 +1057,9 @@ function assignColour(memberName) {
 }
 
 function sendMessage(obj) {
-  // JetBrains bridge
   if (typeof window.__swarmSend === 'function') {
     window.__swarmSend(JSON.stringify(obj));
   }
-  // VS Code bridge
   if (typeof _vscode !== 'undefined') {
     _vscode.postMessage(obj);
   }
@@ -901,8 +1076,410 @@ function truncate(s, n) {
   return s && s.length > n ? s.slice(0, n) + '\u2026' : (s || '');
 }
 
-// Refresh idle timers every 5s without a full server push
+// Refresh elapsed timers / idle warnings every 5s without a full server push
 setInterval(function() { if (_state) render(); }, 5000);
+
+// ─────────────────────────────────────────────
+// Map view — interactive agent map (sexy mode)
+// ─────────────────────────────────────────────
+var _mapMode = true;          // map view is the default
+var _map = { scale: 1, ox: 0, oy: 0, nodes: [], popupMember: null };
+var _mapAnimId = null;
+var _mapMembersKey = '';
+var _pan = null;
+
+function setMapMode(mode) {
+  _mapMode = (mode === 'map');
+  document.getElementById('map-view').classList.toggle('visible', _mapMode);
+  document.getElementById('lanes').style.display = _mapMode ? 'none' : 'flex';
+  document.getElementById('task-board').style.display = _mapMode ? 'none' : 'flex';
+  var mt = document.getElementById('mode-map');
+  var lt = document.getElementById('mode-list');
+  if (mt) mt.classList.toggle('active', _mapMode);
+  if (lt) lt.classList.toggle('active', !_mapMode);
+  if (_mapMode) {
+    updateMap(workersOf(_state));
+    scheduleMapDraw();
+  } else {
+    stopMapLoop();
+  }
+}
+
+function updateMap(workers) {
+  var hint = document.getElementById('map-hint');
+  hint.style.display = (workers.length === 0) ? 'flex' : 'none';
+  if (workers.length === 0) {
+    stopMapLoop();
+    clearPopup();
+    return;
+  }
+  ensureMapLayout();
+  scheduleMapDraw();
+}
+
+function ensureMapLayout() {
+  var workers = workersOf(_state) || [];
+  var key = workers.map(function(l) { return l.memberName; }).join('|');
+  var changed = (key !== _mapMembersKey);
+  _mapMembersKey = key;
+  if (changed) {
+    layoutNodes();
+    fitMap();
+  } else {
+    _map.nodes.forEach(function(n, i) { if (workers[i]) n.lane = workers[i]; });
+  }
+}
+
+function layoutNodes() {
+  var workers = workersOf(_state) || [];
+  _map.nodes = workers.map(function(l, i) {
+    assignColour(l.memberName);
+    var x = 0.5, y = 0.5;
+    if (workers.length > 1) {
+      x = i / (workers.length - 1);
+      y = 0.5 + 0.22 * Math.sin((i / (workers.length - 1)) * Math.PI * 1.3);
+    }
+    return { lane: l, x: x, y: y };
+  });
+}
+
+function fitMap() {
+  var cv = document.getElementById('map-canvas');
+  var W = cv.clientWidth, H = cv.clientHeight;
+  if (_map.nodes.length === 0) { _map.scale = 1; _map.ox = W / 2; _map.oy = H / 2; return; }
+  var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  _map.nodes.forEach(function(n) {
+    minX = Math.min(minX, n.x); maxX = Math.max(maxX, n.x);
+    minY = Math.min(minY, n.y); maxY = Math.max(maxY, n.y);
+  });
+  var spanX = Math.max(maxX - minX, 0.001);
+  var spanY = Math.max(maxY - minY, 0.001);
+  var pad = Math.min(150, Math.max(90, Math.min(W, H) * 0.2));
+  var usableW = Math.max(W - pad * 2, 160);
+  var usableH = Math.max(H - pad * 2, 160);
+  _map.scale = Math.min(usableW / spanX, usableH / spanY);
+  _map.scale = Math.max(0.4, _map.scale);
+  _map.ox = W / 2 - ((minX + maxX) / 2) * _map.scale;
+  _map.oy = H / 2 - ((minY + maxY) / 2) * _map.scale;
+}
+
+// ── Friendly, non-technical wording ──
+function friendlyStatus(lane) {
+  var act = (lane.currentActivity || '').toLowerCase();
+  if (lane.status === 'SHUTDOWN') return 'Done';
+  if (lane.status === 'PAUSED') return 'Paused';
+  if (lane.status === 'READY') return 'Standing by';
+  if (act.indexOf('writing') === 0) return 'Writing';
+  if (act.indexOf('editing') === 0) return 'Editing';
+  if (act.indexOf('reading') === 0 || act.indexOf('listing') === 0 || act.indexOf('searching') === 0) return 'Exploring';
+  if (act.indexOf('running') === 0) return 'Building';
+  if (act.indexOf('viewing') === 0 || act.indexOf('planning') === 0) return 'Planning';
+  if (act.indexOf('messaging') === 0) return 'Coordinating';
+  return 'Working';
+}
+
+// ── Drawing ──
+function mapPalette() {
+  var light = document.documentElement.getAttribute('data-theme') === 'light';
+  return light ? {
+    bg1: '#eef2f7', bg2: '#dfe7f2', grid: 'rgba(30,60,120,0.06)', road: 'rgba(0,120,212,0.10)',
+    fg: '#242424', muted: '#6e6e6e', edge: 'rgba(30,80,140,0.30)',
+    labelBg: 'rgba(255,255,255,0.94)', labelBorder: 'rgba(30,80,140,0.25)',
+  } : {
+    bg1: '#10151d', bg2: '#182235', grid: 'rgba(120,170,255,0.06)', road: 'rgba(80,180,255,0.10)',
+    fg: '#e8e8e8', muted: '#9aa4b2', edge: 'rgba(120,170,230,0.35)',
+    labelBg: 'rgba(16,21,29,0.88)', labelBorder: 'rgba(120,170,230,0.25)',
+  };
+}
+
+function drawMap() {
+  var cv = document.getElementById('map-canvas');
+  if (!cv) return;
+  var ctx = cv.getContext('2d');
+  var dpr = window.devicePixelRatio || 1;
+  var W = cv.clientWidth, H = cv.clientHeight;
+  if (W === 0 || H === 0) return;
+  if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) {
+    cv.width = Math.round(W * dpr);
+    cv.height = Math.round(H * dpr);
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawMapBackground(ctx, W, H);
+  if (_map.nodes.length === 0) return;
+  ctx.save();
+  ctx.translate(_map.ox, _map.oy);
+  ctx.scale(_map.scale, _map.scale);
+  drawMapEdges(ctx);
+  _map.nodes.forEach(function(n) { drawMapNodeBody(ctx, n); });
+  ctx.restore();
+  // Labels are drawn in screen space so they stay readable at any zoom.
+  _map.nodes.forEach(function(n) { drawMapNodeLabel(ctx, n); });
+}
+
+function drawMapBackground(ctx, W, H) {
+  var p = mapPalette();
+  var g = ctx.createLinearGradient(0, 0, W, H);
+  g.addColorStop(0, p.bg1);
+  g.addColorStop(1, p.bg2);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = p.grid;
+  ctx.lineWidth = 1;
+  for (var x = 0; x <= W; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  for (var y = 0; y <= H; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+  ctx.strokeStyle = p.road;
+  ctx.lineWidth = 2;
+  [[0.05, 0.25, 0.95, 0.75], [0.15, 0.85, 0.9, 0.15]].forEach(function(r) {
+    ctx.beginPath();
+    ctx.moveTo(W * r[0], H * r[1]);
+    ctx.bezierCurveTo(W * (r[0] + 0.3), H * r[1] + 50 * Math.sin(r[2] * 5), W * (r[0] + 0.45), H * r[3] - 50 * Math.cos(r[2] * 6), W * r[2], H * r[3]);
+    ctx.stroke();
+  });
+}
+
+function quadAt(a, c, b, t) {
+  var u = 1 - t;
+  return u * u * a + 2 * u * t * c + t * t * b;
+}
+
+function drawMapEdges(ctx) {
+  var nodes = _map.nodes;
+  var p = mapPalette();
+  var s = _map.scale;
+  for (var i = 0; i < nodes.length - 1; i++) {
+    var a = nodes[i], b = nodes[i + 1];
+    var mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2 + 0.06;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.quadraticCurveTo(mx, my, b.x, b.y);
+    ctx.strokeStyle = p.edge;
+    ctx.lineWidth = 2 / s;
+    ctx.stroke();
+    var working = b.lane.status === 'BUSY' || b.lane.status === 'RUNNING';
+    if (working) {
+      var t = ((performance.now() % 1400) / 1400);
+      var px = quadAt(a.x, mx, b.x, t), py = quadAt(a.y, my, b.y, t);
+      ctx.beginPath();
+      ctx.arc(px, py, 4 / s, 0, Math.PI * 2);
+      ctx.fillStyle = _laneColourMap[b.lane.memberName] || '#fff';
+      ctx.fill();
+    }
+  }
+}
+
+function drawMapNodeBody(ctx, n) {
+  var lane = n.lane;
+  var colour = _laneColourMap[lane.memberName] || '#888';
+  var s = _map.scale;
+  var R = 30 / s;               // constant ~30px on screen
+  var cx = n.x, cy = n.y;
+  var working = lane.status === 'BUSY' || lane.status === 'RUNNING';
+  var now = performance.now();
+
+  if (working) {
+    var ph = ((now % 1600) / 1600) * 2 * Math.PI;
+    var rr = (36 + 4 * Math.sin(ph)) / s;
+    ctx.beginPath();
+    ctx.arc(cx, cy, rr, 0, Math.PI * 2);
+    ctx.strokeStyle = colour;
+    ctx.globalAlpha = 0.45;
+    ctx.lineWidth = 2 / s;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.beginPath();
+  ctx.arc(cx, cy + 3 / s, R, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.30)';
+  ctx.fill();
+
+  var grd = ctx.createRadialGradient(cx - 9 / s, cy - 11 / s, 4 / s, cx, cy, R);
+  grd.addColorStop(0, 'rgba(255,255,255,0.35)');
+  grd.addColorStop(1, colour);
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, 0, Math.PI * 2);
+  ctx.fillStyle = grd;
+  ctx.fill();
+  ctx.lineWidth = (working ? 2.5 : 1.5) / s;
+  ctx.strokeStyle = working ? colour : 'rgba(120,120,120,0.5)';
+  ctx.stroke();
+}
+
+function drawMapNodeLabel(ctx, n) {
+  var lane = n.lane;
+  var p = mapPalette();
+  var sx = n.x * _map.scale + _map.ox;
+  var sy = n.y * _map.scale + _map.oy;
+
+  var glyph = '';
+  if (lane.status === 'SHUTDOWN') glyph = '✓';
+  else if (lane.status === 'PAUSED') glyph = '⏸';
+  else if (lane.status === 'READY') glyph = '·';
+  if (glyph) {
+    ctx.font = 'bold 15px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff';
+    ctx.fillText(glyph, sx, sy);
+  }
+
+  var name = truncate(lane.displayName, 13);
+  var sub = friendlyStatus(lane) + ' · ' + laneElapsed(lane);
+  ctx.font = '600 12px sans-serif';
+  var nameW = ctx.measureText(name).width;
+  ctx.font = '10px sans-serif';
+  var subW = ctx.measureText(sub).width;
+  var w = Math.max(nameW, subW) + 18;
+  var h = 32;
+  var tx = sx - w / 2;
+  var ty = sy + 30;
+
+  ctx.fillStyle = p.labelBg;
+  roundRect(ctx, tx, ty, w, h, 6);
+  ctx.fill();
+  ctx.strokeStyle = p.labelBorder;
+  ctx.lineWidth = 1;
+  roundRect(ctx, tx, ty, w, h, 6);
+  ctx.stroke();
+
+  ctx.fillStyle = p.fg;
+  ctx.font = '600 12px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText(name, sx, ty + 5);
+  ctx.fillStyle = p.muted;
+  ctx.font = '10px sans-serif';
+  ctx.fillText(sub, sx, ty + 19);
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+// ── Interaction ──
+function canvasPos(e) {
+  var cv = document.getElementById('map-canvas');
+  var r = cv.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+
+function hitNode(px, py) {
+  for (var i = _map.nodes.length - 1; i >= 0; i--) {
+    var n = _map.nodes[i];
+    var sx = n.x * _map.scale + _map.ox;
+    var sy = n.y * _map.scale + _map.oy;
+    var dx = px - sx, dy = py - sy;
+    if (dx * dx + dy * dy <= 40 * 40) return n;
+  }
+  return null;
+}
+
+document.getElementById('map-canvas').addEventListener('mousedown', function(e) {
+  var cv = document.getElementById('map-canvas');
+  cv.classList.add('dragging');
+  var pos = canvasPos(e);
+  var hit = hitNode(pos.x, pos.y);
+  _pan = { sx: pos.x, sy: pos.y, ox: _map.ox, oy: _map.oy, moved: false, hit: hit ? hit.lane.memberName : null };
+});
+
+window.addEventListener('mousemove', function(e) {
+  if (!_pan) return;
+  var pos = canvasPos(e);
+  var dx = pos.x - _pan.sx, dy = pos.y - _pan.sy;
+  if (Math.abs(dx) + Math.abs(dy) > 4) _pan.moved = true;
+  _map.ox = _pan.ox + dx;
+  _map.oy = _pan.oy + dy;
+  scheduleMapDraw();
+});
+
+window.addEventListener('mouseup', function(e) {
+  if (!_pan) return;
+  var cv = document.getElementById('map-canvas');
+  cv.classList.remove('dragging');
+  if (!_pan.moved) {
+    if (_pan.hit) selectPopup(_pan.hit);
+    else clearPopup();
+  }
+  _pan = null;
+});
+
+document.getElementById('map-canvas').addEventListener('wheel', function(e) {
+  e.preventDefault();
+  var pos = canvasPos(e);
+  var ns = Math.max(0.4, Math.min(4, _map.scale * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
+  _map.ox = pos.x - (pos.x - _map.ox) * (ns / _map.scale);
+  _map.oy = pos.y - (pos.y - _map.oy) * (ns / _map.scale);
+  _map.scale = ns;
+  scheduleMapDraw();
+}, { passive: false });
+
+document.getElementById('map-canvas').addEventListener('dblclick', function() {
+  fitMap();
+  scheduleMapDraw();
+});
+
+window.addEventListener('resize', function() {
+  if (_mapMode) scheduleMapDraw();
+});
+
+// ── Node detail card ──
+function selectPopup(memberName) {
+  var lane = null;
+  _map.nodes.forEach(function(n) { if (n.lane.memberName === memberName) lane = n.lane; });
+  if (!lane) return;
+  var el = document.getElementById('map-detail');
+  var colour = _laneColourMap[lane.memberName] || '#888';
+  var feed = (lane.activityFeed || []).slice(-6).map(function(f) {
+    return '<div class="frow"><span class="ftime">' + feedTime(f.at) + '</span><span>' + esc(f.text) + '</span></div>';
+  }).join('');
+  el.innerHTML =
+    '<div class="md-head">' +
+      '<span class="status-dot ' + lane.status + '" style="background:' + colour + '"></span>' +
+      '<span class="md-name">' + esc(lane.displayName) + '</span>' +
+      '<span class="lane-role-badge">' + esc(lane.role) + '</span>' +
+      '<button class="md-close" onclick="clearPopup()" title="Close">✕</button>' +
+    '</div>' +
+    '<div class="md-status">' + statusWord(lane.status) + ' · ' + laneElapsed(lane) + '</div>' +
+    '<div class="md-action">' + esc(lane.currentActivity || '') + '</div>' +
+    '<div class="md-feed">' + (feed || '<div>no activity yet</div>') + '</div>';
+  el.classList.add('visible');
+  _map.popupMember = memberName;
+}
+
+function clearPopup() {
+  document.getElementById('map-detail').classList.remove('visible');
+  _map.popupMember = null;
+}
+
+// ── Animation loop ──
+function scheduleMapDraw() {
+  if (!_mapMode || _mapAnimId) return;
+  var loop = function() {
+    drawMap();
+    var active = _map.nodes.some(function(n) {
+      return n.lane.status === 'BUSY' || n.lane.status === 'RUNNING';
+    });
+    if (active) {
+      _mapAnimId = requestAnimationFrame(loop);
+    } else {
+      _mapAnimId = null;
+    }
+  };
+  _mapAnimId = requestAnimationFrame(loop);
+}
+
+function stopMapLoop() {
+  if (_mapAnimId) { cancelAnimationFrame(_mapAnimId); _mapAnimId = null; }
+}
+
+// Start in Map (sexy) mode
+setMapMode('map');
 </script>
 </body>
 </html>

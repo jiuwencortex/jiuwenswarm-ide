@@ -1,5 +1,10 @@
 package com.jiuwenswarm.plugin.swarm
 
+data class LaneFeedEntry(
+    val text: String,
+    var at: Long,
+)
+
 data class AgentLane(
     val memberName: String,
     var displayName: String,
@@ -12,6 +17,8 @@ data class AgentLane(
     var lastToolName: String? = null,
     var lastActivePath: String? = null,       // full file path — used for jump-to-file on lane click
     var lastActiveAt: Long = System.currentTimeMillis(),
+    var startedAt: Long? = null,              // when this lane became active (spawn / first tool)
+    var activityFeed: MutableList<LaneFeedEntry> = mutableListOf(),  // recent activity, chronological, capped
     var messageCount: Int = 0,
     var tasksDone: Int = 0,
 )

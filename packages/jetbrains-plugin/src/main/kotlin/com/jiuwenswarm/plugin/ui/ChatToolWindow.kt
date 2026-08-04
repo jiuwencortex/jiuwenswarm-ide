@@ -723,8 +723,9 @@ class ChatPanel(
             }.getOrNull()
             else -> null
         }
-        val filePath = args?.get("path")?.asString
-        swarmStateManager.applyToolCall(toolName, filePath, memberName)
+        val filePath = args?.get("path")?.takeIf { it.isJsonPrimitive }?.asString
+            ?: args?.get("file_path")?.takeIf { it.isJsonPrimitive }?.asString
+        swarmStateManager.applyToolCall(toolName, filePath, memberName, args)
         if (swarmMapPanel == null) swarmMapPanel = SwarmMapToolWindowFactory.getPanel(project)
         swarmDebug("tool: $toolName" + (memberName?.let { " · $it" } ?: ""))
         swarmMapPanel?.postSnapshot(swarmStateManager.snapshot())
