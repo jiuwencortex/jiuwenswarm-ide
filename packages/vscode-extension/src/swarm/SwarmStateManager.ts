@@ -37,6 +37,7 @@ export class SwarmStateManager {
         case 'team.member.spawned':           this.onMemberSpawned(event); break;
         case 'team.member.status_changed':    this.onMemberStatusChanged(event); break;
         case 'team.member.execution_changed': this.onMemberExecutionChanged(event); break;
+        case 'team.member.activity_changed':  this.onMemberActivityChanged(event); break;
         case 'team.member.shutdown':          this.onMemberShutdown(event); break;
         case 'team.task.created':             this.onTaskCreated(event); break;
         case 'team.task.claimed':             this.onTaskClaimed(event); break;
@@ -69,12 +70,15 @@ export class SwarmStateManager {
     return e;
   }
 
-  /** Uppercase a lane status into the map's vocabulary (READY/BUSY/PAUSED/SHUTDOWN). */
+  /** Map a gateway status into the map's lane vocabulary (READY/BUSY/PAUSED/SHUTDOWN). */
   private normalizeLaneStatus(s: unknown): string | undefined {
     if (typeof s !== 'string' || !s) return undefined;
-    const up = s.toUpperCase();
-    if (up === 'IDLE') return 'READY';
-    return up;
+    switch (s.toUpperCase()) {
+      case 'IDLE':      return 'READY';
+      case 'RUNNING':   return 'RUNNING';
+      case 'COMPLETED': return 'SHUTDOWN';
+      default:          return s.toUpperCase();
+    }
   }
 
   /**
@@ -88,6 +92,7 @@ export class SwarmStateManager {
     lane.currentActivity = this.formatActivity(toolName, filePath);
     lane.lastActivePath = filePath ?? null;
     lane.lastActiveAt = Date.now();
+    lane.status = 'BUSY';
     this.lastEventAt = lane.lastActiveAt;
   }
 
@@ -96,10 +101,7 @@ export class SwarmStateManager {
       const pd = this.statusPriority(a.status) - this.statusPriority(b.status);
       return pd !== 0 ? pd : b.lastActiveAt - a.lastActiveAt;
     });
-    const sortedTasks = [...this.tasks.values()].sort((a, b) => {
-      const pd = this.taskStatusPriority(a.status) - this.taskStatusPriority(b.status);
-      return pd !== 0 ? pd : a.createdAt - b.createdAt;
-    });
+    const sortedTasks = [...this.tasks.values()].sort((a, b) => a.createdAt - b.createdAt);
     return {
       sessionId: this.sessionId,
       teamName: this.teamName,
@@ -130,22 +132,28 @@ export class SwarmStateManager {
   private onMemberSpawned(e: Record<string, unknown>): void {
     const name = e['member_name'] as string | undefined;
     if (!name) return;
+    const status = this.normalizeLaneStatus(e['status']) ?? 'READY';
+    const prompt = e['prompt'] as string | undefined;
     const existing = this.lanes.get(name);
     if (existing) {
       existing.displayName = (e['display_name'] as string) ?? existing.displayName;
       existing.role = (e['role'] as string) ?? existing.role;
-      existing.status = 'READY';
+      existing.status = status;
+      if (prompt) {
+        existing.currentTaskTitle = prompt;
+        existing.currentActivity = 'starting';
+      }
       existing.lastActiveAt = this.lastEventAt;
     } else {
       this.lanes.set(name, {
         memberName: name,
         displayName: (e['display_name'] as string) ?? name,
         role: (e['role'] as string) ?? 'TEAMMATE',
-        status: 'READY',
+        status: status,
         executionStatus: 'IDLE',
         currentTaskId: null,
-        currentTaskTitle: null,
-        currentActivity: null,
+        currentTaskTitle: prompt ?? null,
+        currentActivity: prompt ? 'starting' : null,
         lastToolName: null,
         lastActivePath: null,
         lastActiveAt: this.lastEventAt,
@@ -161,6 +169,10 @@ export class SwarmStateManager {
     const lane = this.getOrStubLane(name);
     const status = this.normalizeLaneStatus(e['new_status'] ?? e['status']);
     if (status) lane.status = status;
+    const outcome = e['outcome'] as string | undefined;
+    if (outcome && status === 'SHUTDOWN') {
+      lane.currentActivity = `done · ${outcome}`;
+    }
     lane.lastActiveAt = this.lastEventAt;
   }
 
@@ -170,6 +182,18 @@ export class SwarmStateManager {
     const lane = this.getOrStubLane(name);
     const execution = e['new_status'] ?? e['execution_status'];
     if (typeof execution === 'string' && execution) lane.executionStatus = execution.toUpperCase();
+    lane.lastActiveAt = this.lastEventAt;
+  }
+
+  /** Live mid-run activity (e.g. a swarmflow worker tool call) → lane activity. */
+  private onMemberActivityChanged(e: Record<string, unknown>): void {
+    const name = e['member_name'] as string | undefined;
+    if (!name) return;
+    const activity = e['activity'] as string | undefined;
+    if (!activity) return;
+    const lane = this.getOrStubLane(name);
+    lane.status = 'BUSY';
+    lane.currentActivity = activity;
     lane.lastActiveAt = this.lastEventAt;
   }
 
@@ -335,9 +359,5 @@ export class SwarmStateManager {
 
   private statusPriority(status: string): number {
     return ({ BUSY: 0, RUNNING: 1, READY: 2, PAUSED: 3, SHUTDOWN: 4 } as Record<string, number>)[status] ?? 5;
-  }
-
-  private taskStatusPriority(status: string): number {
-    return ({ in_progress: 0, pending: 1, completed: 2, cancelled: 3 } as Record<string, number>)[status] ?? 4;
   }
 }

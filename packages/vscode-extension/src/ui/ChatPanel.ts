@@ -325,6 +325,7 @@ export class ChatPanel implements vscode.Disposable {
     const rawTeamEvent = this.extractTeamEventDelta(msg);
     if (rawTeamEvent !== null) {
       this.swarmStateManager.applyTeamEvent(rawTeamEvent);
+      this.swarmDebug('team.event: ' + rawTeamEvent);
       const snap = this.swarmStateManager.snapshot();
       this.swarmMapPanel?.postSnapshot(snap);
       // Auto-open the Swarm Map panel when the first agent spawns
@@ -430,6 +431,7 @@ export class ChatPanel implements vscode.Disposable {
       const attrFilePath = attrArgs['path'] as string | undefined;
       if (attrToolName) {
         this.swarmStateManager.applyToolCall(attrToolName, attrFilePath, memberName);
+        this.swarmDebug(`tool: ${attrToolName}${memberName ? ' · ' + memberName : ''}`);
         this.swarmMapPanel?.postSnapshot(this.swarmStateManager.snapshot());
       }
     }
@@ -753,6 +755,11 @@ export class ChatPanel implements vscode.Disposable {
       const filePath = lane?.lastActivePath;
       if (filePath) void this.openFile(filePath, 0);
     }
+  }
+
+  /** Feed a line into the Swarm Map's debug console (no-op until that panel exists). */
+  private swarmDebug(line: string): void {
+    this.swarmMapPanel?.postDebug(line);
   }
 
   // ──────────────────────────────────────────

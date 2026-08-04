@@ -290,6 +290,11 @@ class ChatPanel(
         } catch (_: Exception) {}
     }
 
+    /** Feed a line into the Swarm Map's debug console (no-op until that panel exists). */
+    private fun swarmDebug(line: String) {
+        swarmMapPanel?.postDebug(line)
+    }
+
     // ──────────────────────────────────────────
     // Webview → Plugin messages
     // ──────────────────────────────────────────
@@ -558,6 +563,7 @@ class ChatPanel(
             if (swarmMapPanel == null) {
                 swarmMapPanel = SwarmMapToolWindowFactory.getPanel(project)
             }
+            swarmDebug("team.event: $rawTeamEvent")
             swarmMapPanel?.postSnapshot(snap)
             // Auto-open the Swarm Map tool window when the first agent spawns
             if (snap.lanes.size == 1 && snap.lanes[0].status != "SHUTDOWN") {
@@ -720,6 +726,7 @@ class ChatPanel(
         val filePath = args?.get("path")?.asString
         swarmStateManager.applyToolCall(toolName, filePath, memberName)
         if (swarmMapPanel == null) swarmMapPanel = SwarmMapToolWindowFactory.getPanel(project)
+        swarmDebug("tool: $toolName" + (memberName?.let { " · $it" } ?: ""))
         swarmMapPanel?.postSnapshot(swarmStateManager.snapshot())
     }
 

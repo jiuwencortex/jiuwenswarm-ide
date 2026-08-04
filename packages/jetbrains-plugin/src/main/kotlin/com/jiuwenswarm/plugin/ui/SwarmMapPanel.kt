@@ -27,6 +27,7 @@ class SwarmMapPanel(toolWindow: ToolWindow) : Disposable {
     private val jsQuery: JBCefJSQuery
     private val ready = AtomicBoolean(false)
     private val pending = AtomicReference<SwarmSnapshot?>(null)
+    private val pendingDebug = ArrayDeque<String>()
 
     /** Called by SwarmMapToolWindowFactory to wire up JS→Kotlin messages. */
     var onMessage: ((String) -> Unit)? = null
@@ -46,6 +47,10 @@ class SwarmMapPanel(toolWindow: ToolWindow) : Disposable {
                 injectBridge()
                 ready.set(true)
                 pending.getAndSet(null)?.let { postSnapshot(it) }
+                // Flush debug lines buffered while the webview was loading.
+                val buffered = ArrayList(pendingDebug)
+                pendingDebug.clear()
+                for (line in buffered) postDebug(line)
             }
         }, browser.cefBrowser)
 
@@ -67,6 +72,22 @@ class SwarmMapPanel(toolWindow: ToolWindow) : Disposable {
             .replace("\\", "\\\\")
             .replace("`", "\\`")
         val js = "if(window.__swarmReceive) window.__swarmReceive(JSON.parse(`$json`));"
+        ApplicationManager.getApplication().invokeLater {
+            if (!browser.isDisposed) {
+                browser.cefBrowser.executeJavaScript(js, browser.cefBrowser.url, 0)
+            }
+        }
+    }
+
+    /** Send a debug-log line to the webview; buffered until the webview is ready. */
+    fun postDebug(line: String) {
+        if (!ready.get()) {
+            pendingDebug.addLast(line)
+            while (pendingDebug.size > 500) pendingDebug.removeFirst()
+            return
+        }
+        val escaped = line.replace("\\", "\\\\").replace("`", "\\`")
+        val js = "if(window.__swarmDebug) window.__swarmDebug(`$escaped`);"
         ApplicationManager.getApplication().invokeLater {
             if (!browser.isDisposed) {
                 browser.cefBrowser.executeJavaScript(js, browser.cefBrowser.url, 0)

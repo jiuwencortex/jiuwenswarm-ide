@@ -47,6 +47,7 @@ class SwarmStateManager {
                 type == "team.member.spawned"          -> onMemberSpawned(event)
                 type == "team.member.status_changed"   -> onMemberStatusChanged(event)
                 type == "team.member.execution_changed"-> onMemberExecutionChanged(event)
+                type == "team.member.activity_changed" -> onMemberActivityChanged(event)
                 type == "team.member.shutdown"         -> onMemberShutdown(event)
                 type == "team.task.created"            -> onTaskCreated(event)
                 type == "team.task.claimed"            -> onTaskClaimed(event)
@@ -88,11 +89,15 @@ class SwarmStateManager {
         return e
     }
 
-    /** Uppercase a lane status into the map's vocabulary (READY/BUSY/PAUSED/SHUTDOWN). */
+    /** Map a gateway status into the map's lane vocabulary (READY/BUSY/PAUSED/SHUTDOWN). */
     private fun normalizeLaneStatus(s: String?): String? {
         if (s.isNullOrEmpty()) return null
-        val up = s.uppercase()
-        return if (up == "IDLE") "READY" else up
+        return when (s.uppercase()) {
+            "IDLE"      -> "READY"
+            "RUNNING"   -> "RUNNING"
+            "COMPLETED" -> "SHUTDOWN"
+            else        -> s.uppercase()
+        }
     }
 
     /**
@@ -107,6 +112,7 @@ class SwarmStateManager {
         lane.currentActivity = formatActivity(toolName, filePath)
         lane.lastActivePath = filePath
         lane.lastActiveAt = System.currentTimeMillis()
+        lane.status = "BUSY"
         lastEventAt = lane.lastActiveAt
     }
 
@@ -118,12 +124,7 @@ class SwarmStateManager {
                 { -it.lastActiveAt }
             )
         )
-        val sortedTasks = tasks.values.sortedWith(
-            compareBy(
-                { taskStatusPriority(it.status) },
-                { it.createdAt }
-            )
-        )
+        val sortedTasks = tasks.values.sortedWith(compareBy { it.createdAt })
         return SwarmSnapshot(
             sessionId = sessionId,
             teamName = teamName,
@@ -152,18 +153,27 @@ class SwarmStateManager {
 
     private fun onMemberSpawned(e: JsonObject) {
         val name = e.get("member_name")?.asString ?: return
+        val status = normalizeLaneStatus(e.get("status")?.asString) ?: "READY"
+        val prompt = e.get("prompt")?.asString
         val existing = lanes[name]
         if (existing != null) {
             // Update display info in case of restart
             existing.displayName = e.get("display_name")?.asString ?: existing.displayName
             existing.role = e.get("role")?.asString ?: existing.role
-            existing.status = "READY"
+            existing.status = status
+            if (!prompt.isNullOrEmpty()) {
+                existing.currentTaskTitle = prompt
+                existing.currentActivity = "starting"
+            }
             existing.lastActiveAt = lastEventAt
         } else {
             lanes[name] = AgentLane(
                 memberName = name,
                 displayName = e.get("display_name")?.asString ?: name,
                 role = e.get("role")?.asString ?: "TEAMMATE",
+                status = status,
+                currentTaskTitle = prompt,
+                currentActivity = if (prompt.isNullOrEmpty()) null else "starting",
                 lastActiveAt = lastEventAt,
             )
         }
@@ -174,7 +184,12 @@ class SwarmStateManager {
         val lane = lanes.getOrPut(name) { stubLane(name) }
         val newStatus = e.get("new_status")?.takeIf { it.isJsonPrimitive }?.asString
             ?: e.get("status")?.takeIf { it.isJsonPrimitive }?.asString
-        normalizeLaneStatus(newStatus)?.let { lane.status = it }
+        val status = normalizeLaneStatus(newStatus)
+        status?.let { lane.status = it }
+        val outcome = e.get("outcome")?.asString
+        if (!outcome.isNullOrEmpty() && status == "SHUTDOWN") {
+            lane.currentActivity = "done · $outcome"
+        }
         lane.lastActiveAt = lastEventAt
     }
 
@@ -184,6 +199,16 @@ class SwarmStateManager {
         val execution = e.get("new_status")?.takeIf { it.isJsonPrimitive }?.asString
             ?: e.get("execution_status")?.takeIf { it.isJsonPrimitive }?.asString
         if (!execution.isNullOrEmpty()) lane.executionStatus = execution.uppercase()
+        lane.lastActiveAt = lastEventAt
+    }
+
+    /** Live mid-run activity (e.g. a swarmflow worker tool call) → lane activity. */
+    private fun onMemberActivityChanged(e: JsonObject) {
+        val name = e.get("member_name")?.asString ?: return
+        val activity = e.get("activity")?.asString ?: return
+        val lane = lanes.getOrPut(name) { stubLane(name) }
+        lane.status = "BUSY"
+        lane.currentActivity = activity
         lane.lastActiveAt = lastEventAt
     }
 
@@ -323,13 +348,5 @@ class SwarmStateManager {
         "PAUSED"   -> 3
         "SHUTDOWN" -> 4
         else       -> 5
-    }
-
-    private fun taskStatusPriority(status: String) = when (status) {
-        "in_progress" -> 0
-        "pending"     -> 1
-        "completed"   -> 2
-        "cancelled"   -> 3
-        else          -> 4
     }
 }

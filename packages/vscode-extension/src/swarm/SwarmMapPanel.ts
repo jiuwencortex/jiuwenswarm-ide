@@ -13,6 +13,7 @@ import { SwarmSnapshot } from './SwarmState';
 export class SwarmMapPanel {
   private panel?: vscode.WebviewPanel;
   private pendingSnapshot?: SwarmSnapshot;
+  private pendingDebugLines: string[] = [];
   private webviewReady = false;
 
   /** Called by ChatPanel to handle open_lane and future steerable messages. */
@@ -48,6 +49,11 @@ export class SwarmMapPanel {
           void this.panel?.webview.postMessage({ type: 'swarm_snapshot', snapshot: this.pendingSnapshot });
           this.pendingSnapshot = undefined;
         }
+        const pendingLines = this.pendingDebugLines;
+        this.pendingDebugLines = [];
+        for (const line of pendingLines) {
+          void this.panel?.webview.postMessage({ type: 'swarm_debug', line });
+        }
         return;
       }
       // Delegate all other messages (open_lane, etc.) to ChatPanel
@@ -68,6 +74,16 @@ export class SwarmMapPanel {
       return;
     }
     void this.panel.webview.postMessage({ type: 'swarm_snapshot', snapshot });
+  }
+
+  /** Send a debug-log line to the webview; buffered until the webview is ready. */
+  postDebug(line: string): void {
+    if (!this.panel || !this.webviewReady) {
+      this.pendingDebugLines.push(line);
+      if (this.pendingDebugLines.length > 500) this.pendingDebugLines.shift();
+      return;
+    }
+    void this.panel.webview.postMessage({ type: 'swarm_debug', line });
   }
 
   dispose(): void {
