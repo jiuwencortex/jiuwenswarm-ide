@@ -74,27 +74,29 @@ Press **Enter** (or click the send button).
 Within 1–2 seconds the first `team.member.spawned` event arrives from the server.
 
 - The **JiuwenSwarm Swarm** tool window pops open at the **bottom** of PyCharm
-  without any manual action.
-- A lane card appears for the first agent — typically the **Planner** — with:
-  - A **pulsing green dot** (BUSY status)
-  - A **LEADER** role badge in purple
+  without any manual action. It opens in **Map view** by default.
+- A glowing **node** appears for the first agent — typically the **Planner** — with:
+  - A **pulsing ring** (actively working)
+  - A friendly status line under it: *Planning · 0:0X*
 - The **header chip** in the top-right of the Swarm Map shows: `0/4 tasks · 1 agent`
 
 > Point out: nobody clicked anything. The panel opened on its own when the
-> first agent joined the session.
+> first agent joined the session. Toggle **Map / List** in the header to flip
+> between the interactive map and the technical per-agent lane cards.
 
 ---
 
 ## 6. More agents spawn
 
-Two or three more agents join within seconds. The Swarm Map fills in:
+Two or three more agents join within seconds. New **nodes** appear on the map, and the
+**List view** shows their lane cards:
 
-| Lane | Role | Dot | What it will do |
-|------|------|-----|-----------------|
-| planner | LEADER | green pulse | Decompose the request into tasks |
-| coder | TEAMMATE | grey | Write tasks.py and cli.py |
-| tester | TEAMMATE | grey | Write and run tests/test_tasks.py |
-| writer | TEAMMATE | grey | Write README.md |
+| Lane | Status | What it will do |
+|------|--------|-----------------|
+| planner | WORKING (pulse) | Decompose the request into tasks |
+| coder | IDLE | Write tasks.py and cli.py |
+| tester | IDLE | Write and run tests/test_tasks.py |
+| writer | IDLE | Write README.md |
 
 The progress chip updates to `0/4 tasks · 4 agents`.
 
@@ -117,12 +119,11 @@ The progress chip counts up: `1/4 tasks`, `2/4 tasks`, …
 
 As **coder** starts writing:
 
-- Its dot turns green (BUSY) and its border highlights in green.
-- The activity line updates in real time:
+- Its node/ring pulses green and the status word changes to **Writing**.
+- The **activity feed** on the card (List view) updates in real time:
   - `reading · tasks.json` when it inspects the schema
   - `writing · tasks.py` when it creates the file
   - `editing · tasks.py` when it refines a function
-  - `writing · cli.py` when it moves to the next file
 
 **At this point, hover over the coder lane card.** Because it has an active file,
 the hint **↗ open file** appears in the top-right corner of the card.
@@ -170,17 +171,21 @@ tasksDone counter increments internally.
 
 When every agent has finished and sends `team.member.shutdown`:
 
-- All lane dots turn grey and the cards fade to 45% opacity.
-- The live lane list is **replaced** by the summary card:
+- All node/lane statuses turn to **Done** (✓ / grey).
+- The live lanes are **replaced** by the summary card:
 
   ```
   ✓ TaskManager Team · Session complete
   Agents              4
   Tasks completed     4
-  Messages            9
+  Messages exchanged  9
+  planner  · 0:12
+  coder    · 0:58
+  tester   · 0:41
+  writer   · 0:09
   ```
 
-- The progress chip shows **4/4 tasks**.
+- The progress chip shows **4/4 tasks** and the progress bar under the header fills.
 
 Now look at the *Project* sidebar — files that didn't exist five minutes ago:
 
@@ -224,16 +229,18 @@ python -m unittest tests/test_tasks.py -v
 | Moment | What to point at |
 |--------|-----------------|
 | Server sends first event | Swarm Map opens — no button click needed |
-| Multiple lane cards | Real parallel agents, not sequential steps |
-| Pulsing green dot | Visual feedback: BUSY = actively running tools |
-| Activity line updates | Sub-second granularity on what the agent is doing |
+| Map view nodes | Agents as a living map, not rows — pulse = working |
+| Map / List toggle | One click to flip between the map and the technical lanes |
+| Status word + timer | Friendly status (Planning / Writing / Done) with a live elapsed counter |
+| Activity feed updates | Sub-second granularity on what the agent is doing |
 | Hover → ↗ open file | One click to jump into the file the agent last touched |
 | Click lane card | PyCharm focus moves to that exact file instantly |
 | Messages toggle | Agents coordinating with each other, not just user ↔ agent |
-| Message colour coding | Matches lane card colour — easy to trace who said what |
-| Progress chip | Always visible: `done/total tasks · N agents` |
+| Message colour coding | Matches lane colour — easy to trace who said what |
+| Progress chip / bar | Always visible: `done/total tasks · N agents` + completion bar |
 | Task pills | Colour shift from yellow to green to grey tells the story |
-| Summary card | Clean end state — session concluded, results visible |
+| Debug log (☰ menu) | Opt-in raw event feed for troubleshooting |
+| Summary card | Clean end state — results visible, per-agent durations |
 | Project sidebar | Empty dir → 5 files with working code |
 
 ---

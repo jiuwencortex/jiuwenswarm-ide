@@ -140,15 +140,18 @@ Click **⚙ → Skills** to view registered skills. Each skill shows its name, d
 
 Available when using **Team Coding** mode (`code.team`). Opens automatically at the bottom of the IDE when the first team agent spawns — no click required.
 
+The panel has two views, switched from the **Map / List** toggle in the header (Map is the default):
+
 | Element | What it shows |
 |---------|---------------|
-| Progress chip | `N/M tasks · K agents` in the panel header |
-| Task pills | One pill per task; colour shifts from yellow (pending) → green (in_progress) → grey (completed) |
-| Lane cards | One card per agent — status dot, role badge, current file activity, active task title |
+| Map view | Interactive canvas: agents as coloured nodes, pulsing while working, ✓ when done; animated flow dots; drag to pan, scroll to zoom, click for details |
+| List view | One lane card per worker — status chip, live elapsed timer, current action, scrollable activity feed |
+| Progress chip / bar | `N/M tasks · K agents · M working` + completed-task percentage bar |
+| Task pills | One pill per task; colour shifts from yellow (pending) → green (in_progress) → red (blocked) → grey (completed) |
 | ↗ open file | Hover a lane card that has an active file to see the hint; click to open the file in the editor |
-| Timeline bar | 90-second colour-coded activity bar; overlapping tracks prove parallel work |
 | Message log | Collapsible `▶ Messages (N)` toggle showing inter-agent messages, colour-coded by sender |
-| Summary card | Replaces lane list when all agents reach SHUTDOWN: agent count, tasks completed, messages sent |
+| Debug console | ☰ menu → **Debug log** (closed by default): live team-event and tool-attribution log with Clear/Copy |
+| Summary card | Replaces lanes when all workers finish: agent count, tasks completed, messages, per-agent durations |
 
 See [USER_GUIDE.md — Swarm Map](USER_GUIDE.md#swarm-map) for the full reference.
 

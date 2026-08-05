@@ -3,6 +3,14 @@
 Visual real-time panel showing active sub-agents, their current task, and live tool
 activity during a JiuwenSwarm `code.team` session inside the IDE.
 
+> **Status: implemented and superseded.** The plan below was the original design. The
+> shipped version adds two views (**Map** — interactive agent nodes with pan/zoom and a
+> click detail card — and **List** — lane cards with status chips, live elapsed timers,
+> and per-agent activity feeds), an opt-in ☰ debug console, friendly non-technical status
+> wording, and a completion summary with per-agent durations. The 90-second timeline
+> proposed here was replaced by a thin progress bar. See `docs/vscode/USER_GUIDE.md` /
+> `docs/jetbrains/USER_GUIDE.md` for the current feature reference.
+
 ---
 
 ## 1. Wire format — what the server already sends

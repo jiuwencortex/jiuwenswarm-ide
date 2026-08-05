@@ -22,6 +22,13 @@ Architecture reference for the JetBrains plugin and VS Code extension. Both plug
 │  │  - Checkpoint rewind bar       │  │
 │  └────────────────────────────────┘  │
 │  ┌────────────────────────────────┐  │
+│  │  Swarm Map (swarm_map.html)    │  │
+│  │  - Map / List views toggle     │  │
+│  │  - Status chips + elapsed timer│  │
+│  │  - Per-agent activity feed     │  │
+│  │  - Debug console (☰ menu)      │  │
+│  └────────────────────────────────┘  │
+│  ┌────────────────────────────────┐  │
 │  │  Context Collector             │  │
 │  │  - Active file + cursor + sel  │  │
 │  │  - Diagnostics + open tabs     │  │
@@ -255,6 +262,10 @@ packages/vscode-extension/src/
 │   └── TerminalManager.ts             # Run agent shell commands in VS Code terminal
 ├── codeActions/
 │   └── FixWithAiCodeActionProvider.ts # Lightbulb "Fix with JiuwenSwarm"
+├── swarm/
+│   ├── SwarmState.ts                  # AgentLane / TeamTask / SwarmSnapshot types
+│   ├── SwarmStateManager.ts           # Builds swarm state from team.event deltas
+│   └── SwarmMapPanel.ts               # Swarm Map webview (Map/List), debug console
 └── ui/
     ├── ChatPanel.ts                   # WebviewPanel wrapper + message bridge
     └── StatusBar.ts                   # Connection status indicator
@@ -310,8 +321,13 @@ packages/jetbrains-plugin/src/main/kotlin/com/jiuwenswarm/plugin/
 │   └── DiffApplier.kt                 # File-edit interception + diff window + apply + snapshot
 ├── terminal/
 │   └── TerminalManager.kt             # Reflection-based routing to Terminal plugin
+├── swarm/
+│   ├── SwarmState.kt                  # AgentLane / TeamTask / SwarmSnapshot types
+│   └── SwarmStateManager.kt           # Builds swarm state from team.event deltas
 ├── ui/
 │   ├── ChatToolWindow.kt              # ToolWindowFactory + JCEF panel + message bridge
+│   ├── SwarmMapPanel.kt               # Swarm Map JCEF panel (Map/List webview), debug console
+│   ├── SwarmMapToolWindowFactory.kt   # ToolWindow factory + openOrReveal helper
 │   ├── Actions.kt                     # NewSessionAction, SendSelectionAction
 │   ├── FixWithAiIntention.kt          # IntentionAction — Alt+Enter quick-fix
 │   └── StatusBarWidgetFactory.kt      # Connection state + token count tooltip
@@ -351,9 +367,33 @@ window.__jb_send = function(jsonStr) { /* routes to handleWebviewMessage() */ }
 
 ---
 
-## 7. Shared Webview (chat.html)
+## 7. Shared Webview (chat.html + swarm_map.html)
 
-Both plugins load the same self-contained `chat.html` — vanilla HTML + JavaScript, no build step. The file lives at `packages/shared-webview/chat.html` and is copied to each plugin's resource directory at build time.
+Both plugins load the same self-contained webviews — vanilla HTML + JavaScript, no build step. They live at `packages/shared-webview/chat.html` and `packages/shared-webview/swarm_map.html`, and are copied to each plugin's resource directory at build time. Both share one theme mechanism: `:root[data-theme="light"]` driven by the VS Code `.vscode-dark`/`.vscode-light` body classes, or `prefers-color-scheme` in JetBrains JCEF.
+
+### Swarm Map data flow
+
+The Swarm Map (`swarm_map.html`) renders a `SwarmSnapshot` produced by the host-side `SwarmStateManager`. Incoming team events arrive in two wire shapes:
+
+- **E2A:** `chat.delta` whose text starts with `team.event:` — the remainder is JSON.
+- **Old format:** `{ type:"event", event:"team.member", payload:{ event, … } }` — the real event is **nested** at `payload.event` (e.g. `payload.event.type === "team.member.spawned"`).
+
+The host (`ChatPanel.extractTeamEventDelta` / `ChatToolWindow.extractTeamEventDelta`) unwraps the nested envelope and normalises field names (`member_id → member_name`, `name → display_name`, `mode → role`, `team_id → team_name`, `new_status → status`). `SwarmStateManager` then applies:
+
+| Event | Effect |
+|-------|--------|
+| `team.member.spawned` | Create a lane (status from `status`, task from `prompt`) |
+| `team.member.status_changed` | Update status; `new_status: completed → DONE`, `paused → PAUSED` |
+| `team.member.activity_changed` | Live mid-run activity (e.g. swarmflow worker tool calls) → lane activity + feed |
+| `team.member.execution_changed` | Update execution status only |
+| `team.member.shutdown` | Mark lane DONE |
+| `team.task.created/claimed/completed/…` | Task board pills |
+| `team.task.status_snapshot` | Authoritative task status/assignee convergence |
+| `team.message.*` | Inter-agent message log |
+
+Tool attribution comes from `chat.tool_call` / `chat.tool_update` events carrying `member_name`; the parsed tool arguments (file `path`/`file_path`, glob `pattern`, shell `command`, `task_id`, `to`) produce friendly activity text ("writing · plan.md", "running · npm run build"). Each lane keeps a capped activity feed (consecutive duplicates within 1 s are collapsed) plus a live elapsed timer.
+
+The webview has **Map** (interactive canvas) and **List** (lane cards) views, a ☰ menu with an opt-in **Debug console** fed by `{ type: 'swarm_debug', line }` messages, and a completion summary with per-agent durations. The orchestrator (`team-leader`) is filtered out — only workers are shown.
 
 ### Bridge detection
 

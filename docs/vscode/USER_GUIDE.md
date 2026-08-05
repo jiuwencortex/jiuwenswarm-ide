@@ -481,84 +481,92 @@ For webview JavaScript errors:
 ## Swarm Map
 
 The Swarm Map is a dedicated webview panel that provides a real-time visual overview of an
-active `code.team` session — showing every agent, their current task, live file activity,
-inter-agent messages, and overall progress. It opens automatically beside the chat panel
-when the first team agent spawns.
+active `code.team` session — showing every worker agent, their current task, live file
+activity, inter-agent messages, and overall progress. It opens automatically beside the
+chat panel when the first team agent spawns.
 
-### Opening the panel
+### Two views — Map (default) and List
 
-Opens automatically on the first `team.member.spawned` event. If dismissed, it reopens on
-the next `code.team` session without any manual action.
+Use the **Map / List** toggle in the panel header to switch between them:
 
-### Layout
+- **Map view** — an interactive "agent map". Every worker is a coloured node on a canvas
+  arranged along a pipeline arc. Nodes **pulse and glow** while working, show a **✓** when
+  done and **⏸** when paused, and animated dots flow along curved lines from one agent to
+  the next as work moves down the pipeline. **Drag to pan, scroll to zoom, double-click
+  to auto-fit**, and **click an agent** to open a detail card (name, role, status, live
+  elapsed time, current action, recent steps).
+- **List view** — the technical per-agent feed: one card per worker with a status chip,
+  live elapsed timer, current action, and a scrollable activity feed.
+
+### Friendly status wording
+
+The map and list describe agents in plain language rather than tool names: **Planning**,
+**Writing**, **Editing**, **Exploring**, **Building**, **Coordinating**, **Standing by**,
+**Done** — always alongside a live elapsed timer (`0:42`).
+
+### Layout (List view)
 
 ```
-┌──────────────────────────────────────────────┐
-│ JIUWENSWARM · SWARM MAP     2/4 tasks · 3 agents │
-├──────────────────────────────────────────────┤
-│ [⚙ Write module → coder] [✓ Plan → planner]  │
-├──────────────────────────────────────────────┤
-│ ● planner  LEADER  BUSY                      │
-│   editing · plan.md                          │
-│   Task: Decompose the work                   │
-│ ● coder    TEAMMATE BUSY                     │
-│   writing · tasks.py                         │
-│   Task: Write tasks module                   │
-│ ● tester   TEAMMATE READY                    │
-│   —                                          │
-├──────────────────────────────────────────────┤
-│ ████████░░░░░░░░░░  ← 90-second timeline     │
-├──────────────────────────────────────────────┤
-│ ▶ Messages (5)                               │
-└──────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────┐
+│ JIUWENSWARM · SWARM MAP  [Map|List]  2/4 tasks · 3 agents · 1 working │
+├────────────────────────────────────────────────────────────┤
+│ [⚙ Write module → coder] [✓ Plan → planner]                │
+├────────────────────────────────────────────────────────────┤
+│ ● planner  TEAMMATE  WORKING  0:42                         │
+│   editing · plan.md                                        │
+│   Task: Decompose the work                                 │
+│   12:01:44  reading · plan.md                              │
+│   12:01:53  editing · plan.md                              │
+│ ● coder    TEAMMATE  IDLE                                  │
+│   standing by                                              │
+├────────────────────────────────────────────────────────────┤
+│ ▶ Messages (5)                                             │
+└────────────────────────────────────────────────────────────┘
 ```
 
-### Progress chip
+### Progress chip and bar
 
-The header chip (`N/M tasks · K agents`) shows how many tasks have completed and how
-many agents are currently active. Updates on every snapshot.
+The header chip (`N/M tasks · K agents · M working`) shows how many tasks have completed,
+how many workers there are, and how many are actively working. A thin progress bar under
+the header shows the completed-task percentage.
 
 ### Task pills
 
-A row of pills across the top shows every task the planner created:
+A row of pills across the top shows every task:
 
 | Appearance | Status |
 |------------|--------|
 | Green border | in_progress |
 | Yellow border | pending |
+| Red border | blocked (waiting on a predecessor) |
 | Grey, dim | completed or cancelled |
 
-### Lane cards
+### Worker lanes (List view)
 
-Each agent appears as a card:
+The orchestrator (`team-leader`) is the session owner, not a worker, so it is not shown.
+Lanes are the actual workers:
 
 | Element | Description |
 |---------|-------------|
-| Pulsing green dot | Agent is BUSY — actively running tools |
-| Grey dot | Agent is READY — waiting for a task |
+| Pulsing green dot | Agent is WORKING — actively running tools |
+| Grey dot | Agent is IDLE — standing by |
 | Amber dot | Agent is PAUSED |
-| Faded card (45% opacity) | Agent has SHUTDOWN |
-| Green left border | BUSY status |
-| Activity line | Current operation: `writing · tasks.py`, `running · pytest`, … |
-| Task line | The active task title |
-| ⚠ idle Ns | Agent has been BUSY but silent for more than 30 seconds |
-
-The **LEADER** role badge is shown in purple.
+| Faded card | Agent is DONE (SHUTDOWN) |
+| Status chip | WORKING / IDLE / PAUSED / DONE word next to the name |
+| Elapsed timer | Live `0:42` time since the agent became active |
+| Activity line | Current operation: `writing · tasks.py`, `running · npm run build`, … |
+| Activity feed | Last ~8 distinct steps, each as `HH:MM:SS text` (consecutive duplicates are collapsed) |
+| ⚠ idle Ns | Agent has been WORKING but silent for more than 30 seconds |
 
 ### Lane click → jump to file
 
 When an agent has recently touched a file, hovering over its card shows an **↗ open file**
 hint. Click the card to open that file in the VS Code editor. Focus moves immediately.
 
-### Timeline bar
-
-A 90-second activity bar at the bottom of the panel shows one coloured track per agent.
-Overlapping tracks prove parallel work at a glance.
-
 ### Inter-agent message log
 
 When agents send messages to each other (`team.message.*` events), a **▶ Messages (N)**
-toggle appears below the timeline. Click to expand a scrollable log:
+toggle appears at the bottom of the panel. Click to expand a scrollable log:
 
 ```
 planner  →  coder    implement add_task(title), write to tasks.json…
@@ -571,14 +579,24 @@ and auto-scrolls to the newest entry.
 
 ### Summary card
 
-When every agent reaches SHUTDOWN, the live lane cards are replaced by a session summary:
+When every worker reaches DONE, the live lane cards are replaced by a session summary,
+including each agent's total duration:
 
 ```
-✓ TaskManager Team · Session complete
-Agents              4
-Tasks completed     4
-Messages            9
+✓ plan-code-review · Session complete
+Agents              3
+Tasks completed     3
+Messages exchanged  9
+plan-agent    · 0:58
+code-agent    · 1:24
+review-agent  · 0:49
 ```
+
+### Debug console
+
+The ☰ menu in the header contains **Debug log** (closed by default). Enable it to see a
+live, timestamped log of every event driving the map — raw team events (`team.event: …`)
+and tool attribution (`tool: … · member`) — with **Clear** and **Copy** buttons.
 
 ### Swarm Map troubleshooting
 
@@ -586,6 +604,7 @@ Messages            9
 |---------|-------------|-----|
 | Swarm Map never opens | Server not emitting `team.member.spawned` | Check Output → JiuwenSwarm for `team.event:` lines; verify server sends team events |
 | Lane cards appear but no file activity | `member_name` missing from `chat.tool_call` payload | Confirm server includes `member_name` in tool call events |
+| Only workers appear (no leader lane) | Expected — the orchestrator is filtered out | This is by design; workers are the lanes |
 | Messages toggle never appears | `team.message.*` events missing or have no `content` field | Check server event schema |
 | ↗ open file hint not shown | Agent has not called any file tool yet | Wait for first `read_file`, `write_file`, or `str_replace_editor` call |
 | Click navigates to wrong file | File path in event is server-absolute but doesn't match workspace | Ensure server sends absolute paths matching the local project root |
