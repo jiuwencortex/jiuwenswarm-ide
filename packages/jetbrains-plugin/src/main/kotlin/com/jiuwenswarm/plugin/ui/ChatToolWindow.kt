@@ -455,6 +455,34 @@ class ChatPanel(
                         }
                     }
                 }
+                "export_session" -> {
+                    val historyPath = msg.get("historyPath")?.asString ?: return
+                    val sessionTitle = msg.get("sessionTitle")?.asString ?: "session"
+                    ApplicationManager.getApplication().executeOnPooledThread {
+                        try {
+                            debug("ACTION→ export_session historyPath=$historyPath")
+                            val jsonlFile = File(historyPath)
+                            if (!jsonlFile.exists()) {
+                                dispatchToWebview(mapOf("type" to "error", "message" to "History file not found: $historyPath"))
+                                return@executeOnPooledThread
+                            }
+                            val md = buildMarkdownFromJsonl(jsonlFile, sessionTitle)
+                            val safeName = sessionTitle.replace(Regex("[^\\w\\- ]"), "").trim()
+                                .replace(' ', '-').ifEmpty { "session" }
+                            val outFile = File(project.basePath ?: System.getProperty("user.home"),
+                                "jiuwenswarm-export-$safeName.md")
+                            outFile.writeText(md)
+                            ApplicationManager.getApplication().invokeLater {
+                                val vf = LocalFileSystem.getInstance().refreshAndFindFileByPath(outFile.absolutePath)
+                                if (vf != null) OpenFileDescriptor(project, vf).navigate(true)
+                            }
+                            dispatchToWebview(mapOf("type" to "export_done", "path" to outFile.absolutePath))
+                        } catch (e: Exception) {
+                            LOG.warn("export_session failed", e)
+                            dispatchToWebview(mapOf("type" to "error", "message" to "Export failed: ${e.message}"))
+                        }
+                    }
+                }
                 "rewind" -> {
                     val snapshots = lastTurnSnapshots
                     if (snapshots.isEmpty()) return
@@ -955,6 +983,35 @@ class ChatPanel(
             else ->
                 dispatchToWebview(mapOf("type" to "disconnected"))
         }
+    }
+
+    private fun buildMarkdownFromJsonl(file: File, title: String): String {
+        val sb = StringBuilder()
+        sb.append("# $title\n\n_Exported from JiuwenSwarm IDE_\n\n---\n\n")
+        file.forEachLine { raw ->
+            val line = raw.trim()
+            if (line.isEmpty()) return@forEachLine
+            try {
+                val obj = JsonParser.parseString(line).asJsonObject
+                val role = obj.get("role")?.asString ?: return@forEachLine
+                if (role == "system") return@forEachLine
+                val contentEl = obj.get("content") ?: return@forEachLine
+                val text = when {
+                    contentEl.isJsonPrimitive -> contentEl.asString.trim()
+                    contentEl.isJsonArray -> contentEl.asJsonArray.mapNotNull { el ->
+                        if (el.isJsonObject) {
+                            val o = el.asJsonObject
+                            if (o.get("type")?.asString == "text") o.get("text")?.asString else null
+                        } else null
+                    }.joinToString("\n").trim()
+                    else -> return@forEachLine
+                }
+                if (text.isEmpty()) return@forEachLine
+                val heading = if (role == "user") "## User" else "## Assistant"
+                sb.append("$heading\n\n$text\n\n---\n\n")
+            } catch (_: Exception) { /* skip malformed lines */ }
+        }
+        return sb.toString()
     }
 
     // ──────────────────────────────────────────

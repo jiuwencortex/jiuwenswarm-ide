@@ -51,7 +51,8 @@ export type ExtToWebviewMsg =
   | { type: 'git_committed'; hash: string }
   | { type: 'git_error'; message: string }
   | { type: 'git_pushed' }
-  | { type: 'model_changed'; model: string | null };
+  | { type: 'model_changed'; model: string | null }
+  | { type: 'export_done'; path: string };
 
 export interface SessionMetrics {
   contextBytes: number;
@@ -93,6 +94,7 @@ export type WebviewToExtMsg =
   | { type: 'set_mode'; mode: string }
   | { type: 'switch_model'; model: string }
   | { type: 'rename_session'; title: string }
+  | { type: 'export_session'; historyPath: string; sessionTitle: string }
   | { type: 'open_file'; path: string; line?: number }
   | { type: 'rewind' }
   | { type: 'stop' };

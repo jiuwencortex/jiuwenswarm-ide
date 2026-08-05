@@ -1498,6 +1498,7 @@
     <div id="menu-dropdown" class="dropdown-menu">
       <div class="dropdown-item" onclick="renameSessionFromMenu()">✎ Rename session</div>
       <div class="dropdown-item" id="menu-copy-path" onclick="copySessionPath()" title="Copy history.jsonl path" style="display:none;">⧉ Copy session path</div>
+      <div class="dropdown-item" id="menu-export" onclick="exportSession()" title="Export conversation as Markdown" style="display:none;">↓ Export session</div>
       <div class="dropdown-divider"></div>
       <div class="dropdown-item" onclick="showSessionsFromMenu()">📁 Sessions</div>
       <div class="dropdown-item" onclick="showSkillsFromMenu()">🔧 Skills</div>
@@ -2058,8 +2059,11 @@ function updateSessions(sessions) {
  *  session's history.jsonl path is known. */
 function setSessionHistoryPath(path) {
   state.sessionHistoryPath = path || '';
-  const item = document.getElementById('menu-copy-path');
-  if (item) item.style.display = state.sessionHistoryPath ? '' : 'none';
+  const show = state.sessionHistoryPath ? '' : 'none';
+  const copyItem = document.getElementById('menu-copy-path');
+  if (copyItem) copyItem.style.display = show;
+  const exportItem = document.getElementById('menu-export');
+  if (exportItem) exportItem.style.display = show;
 }
 
 function updateSessionPathMenu() {
@@ -2085,6 +2089,22 @@ function copySessionPath() {
     item.textContent = '\u2713 Copied';
     setTimeout(function() { item.textContent = original; }, 1500);
   }
+}
+
+function exportSession() {
+  if (!state.sessionHistoryPath) return;
+  document.getElementById('menu-dropdown').classList.remove('visible');
+  const exportItem = document.getElementById('menu-export');
+  if (exportItem) {
+    const original = exportItem.textContent;
+    exportItem.textContent = '… Exporting';
+    setTimeout(function() { exportItem.textContent = original; }, 2000);
+  }
+  send({
+    type: 'export_session',
+    historyPath: state.sessionHistoryPath,
+    sessionTitle: state.sessionTitle || 'session',
+  });
 }
 
 function renderSessionList() {

@@ -254,6 +254,13 @@ export class ChatPanel implements vscode.Disposable {
         break;
       }
 
+      case 'export_session': {
+        const historyPath = (msg.historyPath as string) || '';
+        const sessionTitle = (msg.sessionTitle as string) || 'session';
+        if (historyPath) void this.exportSession(historyPath, sessionTitle);
+        break;
+      }
+
       case 'set_mode': {
         // Mode is handled purely in the webview; no backend action needed
         break;
@@ -802,6 +809,49 @@ export class ChatPanel implements vscode.Disposable {
       }
     } catch (e) {
       this.debug(`open_file failed: ${e}`);
+    }
+  }
+
+  private async exportSession(historyPath: string, sessionTitle: string): Promise<void> {
+    try {
+      this.debug(`ACTION→ export_session historyPath=${historyPath}`);
+      if (!fs.existsSync(historyPath)) {
+        this.postToWebview({ type: 'error', message: `History file not found: ${historyPath}` });
+        return;
+      }
+      const lines = fs.readFileSync(historyPath, 'utf-8').split('\n');
+      const parts: string[] = [`# ${sessionTitle}\n\n_Exported from JiuwenSwarm IDE_\n\n---\n`];
+      for (const raw of lines) {
+        const line = raw.trim();
+        if (!line) continue;
+        try {
+          const obj = JSON.parse(line) as { role?: string; content?: unknown };
+          if (!obj.role || obj.role === 'system') continue;
+          let text = '';
+          if (typeof obj.content === 'string') {
+            text = obj.content.trim();
+          } else if (Array.isArray(obj.content)) {
+            text = (obj.content as Array<{ type?: string; text?: string }>)
+              .filter((b) => b.type === 'text' && b.text)
+              .map((b) => b.text!.trim())
+              .join('\n');
+          }
+          if (!text) continue;
+          const heading = obj.role === 'user' ? '## User' : '## Assistant';
+          parts.push(`\n${heading}\n\n${text}\n\n---\n`);
+        } catch {
+          // skip malformed lines
+        }
+      }
+      const safeName = sessionTitle.replace(/[^\w\- ]/g, '').trim().replace(/\s+/g, '-') || 'session';
+      const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? path.dirname(historyPath);
+      const outPath = path.join(workspaceRoot, `jiuwenswarm-export-${safeName}.md`);
+      fs.writeFileSync(outPath, parts.join(''), 'utf-8');
+      await this.openFile(outPath, 0);
+      this.postToWebview({ type: 'export_done', path: outPath });
+    } catch (e) {
+      this.debug(`export_session failed: ${e}`);
+      this.postToWebview({ type: 'error', message: `Export failed: ${e}` });
     }
   }
 

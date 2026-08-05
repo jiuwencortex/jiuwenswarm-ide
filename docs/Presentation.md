@@ -50,6 +50,7 @@ Developers who already use JiuwenSwarm and want the agent to work inside their I
 **Sessions and skills**
 - Multiple named sessions, switch between them with history reload
 - Skill library with per-skill on/off toggle
+- **Conversation export**: one-click "↓ Export session" from the ☰ menu — converts the session to Markdown and opens it in the editor
 
 **Live Swarm Map — unique to JiuwenSwarm**
 Opens automatically when a `code.team` session starts. Shows the entire swarm at work in real time:
