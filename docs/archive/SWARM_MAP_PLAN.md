@@ -8,8 +8,8 @@ activity during a JiuwenSwarm `code.team` session inside the IDE.
 > click detail card — and **List** — lane cards with status chips, live elapsed timers,
 > and per-agent activity feeds), an opt-in ☰ debug console, friendly non-technical status
 > wording, and a completion summary with per-agent durations. The 90-second timeline
-> proposed here was replaced by a thin progress bar. See `docs/vscode/USER_GUIDE.md` /
-> `docs/jetbrains/USER_GUIDE.md` for the current feature reference.
+> proposed here was replaced by a thin progress bar. See `docs/user/vscode/USER_GUIDE.md` /
+> `docs/user/jetbrains/USER_GUIDE.md` for the current feature reference.
 
 ---
 

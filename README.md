@@ -41,21 +41,21 @@ cd jiuwenswarm && jiuwenswarm-start
 
 ## Get Started
 
-- [JetBrains Plugin](docs/jetbrains/README.md) — install from ZIP or marketplace
-- [VS Code Extension](docs/vscode/README.md) — install from VSIX or marketplace
+- [JetBrains Plugin](docs/user/jetbrains/README.md) — install from ZIP or marketplace
+- [VS Code Extension](docs/user/vscode/README.md) — install from VSIX or marketplace
 
 Full feature walkthroughs:
-- [JetBrains User Guide](docs/jetbrains/USER_GUIDE.md)
-- [VS Code User Guide](docs/vscode/USER_GUIDE.md)
+- [JetBrains User Guide](docs/user/jetbrains/USER_GUIDE.md)
+- [VS Code User Guide](docs/user/vscode/USER_GUIDE.md)
 
 ## Developer Documentation
 
 | Document | What you'll find |
 |----------|------------------|
-| [Architecture Reference](docs/ARCHITECTURE.md) | Protocol, component model, context injection, file-edit handling, shared webview |
-| [Development Plan](docs/IDE_PLUGIN_PLAN.md) | Feature roadmap with descriptions, implementation phases, build/distribution notes |
-| [JetBrains Publishing](docs/jetbrains/PUBLISHING.md) | Build, sign, and publish the JetBrains plugin |
-| [VS Code Publishing](docs/vscode/PUBLISHING.md) | Build, package, and publish the VS Code extension |
+| [Architecture Reference](docs/architecture.md) | Protocol, component model, context injection, file-edit handling, shared webview |
+| [Roadmap](docs/roadmap.md) | Feature backlog, completed changelog, and "wow" ideas |
+| [JetBrains Publishing](docs/operations/jetbrains/PUBLISHING.md) | Build, sign, and publish the JetBrains plugin |
+| [VS Code Publishing](docs/operations/vscode/PUBLISHING.md) | Build, package, and publish the VS Code extension |
 
 ## Development
 

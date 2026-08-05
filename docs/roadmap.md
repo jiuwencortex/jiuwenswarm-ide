@@ -10,7 +10,7 @@ Features that have shipped and are available in both the JetBrains plugin and VS
 
 | Feature | What was built |
 |---------|----------------|
-| **Live Swarm Map** | Real-time panel with two views — an interactive **Map** (agent nodes, pan/zoom, click-to-inspect, animated pipeline flow) and a **List** (per-worker lanes with status chip, live elapsed timer, and activity feed). Task pill board, inter-agent message log, ☰ debug console, and a session summary with per-agent durations. Opens automatically when the first `code.team` agent spawns. See `docs/SWARM_MAP_PLAN.md`. |
+| **Live Swarm Map** | Real-time panel with two views — an interactive **Map** (agent nodes, pan/zoom, click-to-inspect, animated pipeline flow) and a **List** (per-worker lanes with status chip, live elapsed timer, and activity feed). Task pill board, inter-agent message log, ☰ debug console, and a session summary with per-agent durations. Opens automatically when the first `code.team` agent spawns. See `docs/archive/SWARM_MAP_PLAN.md`. |
 | **Progress chip & bar** | Header chip (`N/M tasks · K agents · M working`) + completion percentage bar, computed live from the snapshot — no server changes needed. |
 | **Live swarmflow activity** | Swarmflow worker tool calls stream to lanes as `team.member.activity_changed` events, so the map shows what a worker is doing mid-run (friendly wording like "writing · plan.md"). |
 | **Lane click → jump to file** | Clicking a lane card navigates the editor to the last file the agent touched. Hover hint `↗ open file` shows when a path is available. |
