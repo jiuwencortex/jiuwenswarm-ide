@@ -560,6 +560,128 @@ body {
 }
 #map-detail .md-feed .frow { display: flex; gap: 6px; white-space: nowrap; }
 #map-detail .md-feed .ftime { color: var(--swarm-dim); flex-shrink: 0; }
+
+/* ── Board (kanban) view ── */
+#board-view {
+  flex: 1;
+  display: none;
+  overflow: hidden;
+  padding: 8px 6px 6px;
+  gap: 6px;
+}
+#board-view.visible { display: flex; }
+
+.board-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--swarm-bg2);
+  border: 1px solid var(--swarm-border);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.board-col-header {
+  padding: 6px 10px 5px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--swarm-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+.board-col-header .col-count {
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--swarm-dim);
+  background: var(--swarm-border);
+  border-radius: 8px;
+  padding: 0 6px;
+  min-width: 18px;
+  text-align: center;
+}
+.board-col.col-pending .board-col-header  { color: var(--swarm-warn); border-bottom-color: rgba(201,201,78,.30); }
+.board-col.col-active  .board-col-header  { color: var(--swarm-good); border-bottom-color: rgba(78,201,78,.30); }
+.board-col.col-done    .board-col-header  { color: var(--swarm-dim); }
+
+.board-cards {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.board-cards::-webkit-scrollbar { width: 4px; }
+.board-cards::-webkit-scrollbar-thumb { background: var(--swarm-border); border-radius: 2px; }
+
+.kb-card {
+  background: var(--swarm-bg);
+  border: 1px solid var(--swarm-border);
+  border-radius: 5px;
+  padding: 7px 9px;
+  cursor: default;
+  transition: border-color .12s;
+}
+.kb-card:hover { border-color: var(--swarm-focus); }
+.kb-card.kb-blocked {
+  border-left: 3px solid #e04444;
+  background: rgba(224,68,68,.05);
+}
+.kb-card.kb-cancelled { opacity: .45; }
+
+.kb-title {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--swarm-fg);
+  word-break: break-word;
+}
+.kb-card.kb-done .kb-title { color: var(--swarm-dim); text-decoration: line-through; }
+.kb-card.kb-cancelled .kb-title { text-decoration: line-through; }
+
+.kb-meta {
+  margin-top: 5px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.kb-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.kb-agent {
+  font-size: 10px;
+  color: var(--swarm-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kb-badge {
+  font-size: 9px;
+  padding: 0 5px;
+  border-radius: 7px;
+  font-weight: 600;
+  letter-spacing: .03em;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.kb-badge.blocked { background: rgba(224,68,68,.18); color: #e07070; }
+.kb-badge.cancelled { background: rgba(120,120,120,.15); color: var(--swarm-dim); }
+.kb-badge.done     { background: rgba(78,201,78,.15); color: var(--swarm-good); }
+
+.board-empty {
+  padding: 14px 10px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--swarm-dim);
+}
 </style>
 </head>
 <body>
@@ -570,6 +692,7 @@ body {
     <div class="mode-toggle">
       <button id="mode-map" class="mode-btn active" onclick="setMapMode('map')" title="Map view">Map</button>
       <button id="mode-list" class="mode-btn" onclick="setMapMode('list')" title="List view">List</button>
+      <button id="mode-board" class="mode-btn" onclick="setMapMode('board')" title="Board view">Board</button>
     </div>
     <span id="progress-chip"></span>
     <div class="header-dropdown">
@@ -597,6 +720,21 @@ body {
 <div id="lanes">
   <div id="empty">No active team session.<br>Start a conversation in <code>code.team</code> mode.</div>
   <div id="summary-card"></div>
+</div>
+
+<div id="board-view">
+  <div class="board-col col-pending">
+    <div class="board-col-header">Backlog <span class="col-count" id="kb-count-pending">0</span></div>
+    <div class="board-cards" id="kb-pending"></div>
+  </div>
+  <div class="board-col col-active">
+    <div class="board-col-header">In Progress <span class="col-count" id="kb-count-active">0</span></div>
+    <div class="board-cards" id="kb-active"></div>
+  </div>
+  <div class="board-col col-done">
+    <div class="board-col-header">Done <span class="col-count" id="kb-count-done">0</span></div>
+    <div class="board-cards" id="kb-done"></div>
+  </div>
 </div>
 
 <div id="msg-section">
@@ -699,16 +837,24 @@ function render() {
   }
   renderProgress(workers);
   renderProgressBar(workers);
-  renderTaskBoard(_state.tasks);
-  var allDone = workers.every(function(l) { return l.status === 'SHUTDOWN'; });
-  if (allDone) {
-    renderSummaryCard(workers);
-    hideLanes();
-  } else {
-    hideSummaryCard();
-    renderLanes(workers);
+
+  if (_viewMode === 'board') {
+    renderBoard(_state.tasks || []);
+    return;
   }
-  renderMessages(_state.messages || []);
+
+  if (_viewMode === 'list') {
+    renderTaskBoard(_state.tasks);
+    var allDone = workers.every(function(l) { return l.status === 'SHUTDOWN'; });
+    if (allDone) {
+      renderSummaryCard(workers);
+      hideLanes();
+    } else {
+      hideSummaryCard();
+      renderLanes(workers);
+    }
+    renderMessages(_state.messages || []);
+  }
 }
 
 function showEmpty(visible) {
@@ -1079,29 +1225,89 @@ function truncate(s, n) {
 // Refresh elapsed timers / idle warnings every 5s without a full server push
 setInterval(function() { if (_state) render(); }, 5000);
 
+// ── Board (kanban) view ────────────────────────────────
+function renderBoard(tasks) {
+  var pending  = tasks.filter(function(t) { return t.status === 'pending'; });
+  var active   = tasks.filter(function(t) { return t.status === 'in_progress' || t.status === 'blocked'; });
+  var done     = tasks.filter(function(t) { return t.status === 'completed' || t.status === 'cancelled'; });
+
+  fillKbColumn('kb-pending', 'kb-count-pending', pending, false);
+  fillKbColumn('kb-active',  'kb-count-active',  active,  false);
+  fillKbColumn('kb-done',    'kb-count-done',    done,    true);
+}
+
+function fillKbColumn(listId, countId, tasks, isDone) {
+  document.getElementById(countId).textContent = tasks.length;
+  var el = document.getElementById(listId);
+  el.innerHTML = '';
+  if (tasks.length === 0) {
+    var empty = document.createElement('div');
+    empty.className = 'board-empty';
+    empty.textContent = 'Empty';
+    el.appendChild(empty);
+    return;
+  }
+  tasks.forEach(function(task) {
+    var card = document.createElement('div');
+    var blocked   = task.status === 'blocked';
+    var cancelled = task.status === 'cancelled';
+    card.className = 'kb-card' +
+      (blocked   ? ' kb-blocked'   : '') +
+      (isDone    ? ' kb-done'      : '') +
+      (cancelled ? ' kb-cancelled' : '');
+
+    var agentColour = task.assignee ? (_laneColourMap[task.assignee] || '#666') : null;
+    var dotHtml = agentColour
+      ? '<span class="kb-dot" style="background:' + agentColour + '"></span>'
+      : '';
+    var agentHtml = task.assignee
+      ? dotHtml + '<span class="kb-agent">' + esc(truncate(task.assignee, 18)) + '</span>'
+      : '';
+
+    var badgeHtml = '';
+    if (blocked)   badgeHtml = '<span class="kb-badge blocked">Blocked</span>';
+    else if (cancelled) badgeHtml = '<span class="kb-badge cancelled">Cancelled</span>';
+    else if (isDone)    badgeHtml = '<span class="kb-badge done">Done</span>';
+
+    card.innerHTML =
+      '<div class="kb-title">' + esc(task.title) + '</div>' +
+      (agentHtml || badgeHtml
+        ? '<div class="kb-meta">' + agentHtml + badgeHtml + '</div>'
+        : '');
+    card.title = task.title + (task.assignee ? '\nAssigned to: ' + task.assignee : '');
+    el.appendChild(card);
+  });
+}
+
 // ─────────────────────────────────────────────
 // Map view — interactive agent map (sexy mode)
 // ─────────────────────────────────────────────
-var _mapMode = true;          // map view is the default
+var _viewMode = 'map';        // 'map' | 'list' | 'board'
+var _mapMode = true;          // convenience: true when canvas is active
 var _map = { scale: 1, ox: 0, oy: 0, nodes: [], popupMember: null };
 var _mapAnimId = null;
 var _mapMembersKey = '';
 var _pan = null;
 
 function setMapMode(mode) {
+  _viewMode = mode;
   _mapMode = (mode === 'map');
   document.getElementById('map-view').classList.toggle('visible', _mapMode);
-  document.getElementById('lanes').style.display = _mapMode ? 'none' : 'flex';
-  document.getElementById('task-board').style.display = _mapMode ? 'none' : 'flex';
-  var mt = document.getElementById('mode-map');
-  var lt = document.getElementById('mode-list');
-  if (mt) mt.classList.toggle('active', _mapMode);
-  if (lt) lt.classList.toggle('active', !_mapMode);
+  document.getElementById('board-view').classList.toggle('visible', mode === 'board');
+  // lanes and task-board are shown only in list mode
+  document.getElementById('lanes').style.display = (mode === 'list') ? 'flex' : 'none';
+  document.getElementById('task-board').style.display = (mode === 'list') ? 'flex' : 'none';
+  var buttons = { map: 'mode-map', list: 'mode-list', board: 'mode-board' };
+  Object.keys(buttons).forEach(function(m) {
+    var el = document.getElementById(buttons[m]);
+    if (el) el.classList.toggle('active', m === mode);
+  });
   if (_mapMode) {
     updateMap(workersOf(_state));
     scheduleMapDraw();
   } else {
     stopMapLoop();
+    if (mode === 'board' && _state) renderBoard(_state.tasks || []);
   }
 }
 
@@ -1461,7 +1667,7 @@ function clearPopup() {
 
 // ── Animation loop ──
 function scheduleMapDraw() {
-  if (!_mapMode || _mapAnimId) return;
+  if (_viewMode !== 'map' || _mapAnimId) return;
   var loop = function() {
     drawMap();
     var active = _map.nodes.some(function(n) {

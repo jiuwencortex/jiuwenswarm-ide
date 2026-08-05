@@ -140,14 +140,15 @@ Click **⚙ → Skills** to view registered skills. Each skill shows its name, d
 
 Available when using **Team Coding** mode (`code.team`). Opens automatically at the bottom of the IDE when the first team agent spawns — no click required.
 
-The panel has two views, switched from the **Map / List** toggle in the header (Map is the default):
+The panel has three views, switched from the **Map / List / Board** toggle in the header (Map is the default):
 
 | Element | What it shows |
 |---------|---------------|
 | Map view | Interactive canvas: agents as coloured nodes, pulsing while working, ✓ when done; animated flow dots; drag to pan, scroll to zoom, click for details |
 | List view | One lane card per worker — status chip, live elapsed timer, current action, scrollable activity feed |
+| Board view | Three-column kanban (Backlog / In Progress / Done); one task card per task with agent colour dot and Blocked/Done/Cancelled badge |
 | Progress chip / bar | `N/M tasks · K agents · M working` + completed-task percentage bar |
-| Task pills | One pill per task; colour shifts from yellow (pending) → green (in_progress) → red (blocked) → grey (completed) |
+| Task pills (List) | One pill per task in List view; colour shifts from yellow (pending) → green (in_progress) → red (blocked) → grey (completed) |
 | ↗ open file | Hover a lane card that has an active file to see the hint; click to open the file in the editor |
 | Message log | Collapsible `▶ Messages (N)` toggle showing inter-agent messages, colour-coded by sender |
 | Debug console | ☰ menu → **Debug log** (closed by default): live team-event and tool-attribution log with Clear/Copy |

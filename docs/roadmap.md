@@ -4,6 +4,22 @@ Future development items for the JetBrains plugin and VS Code extension.
 
 ---
 
+## Completed
+
+Features that have shipped and are available in both the JetBrains plugin and VS Code extension.
+
+| Feature | What was built |
+|---------|----------------|
+| **Live Swarm Map** | Real-time panel with three views — an interactive **Map** (agent nodes, pan/zoom, click-to-inspect, animated pipeline flow), a **List** (per-worker lanes with status chip, live elapsed timer, and activity feed), and a **Board** (three-column kanban: Backlog / In Progress / Done, one card per task, agent colour-coded dot, Blocked/Done badges). Task pill strip in List view, inter-agent message log, ☰ debug console, and a session summary with per-agent durations. Opens automatically when the first `code.team` agent spawns. |
+| **Progress chip & bar** | Header chip (`N/M tasks · K agents · M working`) + completion percentage bar, computed live from the snapshot — no server changes needed. |
+| **Live swarmflow activity** | Swarmflow worker tool calls stream to lanes as `team.member.activity_changed` events, so the map shows what a worker is doing mid-run (friendly wording like "writing · plan.md"). |
+| **Lane click → jump to file** | Clicking a lane card navigates the editor to the last file the agent touched. Hover hint `↗ open file` shows when a path is available. |
+| **Inter-agent message log** | Collapsible `▶ Messages (N)` log capturing `team.message.*` content (last 50), colour-coded by sender's lane colour. |
+| **Summary card** | When all workers finish, the lanes are replaced by a session summary (agents, tasks completed, messages exchanged, per-agent durations). |
+| **Kanban Board view** | Third Swarm Map view mode. Three columns (Backlog, In Progress, Done) with one card per task. Each card shows the task title, assigned agent name with colour dot, and status badge (Blocked / Cancelled / Done). Updates live on every snapshot. |
+
+---
+
 ## Incomplete — foundational work exists
 
 These features are partially built. The infrastructure is in place; specific gaps remain.
@@ -82,7 +98,7 @@ These do not exist in any tool today. Each would be a demo-stopping moment.
 
 | Feature | Description | Why it is different |
 |---------|-------------|---------------------|
-| **Live swarm map** ✅ | ~~A sidebar panel that shows all active sub-agents as named "lanes" running in parallel~~ **Implemented.** Ships an interactive **Map view** (agent nodes with pulsing work states, pan/zoom, click-to-inspect, animated pipeline flow) and a **List view** (status chips, live elapsed timers, per-agent activity feed), plus task pills, an inter-agent message log, and a ☰ debug console. Remaining steerable features (pause/redirect an agent from the panel) are deferred pending server API. | Competitors run at most one background agent. Nobody shows you the swarm working — you get a spinner. This turns the product name into a literal UI metaphor. |
+| **Live swarm map** ✅ | ~~A sidebar panel that shows all active sub-agents as named "lanes" running in parallel~~ **Implemented.** Ships three views: an interactive **Map** (agent nodes with pulsing work states, pan/zoom, click-to-inspect, animated pipeline flow), a **List** (status chips, live elapsed timers, per-agent activity feed), and a **Board** (three-column kanban: Backlog / In Progress / Done with task cards, agent colour dots, and Blocked/Done badges). Also includes task pills, an inter-agent message log, a ☰ debug console, and a session summary. Remaining steerable features (pause/redirect an agent from the panel) are deferred pending server API. | Competitors run at most one background agent. Nobody shows you the swarm working — you get a spinner. This turns the product name into a literal UI metaphor. |
 | **Blast radius preview** | Before you press Save, a side pane appears (can be opt-in) that shows everything in the codebase that imports or calls what you just changed — a live dependency graph with "X callers, Y tests, Z downstream modules". No code is run; it is pure static analysis on every keystroke. If the blast radius is zero, you see green. If it is large, you see a flame icon. Clicking any node navigates to that file. | Linters catch syntax errors. Type checkers catch type errors. Nothing tells you the *impact* of a change before you save it. This is the first "consequence preview" for live editing. |
 | **AI git archaeology — "why does this line exist?"** | Right-click any line → "Why was this written this way?". The agent traces git blame → commit message → PR description → linked ticket → any recorded conversation history that touched this line, and produces a one-paragraph human explanation: "This null check was added after a production incident on March 3rd where `user.profile` was null during OAuth token refresh. The team chose Optional over throwing because…" | Git blame tells you *who* and *when*. This tells you *why*. For large codebases with high turnover this is the single most useful thing you can ask about any line of code. Nothing else does this. |
 | **Sketch → architecture, then implement** | Before a single line of code is written, describe a feature in plain English and the agent generates an editable architecture diagram (Mermaid or Excalidraw) showing which existing components it touches, what new components are needed, and the data flow. You drag, drop, or annotate the diagram to express your intent, then click "Implement this" and the agent uses the diagram as its spec. | Every tool starts coding immediately. This puts a thinking step first — visible, shareable, correctable. The diagram becomes the single source of truth the swarm uses as a plan. |

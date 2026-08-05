@@ -506,9 +506,9 @@ active `code.team` session — showing every worker agent, their current task, l
 activity, inter-agent messages, and overall progress. It opens automatically when the
 first team agent spawns. To open manually: *View → Tool Windows → JiuwenSwarm Swarm*.
 
-### Two views — Map (default) and List
+### Three views — Map (default), List, and Board
 
-Use the **Map / List** toggle in the tool window header to switch between them:
+Use the **Map / List / Board** toggle in the tool window header to switch between them:
 
 - **Map view** — an interactive "agent map". Every worker is a coloured node on a canvas
   arranged along a pipeline arc. Nodes **pulse and glow** while working, show a **✓** when
@@ -518,6 +518,9 @@ Use the **Map / List** toggle in the tool window header to switch between them:
   elapsed time, current action, recent steps).
 - **List view** — the technical per-agent feed: one card per worker with a status chip,
   live elapsed timer, current action, and a scrollable activity feed.
+- **Board view** — a three-column kanban board (Backlog / In Progress / Done). Each task
+  is a card showing the title, assigned agent name with a colour dot, and a status badge
+  (Blocked, Cancelled, Done). Cards update live as agents claim and complete tasks.
 
 ### Friendly status wording
 
@@ -551,9 +554,9 @@ The header chip (`N/M tasks · K agents · M working`) shows how many tasks have
 how many workers there are, and how many are actively working. A thin progress bar under
 the header shows the completed-task percentage.
 
-### Task pills
+### Task pills (List view)
 
-A row of pills across the top shows every task:
+A row of pills at the top of the List view shows every task at a glance:
 
 | Appearance | Status |
 |------------|--------|
@@ -561,6 +564,37 @@ A row of pills across the top shows every task:
 | Yellow border | pending |
 | Red border | blocked (waiting on a predecessor) |
 | Grey, dim | completed or cancelled |
+
+### Board view (kanban)
+
+Switch to **Board** to see tasks as a proper kanban board. Three columns fill the panel:
+
+```
+┌──────────────────┬──────────────────┬──────────────────┐
+│    Backlog  (2)  │ In Progress (3)  │    Done     (1)  │
+├──────────────────┼──────────────────┼──────────────────┤
+│                  │                  │                  │
+│  Add auth API    │ ● coder          │ ✓ Plan tasks     │
+│                  │  Write module    │                  │
+│  Write README    │ ● tester         │                  │
+│                  │  ⚑ Add tests     │                  │
+│                  │    Blocked       │                  │
+└──────────────────┴──────────────────┴──────────────────┘
+```
+
+Each card shows:
+
+| Element | Description |
+|---------|-------------|
+| Task title | Full task description (wraps if long) |
+| Colour dot | Matches the assigned agent's lane colour; absent if unassigned |
+| Agent name | The worker the task is assigned to |
+| **Blocked** badge | Red — task is waiting on another task or resource |
+| **Done** badge | Green — task completed |
+| **Cancelled** badge | Dim — task was abandoned |
+| Strikethrough title | Applied to completed and cancelled tasks |
+
+The board updates on every snapshot push — no manual refresh needed.
 
 ### Worker lanes (List view)
 
