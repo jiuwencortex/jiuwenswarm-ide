@@ -4,21 +4,6 @@ Future development items for the JetBrains plugin and VS Code extension.
 
 ---
 
-## Completed
-
-Features that have shipped and are available in both the JetBrains plugin and VS Code extension.
-
-| Feature | What was built |
-|---------|----------------|
-| **Live Swarm Map** | Real-time panel with two views — an interactive **Map** (agent nodes, pan/zoom, click-to-inspect, animated pipeline flow) and a **List** (per-worker lanes with status chip, live elapsed timer, and activity feed). Task pill board, inter-agent message log, ☰ debug console, and a session summary with per-agent durations. Opens automatically when the first `code.team` agent spawns. See `docs/archive/SWARM_MAP_PLAN.md`. |
-| **Progress chip & bar** | Header chip (`N/M tasks · K agents · M working`) + completion percentage bar, computed live from the snapshot — no server changes needed. |
-| **Live swarmflow activity** | Swarmflow worker tool calls stream to lanes as `team.member.activity_changed` events, so the map shows what a worker is doing mid-run (friendly wording like "writing · plan.md"). |
-| **Lane click → jump to file** | Clicking a lane card navigates the editor to the last file the agent touched. Hover hint `↗ open file` shows when a path is available. |
-| **Inter-agent message log** | Collapsible `▶ Messages (N)` log capturing `team.message.*` content (last 50), colour-coded by sender's lane colour. |
-| **Summary card** | When all workers finish, the lanes are replaced by a session summary (agents, tasks completed, messages exchanged, per-agent durations). |
-
----
-
 ## Incomplete — foundational work exists
 
 These features are partially built. The infrastructure is in place; specific gaps remain.
@@ -56,6 +41,38 @@ These features are partially built. The infrastructure is in place; specific gap
 | **Per-turn model selection** | Switch between a fast cheap model for quick questions and a powerful model for complex tasks within the same session, per message rather than per session | Continue.dev, OpenCode, Zed |
 | **PR / diff review mode** | Load the diff between two branches or paste a pull request and ask the agent to review it: find bugs, suggest improvements, check for security issues, or summarise what changed — produces a structured review rather than a chat answer | GitHub Copilot (code review), GitLens AI, Amazon CodeWhisperer (security review) |
 | **Batch fix all errors in file** | A single action that collects every error and warning in the current file and asks the agent to fix them all at once, instead of using Alt+Enter one error at a time | Cursor (agent mode), Windsurf (Cascade) |
+
+### Swarm-specific
+
+These items extend the multi-agent swarm capabilities that are unique to JiuwenSwarm. Most have no direct competitor equivalent.
+
+| Feature | Description | Seen in |
+|---------|-------------|---------|
+| **Spawn agent mid-session** | From the Swarm Map panel, click a "+ Agent" button to add a new worker to a running session and assign it a task. The new lane appears live on the map. Useful when the team is missing a specialist (e.g. add a security reviewer after coding is done). | — |
+| **Pause / redirect individual agents** | From the Swarm Map, click any agent node → pause it or send it a new instruction without stopping the rest of the swarm. Requires a small addition to the server API (`team.agent.pause`, `team.agent.redirect`). Infrastructure is partially in place. | — |
+| **Conflict detection** | When two agents edit the same file at the same time, the Swarm Map shows a collision badge on both lanes. The orchestrator is notified and can serialise the writes or reassign one agent to a different file. | — |
+| **Swarm replay** | After a session ends, a timeline scrubber lets you step through the session event-by-event: watch agents spawn, tasks progress, and files change in the order they happened. Useful for debugging failed runs or showing teammates what the swarm did. | — |
+| **Team session templates** | Save a named swarm configuration (roles, system prompts, task split strategy) as a template in `.jiuwenswarm/teams/`. Pick a template from the chat input to start a pre-configured multi-agent session in one click — e.g. "code + review + docs" or "security audit". | — |
+
+### Collaboration
+
+| Feature | Description | Seen in |
+|---------|-------------|---------|
+| **Read-only session stream** | Generate a shareable URL that lets anyone watch a live session (chat messages, Swarm Map, file diffs) in a browser without IDE access. The observer cannot send messages; they only watch. Useful for pair reviews, demos, and async oversight. | — |
+| **Per-agent cost breakdown** | The stats bar already shows total session cost. This adds a breakdown by agent in the Swarm Map summary card: which worker consumed the most tokens and why. Lets teams tune prompts to reduce spend on specific roles. | — |
+
+### Context quality
+
+| Feature | Description | Seen in |
+|---------|-------------|---------|
+| **Auto-session context** | When the agent references a file in its response, that file is automatically pinned for the rest of the session — so follow-up messages don't lose track of it even if the developer moves to a different file. No manual `@file` mention needed. | — |
+| **`@swarm` context mention** | Type `@swarm` in the chat input to attach a snapshot of the current Swarm Map state (lanes, tasks, progress) as structured context to the next message. Lets a single-agent follow-up question ("what's left to do?") have full awareness of what the swarm accomplished. | — |
+
+### Quality enforcement
+
+| Feature | Description | Seen in |
+|---------|-------------|---------|
+| **Quality gate hooks** | Define arbitrary shell commands in `.jiuwenswarm/hooks.json` that run automatically after every agent turn (e.g. `pytest`, `eslint`, `mypy`). If a command exits non-zero, the output is fed back to the agent for a fix attempt. Generalises the test loop to any quality tool — linters, type checkers, security scanners. | Claude Code (hooks), — |
 
 ---
 
