@@ -118,7 +118,8 @@ For all three pickers: **Arrow keys** navigate, **Enter** or **Tab** selects, **
 Each completed turn consists of:
 
 - **Your message** — right-aligned bubble.
-- **Thinking block** — when the model uses extended reasoning, a collapsible **Thinking…** section appears before the response. Click the arrow to expand or collapse.
+- **Reasoning block** — when the model uses extended reasoning, a collapsible **Reasoning…** section appears before the response. Click the arrow to expand or collapse.
+- **Thinking indicator** — while the model is prefilling a response (before the first token arrives), a **Thinking…** pill appears. It flips to **Generating…** the moment reasoning or text starts streaming, then clears when the model call ends.
 - **Agent response** — text streams in as it is generated. When a session's history is reloaded, assistant messages are rendered with bold/italic, fenced code blocks, and clickable file links.
 - **Tool call cards** — every tool the agent invokes appears as an inline card with:
   - Tool icon and friendly name (a gear icon plus a label like `Edit`, `Bash`, `WebSearch`, `TodoWrite`; the raw tool id such as `str_replace_editor` is shown in the card's tooltip)
@@ -501,8 +502,8 @@ Use the **Map / List** toggle in the panel header to switch between them:
 ### Friendly status wording
 
 The map and list describe agents in plain language rather than tool names: **Planning**,
-**Writing**, **Editing**, **Exploring**, **Building**, **Coordinating**, **Standing by**,
-**Done** — always alongside a live elapsed timer (`0:42`).
+**Writing**, **Editing**, **Exploring**, **Building**, **Coordinating**, **Thinking**,
+**Generating**, **Standing by**, **Done** — always alongside a live elapsed timer (`0:42`).
 
 ### Layout (List view)
 
@@ -556,7 +557,7 @@ Lanes are the actual workers:
 | Elapsed timer | Live `0:42` time since the agent became active |
 | Activity line | Current operation: `writing · tasks.py`, `running · npm run build`, … |
 | Activity feed | Last ~8 distinct steps, each as `HH:MM:SS text` (consecutive duplicates are collapsed) |
-| ⚠ idle Ns | Agent has been WORKING but silent for more than 30 seconds |
+| ⚠ idle Ns | Agent has been WORKING but silent for more than 30 seconds. During model calls the lane instead shows **Thinking…** / **Generating…**, so this warning only appears when work is genuinely stalled |
 
 ### Lane click → jump to file
 

@@ -93,6 +93,13 @@
     overflow: hidden;
     text-overflow: ellipsis;
     min-width: 0;
+    cursor: text;
+  }
+  #header-title:hover::after {
+    content: ' ✎';
+    color: var(--text-muted);
+    font-weight: normal;
+    font-size: 10px;
   }
   #status-dot {
     width: 7px;
@@ -773,6 +780,38 @@
     40% { transform: scale(1); opacity: 1; }
   }
 
+  /* "Thinking…" pill — shown from llm_call_start until the first streamed token */
+  .thinking-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12px;
+    color: var(--text-muted);
+    font-style: italic;
+    padding: 2px 0 6px;
+    animation: thinkingPulse 1.8s ease-in-out infinite;
+  }
+  .thinking-pill::before {
+    content: '';
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: typingBounce 1.4s infinite ease-in-out both;
+  }
+  @keyframes thinkingPulse {
+    0%, 100% { opacity: 0.55; }
+    50% { opacity: 1; }
+  }
+  .thinking-pill.generating {
+    color: var(--accent);
+    animation: none;
+  }
+  .thinking-pill.generating::before {
+    animation: none;
+    background: var(--accent);
+  }
+
   /* Empty state */
   #empty-state {
     flex: 1;
@@ -1181,6 +1220,12 @@
   .traj-toggle.open { color: var(--accent); border-color: var(--accent); }
   .trajectory { display: none; margin-top: 6px; }
   .trajectory.visible { display: block; }
+  .traj-copybar { display: flex; justify-content: flex-end; padding: 0 2px 4px; }
+  .traj-copy {
+    background: none; border: none; color: var(--text-muted);
+    font-size: 10px; cursor: pointer; padding: 2px 6px; border-radius: 4px;
+  }
+  .traj-copy:hover { color: var(--text); background: rgba(128, 128, 128, .12); }
   .traj-row {
     border: 1px solid var(--border);
     border-left: 2px solid #6b7280;
@@ -1191,6 +1236,7 @@
   }
   .traj-row.user       { border-left-color: #569cd6; }
   .traj-row.reasoning  { border-left-color: #8b5cf6; }
+  .traj-row.generating { border-left-color: #ec4899; }
   .traj-row.tool_call  { border-left-color: #f59e0b; }
   .traj-row.tool_update{ border-left-color: #d97706; }
   .traj-row.tool_result{ border-left-color: #10b981; }
@@ -1223,6 +1269,10 @@
   }
   .traj-header.open + .traj-body { display: block; }
   .traj-gap { display: flex; align-items: center; gap: 8px; color: var(--text-dim); font-size: 10px; margin: 3px 0; }
+  .traj-gap.thinking { color: var(--accent); }
+  .traj-gap.generating { color: #ec4899; }
+  .traj-gap.tool { color: #f59e0b; }
+  .traj-gap.setup { color: #8b5cf6; }
   .traj-gap::before, .traj-gap::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 
   /* ── Custom hover tooltip (native title= is unreliable in JCEF) ── */
@@ -1441,11 +1491,14 @@
 
 <div id="header">
   <div id="status-dot" title="Disconnected"></div>
-  <div id="header-title">JiuwenSwarm</div>
+  <div id="header-title" title="Double-click to rename session">JiuwenSwarm</div>
   <button id="btn-new-session" class="header-btn" onclick="send({type:'new_session'})" title="New session">New</button>
   <div class="header-dropdown">
-    <button id="btn-settings" class="header-btn" onclick="toggleSettingsMenu()" title="Settings">⚙</button>
-    <div id="settings-menu" class="dropdown-menu">
+    <button id="btn-menu" class="header-btn" onclick="toggleMenu()" title="Menu">☰</button>
+    <div id="menu-dropdown" class="dropdown-menu">
+      <div class="dropdown-item" onclick="renameSessionFromMenu()">✎ Rename session</div>
+      <div class="dropdown-item" id="menu-copy-path" onclick="copySessionPath()" title="Copy history.jsonl path" style="display:none;">⧉ Copy session path</div>
+      <div class="dropdown-divider"></div>
       <div class="dropdown-item" onclick="showSessionsFromMenu()">📁 Sessions</div>
       <div class="dropdown-item" onclick="showSkillsFromMenu()">🔧 Skills</div>
       <div class="dropdown-divider"></div>
@@ -1682,6 +1735,10 @@ function handleHostMessage(msg) {
       state.activeModel = msg.activeModel || null;
       if (msg.models) updateModelDisplay(msg.models, msg.activeModel);
       if (msg.defaultMode && !state.modeCustomized) applyMode(msg.defaultMode);
+      if (typeof msg.historyPath === 'string') setSessionHistoryPath(msg.historyPath);
+      // Fetch the session list so the ☰ menu can show "Copy session path"
+      // whenever the current session has a history.jsonl path.
+      send({ type: 'list_sessions' });
       break;
     case 'disconnected':
       setConnected(false);
@@ -1813,6 +1870,7 @@ function setConnected(yes, sessionId, title) {
     state.connected = true;
     state.sessionId = sessionId;
     state.sessionTitle = title || 'JiuwenSwarm';
+    updateSessionPathMenu();
     document.getElementById('header-title').textContent = state.sessionTitle;
     if (isNewSession) {
       clearMessages();
@@ -1992,7 +2050,41 @@ function clearAttachments() {
 // ─────────────────────────────────────────────
 function updateSessions(sessions) {
   state.sessions = sessions || [];
+  updateSessionPathMenu();
   renderSessionList();
+}
+
+/** Show/hide the ☰ menu "Copy session path" item based on whether the current
+ *  session's history.jsonl path is known. */
+function setSessionHistoryPath(path) {
+  state.sessionHistoryPath = path || '';
+  const item = document.getElementById('menu-copy-path');
+  if (item) item.style.display = state.sessionHistoryPath ? '' : 'none';
+}
+
+function updateSessionPathMenu() {
+  const cur = (state.sessions || []).filter(function(s) { return s.session_id === state.sessionId; })[0];
+  setSessionHistoryPath(cur && cur.history_path ? cur.history_path : '');
+}
+
+function copySessionPath() {
+  const text = state.sessionHistoryPath || '';
+  if (!text) return;
+  (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).catch(function() {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed'; ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  });
+  const item = document.getElementById('menu-copy-path');
+  if (item) {
+    const original = item.textContent;
+    item.textContent = '\u2713 Copied';
+    setTimeout(function() { item.textContent = original; }, 1500);
+  }
 }
 
 function renderSessionList() {
@@ -2120,7 +2212,7 @@ function toggleSkills() {
 }
 
 function showSkillsFromMenu() {
-  document.getElementById('settings-menu').classList.remove('visible');
+  document.getElementById('menu-dropdown').classList.remove('visible');
   if (!state.showSkills) toggleSkills();
 }
 
@@ -2241,7 +2333,7 @@ function setThemeMode(mode) {
   state.themeMode = mode;
   try { localStorage.setItem('jiuwen-theme', mode); } catch(e) {}
   applyTheme();
-  document.getElementById('settings-menu').classList.remove('visible');
+  document.getElementById('menu-dropdown').classList.remove('visible');
 }
 
 function updateThemeMenuChecks() {
@@ -2325,22 +2417,67 @@ function confirmModeSwitch() {
 }
 
 // ─────────────────────────────────────────────
-// Settings menu
+// Header menu
 // ─────────────────────────────────────────────
-function toggleSettingsMenu() {
-  document.getElementById('settings-menu').classList.toggle('visible');
+function toggleMenu() {
+  const dd = document.getElementById('menu-dropdown');
+  const opening = !dd.classList.contains('visible');
+  dd.classList.toggle('visible');
+  if (opening) {
+    // Refresh the session list so "Copy session path" reflects the current
+    // history.jsonl — the file is only created on the first message, so a
+    // fetch at connect time may have found nothing yet.
+    send({ type: 'list_sessions' });
+  }
 }
 
 function showSessionsFromMenu() {
-  document.getElementById('settings-menu').classList.remove('visible');
+  document.getElementById('menu-dropdown').classList.remove('visible');
   toggleSessions();
+}
+
+function renameSessionFromMenu() {
+  document.getElementById('menu-dropdown').classList.remove('visible');
+  startRenameSession();
+}
+
+// Session rename — double-click the title or use the menu's Rename item.
+function startRenameSession() {
+  if (state.streaming) return;
+  var htEl = document.getElementById('header-title');
+  if (!htEl) return;
+  var current = htEl.textContent;
+  var inp = document.createElement('input');
+  inp.type = 'text';
+  inp.className = 'session-title-input';
+  inp.value = current;
+  inp.maxLength = 100;
+  htEl.style.display = 'none';
+  htEl.parentNode.insertBefore(inp, htEl);
+  inp.focus();
+  inp.select();
+  function save() {
+    var val = inp.value.trim();
+    if (val && val !== current) {
+      state.sessionTitle = val;
+      send({ type: 'rename_session', title: val });
+    }
+    htEl.textContent = val || current;
+    htEl.style.display = '';
+    inp.remove();
+  }
+  inp.addEventListener('blur', save);
+  inp.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); save(); }
+    if (e.key === 'Escape') { htEl.style.display = ''; inp.remove(); }
+  });
 }
 
 function toggleDebugFromMenu() {
   state.showDebug = !state.showDebug;
   document.getElementById('debug-check').textContent = state.showDebug ? '☑' : '☐';
   send({ type: 'toggle_debug', enabled: state.showDebug });
-  document.getElementById('settings-menu').classList.remove('visible');
+  document.getElementById('menu-dropdown').classList.remove('visible');
   var panel = document.getElementById('debug-panel');
   if (state.showDebug) {
     panel.classList.add('visible');
@@ -2351,11 +2488,11 @@ function toggleDebugFromMenu() {
 
 // Click outside to close both dropdowns
 document.addEventListener('click', function(e) {
-  const settingsMenu = document.getElementById('settings-menu');
-  const settingsBtn  = document.getElementById('btn-settings');
-  if (settingsMenu.classList.contains('visible') &&
-      !settingsMenu.contains(e.target) && e.target !== settingsBtn) {
-    settingsMenu.classList.remove('visible');
+  const menuDropdown = document.getElementById('menu-dropdown');
+  const menuBtn  = document.getElementById('btn-menu');
+  if (menuDropdown.classList.contains('visible') &&
+      !menuDropdown.contains(e.target) && e.target !== menuBtn) {
+    menuDropdown.classList.remove('visible');
   }
 
   const modeDropdown = document.getElementById('mode-dropdown');
@@ -2419,6 +2556,21 @@ function handleJiuwenEvent(evt) {
     appendDelta(rid, payload.text || '');
   } else if (et === 'chat.reasoning') {
     appendThinking(rid, payload.text || '');
+  } else if (et === 'chat.llm_call_start') {
+    showThinkingPill(rid, payload);
+  } else if (et === 'chat.llm_call_end') {
+    hideThinkingPill(rid);
+    // Record this call's response text (emitted by the server with llm_call_end)
+    // so every call has its own "LLM Response" row, even when the wire streams
+    // the text as deltas without an intermediate chat.final.
+    const lpt = state.pendingTurns[rid];
+    if (lpt && typeof payload.content === 'string' && payload.content.trim()) {
+      lpt.events = lpt.events || [];
+      const lastE = lpt.events[lpt.events.length - 1];
+      if (!lastE || lastE.type !== 'final' || Date.now() - lastE.t > 1500) {
+        lpt.events.push({ type: 'final', t: Date.now(), detail: payload.content.trim() });
+      }
+    }
   } else if (et === 'chat.tool_call') {
     appendToolCall(rid, payload);
   } else if (et === 'chat.tool_result') {
@@ -2583,6 +2735,7 @@ function beginTurn(requestId, userContent) {
 }
 
 function appendDelta(rid, text) {
+  promoteThinkingPill(rid);
   const pt = state.pendingTurns[rid];
   if (!pt) return;
   // First real content removes the typing spinner and records TTFT
@@ -2590,7 +2743,13 @@ function appendDelta(rid, text) {
     pt.typingEl.remove();
     pt.typingEl = null;
   }
-  if (!pt.firstTokenTime) pt.firstTokenTime = Date.now();
+  if (!pt.firstTokenTime) {
+    pt.firstTokenTime = Date.now();
+    // Anchor the call's first token on its LLM Call row so the trajectory can
+    // split the call into a "thinking" (prefill) and a "generating" (output)
+    // phase — independent of when this delta actually arrived.
+    if (pt.activeUsageRow) pt.activeUsageRow.firstTokenAt = pt.firstTokenTime;
+  }
   pt.textContent += text;
   // Append raw text to the stream (interleaved with tool cards)
   var lastChild = pt.streamEl.lastElementChild;
@@ -2606,15 +2765,21 @@ function appendDelta(rid, text) {
 }
 
 function appendThinking(rid, text) {
+  promoteThinkingPill(rid);
   const pt = state.pendingTurns[rid];
   if (!pt || !text) return;
+  pt.reasonedInCall = true;
+  if (!pt.firstTokenTime) {
+    pt.firstTokenTime = Date.now();
+    if (pt.activeUsageRow) pt.activeUsageRow.firstTokenAt = pt.firstTokenTime;
+  }
 
   if (!pt.thinkingEl) {
     const block = document.createElement('div');
     block.className = 'thinking-block';
     const header = document.createElement('div');
     header.className = 'thinking-header';
-    header.textContent = 'Thinking…';
+    header.textContent = 'Reasoning…';
     header.onclick = function() { header.classList.toggle('open'); };
     const body = document.createElement('div');
     body.className = 'thinking-body';
@@ -2631,6 +2796,57 @@ function appendThinking(rid, text) {
   if (lastE && lastE.type === 'reasoning') lastE.detail += text;
   else pt.events.push({ type: 'reasoning', t: Date.now(), detail: text });
   scrollToBottom();
+}
+
+/** Show the "Thinking…" pill for a model call that has started but not yet
+ *  streamed a token. Falls back to the most recent pending turn so it still
+ *  appears even if the request id is missing (sub-agent streams). */
+function showThinkingPill(rid, payload) {
+  var pt = state.pendingTurns[rid];
+  if (!pt) {
+    var ids = Object.keys(state.pendingTurns);
+    if (!ids.length) return;
+    pt = state.pendingTurns[ids[ids.length - 1]];
+  }
+  if (!pt || pt.thinkingPillEl) return;
+  var pill = document.createElement('div');
+  pill.className = 'thinking-pill';
+  pill.textContent = 'Thinking…';
+  pt.streamEl.appendChild(pill);
+  pt.thinkingPillEl = pill;
+  // Anchor the LLM Call row at the moment the call starts so there is no gap
+  // after the preceding tool result. updateUsage() fills in tokens + prompt.
+  pt.events = pt.events || [];
+  var evt = { type: 'usage', t: Date.now(), label: state.modelName || 'LLM Call' };
+  if (payload && typeof payload.prompt === 'string' && payload.prompt.trim()) {
+    evt.prompt = payload.prompt;
+  }
+  pt.events.push(evt);
+  pt.activeUsageRow = evt;
+  pt.callInFlight = true;
+  pt.generatingPushed = false;
+  pt.reasonedInCall = false;
+  scrollToBottom();
+}
+
+/** First streamed token for a call: flip the pill from "Thinking…" to "Generating…". */
+function promoteThinkingPill(rid) {
+  var pt = state.pendingTurns[rid];
+  if (!pt) return;
+  if (pt.thinkingPillEl && pt.thinkingPillEl.textContent !== 'Generating…') {
+    pt.thinkingPillEl.textContent = 'Generating…';
+    pt.thinkingPillEl.classList.add('generating');
+  }
+}
+
+function hideThinkingPill(rid) {
+  var pt = state.pendingTurns[rid];
+  if (!pt) return;
+  if (pt.thinkingPillEl) {
+    pt.thinkingPillEl.remove();
+    pt.thinkingPillEl = null;
+  }
+  pt.callInFlight = false;
 }
 
 function appendToolCall(rid, payload) {
@@ -3052,16 +3268,37 @@ function updateUsage(rid, payload) {
   pt.events = pt.events || [];
   // Prompt is serialized into usage_metadata.prompt only on some agent paths; keep it if present.
   var evtPrompt = (typeof meta.prompt === 'string' && meta.prompt.trim()) ? meta.prompt : null;
-  pt.events.push({
-    type: 'usage',
-    t: Date.now(),
-    label: meta.model_name || state.modelName || 'LLM',
-    prompt: evtPrompt,
-    detail: 'in ' + (inTok || 0).toLocaleString() + ' / out ' + (outTok || 0).toLocaleString() +
+  var detailStr = 'in ' + (inTok || 0).toLocaleString() + ' / out ' + (outTok || 0).toLocaleString() +
       ' = ' + (inTok + outTok).toLocaleString() + ' tok' +
       ((meta.cache_tokens || 0) > 0 ? ' \u00B7 cache ' + meta.cache_tokens.toLocaleString() : '') +
-      (cost > 0 ? ' \u00B7 ' + fmtUsd(cost) : ''),
-  });
+      (cost > 0 ? ' \u00B7 ' + fmtUsd(cost) : '');
+  if (pt.activeUsageRow) {
+    // Fill in the call-start row (anchored by llm_call_start) so the LLM Call
+    // row stays at the start of the call instead of jumping to its end.
+    pt.activeUsageRow.label = meta.model_name || pt.activeUsageRow.label || state.modelName || 'LLM';
+    if (evtPrompt) pt.activeUsageRow.prompt = evtPrompt;
+    pt.activeUsageRow.detail = detailStr;
+    pt.activeUsageRow = null;
+  } else {
+    var lastE = pt.events[pt.events.length - 1];
+    if (lastE && lastE.type === 'usage') {
+      // Another usage_metadata for the same in-flight call (the server can emit
+      // several llm_usage chunks) — update the existing row, don't add a new one.
+      lastE.label = meta.model_name || lastE.label || state.modelName || 'LLM';
+      if (evtPrompt) lastE.prompt = evtPrompt;
+      lastE.detail = detailStr;
+    } else {
+      // No llm_call_start was seen (e.g. older server) — fall back to appending.
+      pt.events.push({
+        type: 'usage',
+        t: Date.now(),
+        label: meta.model_name || state.modelName || 'LLM',
+        prompt: evtPrompt,
+        detail: detailStr,
+      });
+    }
+  }
+  pt.callInFlight = false;
 }
 
 function contextUsagePct() {
@@ -3111,38 +3348,38 @@ function fmtMb(mb) {
   return Math.round(mb) + ' MB';
 }
 
-/** Give every LLM call a "Response" entry that shows what the model produced.
- *  An intermediate call's output is an instruction (a tool call / skill read);
- *  that instruction is shown as the call's Response, right after the call row.
- *  Tool executions and their results keep their own separate rows. The final
- *  call's Response is the response text (the trailing 'final' event).
- */
+/** Give every intermediate LLM call a "Response" row. A call that produced text
+ *  already has a 'final' row (from llm_call_end / chat.final); a call that only
+ *  produced tool calls gets a synthesized response showing those instructions,
+ *  anchored at the moment the call ended (its first tool call). */
 function attachIntermediateLlmResponses(events) {
   var out = [];
   for (var i = 0; i < events.length; i++) {
     var e = events[i];
     out.push(e);
     if (e.type !== 'usage') continue;
-    // Collect the instructions (tool calls) this call emitted until the next LLM call.
     var j = i + 1;
-    var parts = [];
+    var toolParts = [];
+    var firstToolT = null;
+    var hasResponse = false;
     while (j < events.length && events[j].type !== 'usage') {
       var x = events[j];
+      if (x.type === 'final') hasResponse = true;
       if (x.type === 'tool_call') {
-        parts.push((x.label || 'tool') + (x.detail ? '\n' + x.detail : ''));
+        if (firstToolT == null) firstToolT = x.t;
+        toolParts.push((x.label || 'tool') + (x.detail ? '\n' + x.detail : ''));
       }
       j++;
     }
-    // Only intermediate calls get a Response here; the final call's Response is
-    // the response text (the trailing 'final' event).
-    if (j < events.length && parts.length) {
-      out.push({ type: 'final', t: e.t, detail: parts.join('\n\n---\n\n') });
+    if (!hasResponse && j < events.length && toolParts.length) {
+      out.push({ type: 'final', t: firstToolT, detail: toolParts.join('\n\n---\n\n') });
     }
   }
   return out;
 }
 
 function finalizeTurn(rid, payload) {
+  hideThinkingPill(rid);
   const pt = state.pendingTurns[rid];
   if (pt) {
     if (pt.typingEl) {
@@ -3153,7 +3390,7 @@ function finalizeTurn(rid, payload) {
     // No markdown replacement — the raw streaming text preserves the chronological layout.
     if (pt.streamEl.querySelector('.typing-dots')) { pt.streamEl.querySelector('.typing-dots').remove(); }
     if (pt.thinkingHeader) {
-      pt.thinkingHeader.textContent = 'Thinking';
+      pt.thinkingHeader.textContent = 'Reasoning';
     }
     pt.containerEl.querySelectorAll('.tool-spinner').forEach(function(s) {
       s.classList.remove('tool-spinner');
@@ -3181,10 +3418,16 @@ function finalizeTurn(rid, payload) {
     // Record the final response text as a 'final' event so the trajectory
     // shows the turn's response as its own entry. Live streaming never emits a
     // 'final' event itself (unlike history restore), so without this the
-    // timeline has no response entry to display.
-    const finalText = pt.textContent ? pt.textContent.trim() : '';
+    // timeline has no response entry to display. Intermediate calls stream no
+    // text deltas, so fall back to the chat.final payload content.
+    const finalText = (pt.textContent ? pt.textContent.trim() : '')
+      || (payload && payload.content ? String(payload.content).trim() : '')
+      || '';
     if (finalText) {
-      pt.events.push({ type: 'final', t: Date.now(), detail: finalText });
+      const lastE = pt.events[pt.events.length - 1];
+      if (!lastE || lastE.type !== 'final' || Date.now() - lastE.t > 1500) {
+        pt.events.push({ type: 'final', t: Date.now(), detail: finalText });
+      }
     }
 
     const durationMs  = Date.now() - pt.startTime;
@@ -3275,8 +3518,9 @@ function finalizeTurn(rid, payload) {
     footer.appendChild(copyBtn);
 
     pt.containerEl.appendChild(footer);
-    // Give every LLM call its own Response entry (intermediate calls summarize
-    // the tools they invoked; the final call's Response is the response text).
+    // Give every intermediate call a "Response" row: text responses are already
+    // recorded (llm_call_end / chat.final); tool-call-only calls get a
+    // synthesized response showing the tool instruction, at the call's end.
     pt.events = attachIntermediateLlmResponses(pt.events || []);
     insertTrajectoryToggle(footer, pt.containerEl, (pt.events || []).length);
 
@@ -3749,6 +3993,11 @@ function fmtMs(ms) {
   return ms >= 1000 ? (ms / 1000).toFixed(1) + 's' : ms + 'ms';
 }
 
+/** Phase durations: a zero/undetectable phase reads as "<1ms" rather than "0ms". */
+function fmtPhaseMs(ms) {
+  return ms < 1 ? '<1ms' : fmtMs(ms);
+}
+
 function fmtUsd(v) {
   if (v == null || v <= 0) return '';
   if (v >= 0.01) return '$' + v.toFixed(2);
@@ -3783,10 +4032,11 @@ function classifyOutcome(pt) {
 // ── Per-turn trajectory (TraceHound-style event timeline) ──
 var TRAJ_EVENT_META = {
   user:         { icon: '\u{1F9D1}', label: 'User Message' },
-  reasoning:    { icon: '\u{1F914}', label: 'Reasoning' },
-  tool_call:    { icon: '\u{1F527}', label: 'Tool' },
+  reasoning:    { icon: '\u{1F914}', label: 'LLM Reasoning' },
+  generating:   { icon: '\u{1F4DD}', label: 'LLM Generating' },
+  tool_call:    { icon: '\u{1F527}', label: 'Tool Call' },
   tool_update:  { icon: '\u23F3',   label: 'Tool Update' },
-  tool_result:  { icon: '\u2705',   label: 'Result' },
+  tool_result:  { icon: '\u2705',   label: 'Tool Result' },
   usage:        { icon: '\u26A1',   label: 'LLM Call' },
   error:        { icon: '\u{1F6A8}', label: 'Error' },
   final:        { icon: '\u{1F4AC}', label: 'LLM Response' },
@@ -3825,12 +4075,54 @@ function toggleTrajectory(containerEl) {
   if (!traj) {
     traj = document.createElement('div');
     traj.className = 'trajectory';
-    traj.innerHTML = renderTrajectory(containerEl.__events || []);
+    traj.innerHTML = '<div class="traj-copybar"><button class="traj-copy" onclick="copyTrajectoryList(this)" title="Copy the event list">\u29c9 Copy list</button></div>'
+      + renderTrajectory(containerEl.__events || []);
     containerEl.appendChild(traj);
   }
   var visible = traj.classList.toggle('visible');
   if (btn) btn.classList.toggle('open', visible);
   if (visible) scrollToBottom();
+}
+
+/** Compute the waiting-time labels between two consecutive trajectory rows.
+ *  Returns an array of strings (e.g. ["3.0s thinking", "769ms generating"]).
+ *  ``startT`` is the previous row's timestamp (gap = e.t - startT). */
+function trajGapLines(prevE, e, startT) {
+  if (!prevE) return [];
+  var gap = e.t - startT;
+  var lines = [];
+  if (prevE.type === 'usage') {
+    if (e.type !== 'reasoning') {
+      var thinkMs, genMs;
+      if (typeof prevE.firstTokenAt === 'number'
+        && prevE.firstTokenAt >= startT && prevE.firstTokenAt <= e.t) {
+        thinkMs = prevE.firstTokenAt - startT;
+        genMs = e.t - prevE.firstTokenAt;
+      } else {
+        thinkMs = e.t - startT;
+        genMs = 0;
+      }
+      lines.push(fmtPhaseMs(thinkMs) + ' thinking');
+      lines.push(fmtPhaseMs(genMs) + ' generating');
+    } else {
+      lines.push(fmtPhaseMs(gap) + ' thinking');
+    }
+  } else if (prevE.type === 'reasoning' || prevE.type === 'generating') {
+    lines.push(fmtPhaseMs(gap) + ' generating');
+  } else if (gap > 2000) {
+    var gapWord = 'idle';
+    if (prevE.type === 'tool_call' || prevE.type === 'tool_update') {
+      gapWord = 'tool';
+    } else if (prevE.type === 'user') {
+      // Time before the first model call is server-side setup (context
+      // collection, agent init) — not the model "thinking".
+      gapWord = 'setup';
+    } else if (prevE.type === 'tool_result' || prevE.type === 'thinking') {
+      gapWord = 'thinking';
+    }
+    lines.push(fmtMs(gap) + ' ' + gapWord);
+  }
+  return lines;
 }
 
 function renderTrajectory(events) {
@@ -3841,8 +4133,11 @@ function renderTrajectory(events) {
   for (var i = 0; i < events.length; i++) {
     var e = events[i];
     var gap = e.t - prevT;
-    if (gap > 30000) {
-      out += '<div class="traj-gap">' + fmtMs(gap) + ' idle</div>';
+    var prevE = i > 0 ? events[i - 1] : null;
+    var gapLines = trajGapLines(prevE, e, prevT);
+    for (var gl = 0; gl < gapLines.length; gl++) {
+      var gw = gapLines[gl].split(' ').pop();
+      out += '<div class="traj-gap' + (gw === 'idle' ? '' : ' ' + gw) + '">' + gapLines[gl] + '</div>';
     }
     prevT = e.t;
     var meta = TRAJ_EVENT_META[e.type] || { icon: '\u2022', label: e.type || '' };
@@ -3885,6 +4180,45 @@ function copyMessageContent(btn) {
   btn.textContent = '\u2713';
   btn.classList.add('copied');
   setTimeout(function() { btn.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>'; btn.classList.remove('copied'); }, 2000);
+}
+
+/** Plain-text list of a turn's events — labels + elapsed time + waiting times,
+ *  no detail content. */
+function trajectoryTextList(events) {
+  if (!events || !events.length) return '';
+  var firstT = events[0].t;
+  var prevT = firstT;
+  var lines = [];
+  for (var i = 0; i < events.length; i++) {
+    var e = events[i];
+    var prevE = i > 0 ? events[i - 1] : null;
+    var gaps = trajGapLines(prevE, e, prevT);
+    for (var g = 0; g < gaps.length; g++) lines.push(gaps[g]);
+    var meta = TRAJ_EVENT_META[e.type] || { label: e.type || '' };
+    var label = meta.label + (e.label ? ': ' + e.label : '');
+    lines.push('+' + fmtMs(e.t - firstT) + '  ' + label);
+    prevT = e.t;
+  }
+  return lines.join('\n');
+}
+
+function copyTrajectoryList(btn) {
+  var traj = btn.closest('.trajectory');
+  var containerEl = traj ? traj.parentElement : null;
+  var events = (containerEl && containerEl.__events) || [];
+  var text = trajectoryTextList(events);
+  if (!text) return;
+  (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).catch(function() {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed'; ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  });
+  btn.textContent = '\u2713 Copied';
+  setTimeout(function() { btn.innerHTML = '\u29c9 Copy list'; }, 1500);
 }
 
 function resendMessage(btn) {
@@ -4365,36 +4699,7 @@ window.addEventListener('load', function() {
 
   // Session rename on double-click
   var htEl = document.getElementById('header-title');
-  if (htEl) {
-    htEl.addEventListener('dblclick', function() {
-      if (state.streaming) return;
-      var current = this.textContent;
-      var inp = document.createElement('input');
-      inp.type = 'text';
-      inp.className = 'session-title-input';
-      inp.value = current;
-      inp.maxLength = 100;
-      this.style.display = 'none';
-      this.parentNode.insertBefore(inp, this);
-      inp.focus();
-      inp.select();
-      function save() {
-        var val = inp.value.trim();
-        if (val && val !== current) {
-          state.sessionTitle = val;
-          send({ type: 'rename_session', title: val });
-        }
-        htEl.textContent = val || current;
-        htEl.style.display = '';
-        inp.remove();
-      }
-      inp.addEventListener('blur', save);
-      inp.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter') { e.preventDefault(); save(); }
-        if (e.key === 'Escape') { htEl.style.display = ''; inp.remove(); }
-      });
-    });
-  }
+  if (htEl) htEl.addEventListener('dblclick', startRenameSession);
 
   // Close model dropdown on click outside
   document.addEventListener('click', function(e) {

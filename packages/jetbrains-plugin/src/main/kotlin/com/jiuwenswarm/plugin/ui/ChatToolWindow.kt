@@ -623,6 +623,23 @@ class ChatPanel(
                 // Swarm tool attribution — update the agent lane's current activity
                 applySwarmToolAttribution(payload)
             }
+            // ── Swarm model-call lifecycle — lane "thinking…" / "generating…" ──
+            // llm_call_start fires before the first token of every model call, so the
+            // lane shows "thinking…" instead of drifting into "idle". The first streamed
+            // token flips it to "generating…", and llm_call_end clears it back.
+            if (et == "chat.llm_call_start" || et == "chat.llm_call_end") {
+                val payload = converted.getAsJsonObject("payload") ?: JsonObject()
+                val memberName = payload.get("member_name")?.takeIf { it.isJsonPrimitive }?.asString
+                if (et == "chat.llm_call_start") swarmStateManager.applyModelCallStart(memberName)
+                else swarmStateManager.applyModelCallEnd(memberName)
+                if (swarmMapPanel == null) swarmMapPanel = SwarmMapToolWindowFactory.getPanel(project)
+                swarmMapPanel?.postSnapshot(swarmStateManager.snapshot())
+            } else if (et == "chat.reasoning" || et == "chat.delta") {
+                val payload = converted.getAsJsonObject("payload") ?: JsonObject()
+                payload.get("member_name")?.takeIf { it.isJsonPrimitive }?.asString?.let {
+                    swarmStateManager.applyModelTokenStart(it)
+                }
+            }
             // ── On turn end, promote snapshots and show rewind bar ──
             if (et == "chat.final") {
                 if (currentTurnSnapshots.isNotEmpty()) {
@@ -750,15 +767,18 @@ class ChatPanel(
                     JsonObject().apply {
                         addProperty("event_type", eventType)
                         addProperty("request_id", requestId)
-                        add("payload", when (eventType) {
-                            "chat.delta" -> JsonObject().apply {
-                                addProperty("text", delta?.asString ?: "")
+                        val payloadObj = JsonObject()
+                        when (eventType) {
+                            "chat.delta" -> payloadObj.addProperty("text", delta?.asString ?: "")
+                            "chat.reasoning" -> payloadObj.addProperty("text", delta?.asString ?: "")
+                            else -> if (delta?.isJsonObject == true) {
+                                for ((k, v) in delta.asJsonObject.entrySet()) payloadObj.add(k, v)
                             }
-                            "chat.reasoning" -> JsonObject().apply {
-                                addProperty("text", delta?.asString ?: "")
-                            }
-                            else -> if (delta?.isJsonObject == true) delta.asJsonObject else JsonObject()
-                        })
+                        }
+                        body.get("member_name")?.takeIf { it.isJsonPrimitive }?.let {
+                            payloadObj.addProperty("member_name", it.asString)
+                        }
+                        add("payload", payloadObj)
                     }
                 }
                 "e2a.complete" -> {
@@ -900,6 +920,14 @@ class ChatPanel(
                                 "model_provider" to (m.get("model_provider")?.asString ?: ""),
                             )
                         }
+                        // Look up the current session's history.jsonl path so the
+                        // ☰ menu can offer "Copy session path".
+                        var historyPath = ""
+                        try {
+                            historyPath = service.session.listSessions()
+                                .firstOrNull { it.session_id == sid }
+                                ?.history_path ?: ""
+                        } catch (_: Exception) { }
                         dispatchToWebview(mapOf(
                             "type" to "connected",
                             "sessionId" to sid,
@@ -907,6 +935,7 @@ class ChatPanel(
                             "models" to modelList,
                             "activeModel" to activeModel,
                             "defaultMode" to service.settings.defaultMode,
+                            "historyPath" to historyPath,
                         ))
                     } catch (_: Exception) {
                         debug("STATUS→ models.list failed, staying with basic connected state")
@@ -951,4 +980,5 @@ private fun SessionInfo.toMap() = mapOf(
     "title" to (title ?: session_id),
     "last_message_at" to last_message_at,
     "message_count" to message_count,
+    "history_path" to (history_path ?: ""),
 )

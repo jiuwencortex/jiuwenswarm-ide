@@ -52,6 +52,7 @@ export class SessionManager {
       last_message_at: obj.last_message_at as number | undefined,
       created_at: obj.created_at as number | undefined,
       message_count: obj.message_count as number | undefined,
+      history_path: (obj.history_path as string) || '',
     }));
   }
 

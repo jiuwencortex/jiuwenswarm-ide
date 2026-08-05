@@ -437,6 +437,20 @@ export class ChatPanel implements vscode.Disposable {
       }
     }
 
+    // ── Swarm model-call lifecycle — lane "thinking…" / "generating…" states ──
+    // llm_call_start fires before the first token of every model call, so the
+    // lane shows "thinking…" instead of drifting into "idle". The first streamed
+    // token flips it to "generating…", and llm_call_end clears it back.
+    if (et === 'chat.llm_call_start') {
+      this.swarmStateManager.applyModelCallStart(payload.member_name as string | undefined);
+      this.swarmMapPanel?.postSnapshot(this.swarmStateManager.snapshot());
+    } else if (et === 'chat.llm_call_end') {
+      this.swarmStateManager.applyModelCallEnd(payload.member_name as string | undefined);
+      this.swarmMapPanel?.postSnapshot(this.swarmStateManager.snapshot());
+    } else if ((et === 'chat.reasoning' || et === 'chat.delta') && payload.member_name) {
+      this.swarmStateManager.applyModelTokenStart(payload.member_name as string);
+    }
+
     // ── On turn end, promote snapshots and show rewind bar ──
     if (et === 'chat.final') {
       if (DiffApplier.promoteSnapshots()) {
@@ -521,6 +535,7 @@ export class ChatPanel implements vscode.Disposable {
         } else if (delta && typeof delta === 'object') {
           Object.assign(payloadOut, delta);
         }
+        if (body.member_name) payloadOut.member_name = body.member_name as string;
         return { event_type: eventType, request_id: requestId, payload: payloadOut };
       }
 
@@ -625,13 +640,21 @@ export class ChatPanel implements vscode.Disposable {
       }
       // Then load models in background and send a second update with model list
       this.session.listModels()
-        .then(({ models, activeModel }) => {
+        .then(async ({ models, activeModel }) => {
           if (this.session.sessionId !== sid) return; // session changed in the meantime
           const modelList = models.map((m) => ({
             model_name: (m.model_name as string) || '',
             alias: (m.alias as string) || '',
             model_provider: (m.model_provider as string) || '',
           }));
+          // Look up the current session's history.jsonl path so the ☰ menu can
+          // offer "Copy session path".
+          let historyPath = '';
+          try {
+            const sessions = await this.session.listSessions();
+            const cur = sessions.find((s) => s.session_id === sid);
+            historyPath = (cur && cur.history_path) || '';
+          } catch { historyPath = ''; }
           this.postToWebview({
             type: 'connected',
             sessionId: sid,
@@ -639,6 +662,7 @@ export class ChatPanel implements vscode.Disposable {
             models: modelList,
             activeModel: activeModel || undefined,
             defaultMode,
+            historyPath,
           });
         })
         .catch(() => { /* already sent basic connected, nothing more to do */ });

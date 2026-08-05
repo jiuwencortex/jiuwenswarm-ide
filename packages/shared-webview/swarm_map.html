@@ -1175,6 +1175,8 @@ function friendlyStatus(lane) {
   if (act.indexOf('running') === 0) return 'Building';
   if (act.indexOf('viewing') === 0 || act.indexOf('planning') === 0) return 'Planning';
   if (act.indexOf('messaging') === 0) return 'Coordinating';
+  if (act.indexOf('thinking') === 0) return 'Thinking';
+  if (act.indexOf('generating') === 0) return 'Generating';
   return 'Working';
 }
 

@@ -100,6 +100,35 @@ export class SwarmStateManager {
     this.lastEventAt = lane.lastActiveAt;
   }
 
+  applyModelCallStart(memberName?: string): void {
+    if (!memberName) return;
+    const lane = this.getOrStubLane(memberName);
+    lane.status = 'BUSY';
+    lane.currentActivity = 'thinking…';
+    lane.lastActiveAt = Date.now();
+    this.pushFeed(lane, 'thinking…', lane.lastActiveAt);
+    this.lastEventAt = lane.lastActiveAt;
+  }
+
+  /** First streamed token for a call: flip the lane from "thinking…" to "generating…". */
+  applyModelTokenStart(memberName?: string): void {
+    if (!memberName) return;
+    const lane = this.lanes.get(memberName);
+    if (!lane || lane.currentActivity !== 'thinking…') return;
+    lane.currentActivity = 'generating…';
+    lane.lastActiveAt = Date.now();
+  }
+
+  applyModelCallEnd(memberName?: string): void {
+    if (!memberName) return;
+    const lane = this.lanes.get(memberName);
+    if (!lane) return;
+    if (lane.currentActivity === 'thinking…' || lane.currentActivity === 'generating…') {
+      lane.currentActivity = null;
+    }
+    lane.lastActiveAt = Date.now();
+  }
+
   snapshot(): SwarmSnapshot {
     // Stable insertion order (join order) — lanes must not jump around as
     // statuses change; the webview renders status separately from position.

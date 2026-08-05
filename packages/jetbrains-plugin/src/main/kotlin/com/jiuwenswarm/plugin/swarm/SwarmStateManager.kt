@@ -120,6 +120,38 @@ class SwarmStateManager {
         lastEventAt = lane.lastActiveAt
     }
 
+    /** Model call started — show "thinking…" on the lane instead of drifting into idle. */
+    @Synchronized
+    fun applyModelCallStart(memberName: String?) {
+        val name = memberName ?: return
+        val lane = lanes.getOrPut(name) { stubLane(name) }
+        lane.status = "BUSY"
+        lane.currentActivity = "thinking…"
+        lane.lastActiveAt = System.currentTimeMillis()
+        pushFeed(lane, "thinking…", lane.lastActiveAt)
+        lastEventAt = lane.lastActiveAt
+    }
+
+    /** First streamed token for a call: flip the lane from "thinking…" to "generating…". */
+    @Synchronized
+    fun applyModelTokenStart(memberName: String?) {
+        val name = memberName ?: return
+        val lane = lanes[name] ?: return
+        if (lane.currentActivity != "thinking…") return
+        lane.currentActivity = "generating…"
+        lane.lastActiveAt = System.currentTimeMillis()
+    }
+
+    @Synchronized
+    fun applyModelCallEnd(memberName: String?) {
+        val name = memberName ?: return
+        val lane = lanes[name] ?: return
+        if (lane.currentActivity == "thinking…" || lane.currentActivity == "generating…") {
+            lane.currentActivity = null
+        }
+        lane.lastActiveAt = System.currentTimeMillis()
+    }
+
     @Synchronized
     fun snapshot(): SwarmSnapshot {
         // Stable insertion order (join order) — lanes must not jump around as

@@ -21,6 +21,7 @@ data class SessionInfo(
     val last_message_at: Long?,
     val created_at: Long?,
     val message_count: Int?,
+    val history_path: String? = null,
 )
 
 class SessionManager(
@@ -60,6 +61,7 @@ class SessionManager(
                 last_message_at = obj.get("last_message_at")?.asLong,
                 created_at = obj.get("created_at")?.asLong,
                 message_count = obj.get("message_count")?.asInt,
+                history_path = obj.get("history_path")?.asString ?: "",
             )
         }
     }

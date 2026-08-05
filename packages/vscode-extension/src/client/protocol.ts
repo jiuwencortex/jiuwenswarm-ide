@@ -22,11 +22,12 @@ export interface SessionInfo {
   last_message_at?: number;
   created_at?: number;
   message_count?: number;
+  history_path?: string;
 }
 
 // Messages from extension host → webview
 export type ExtToWebviewMsg =
-  | { type: 'connected'; sessionId: string | null; sessionTitle: string; needsSession?: boolean; models?: ModelEntry[]; activeModel?: string; defaultMode?: string }
+  | { type: 'connected'; sessionId: string | null; sessionTitle: string; needsSession?: boolean; models?: ModelEntry[]; activeModel?: string; defaultMode?: string; historyPath?: string }
   | { type: 'disconnected' }
   | { type: 'reconnecting' }
   | { type: 'metrics'; metrics: SessionMetrics }

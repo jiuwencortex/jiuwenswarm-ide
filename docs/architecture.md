@@ -87,7 +87,9 @@ IDE context (active file, selection, diagnostics, git, project rules, @-mentione
 | Event | Action |
 |-------|--------|
 | `chat.delta` | Append text to the active turn |
-| `chat.reasoning` | Append to the collapsible "Thinking…" block |
+| `chat.reasoning` | Append to the collapsible "Reasoning…" block |
+| `chat.llm_call_start` | Show a "Thinking…" indicator before the first token of a model call |
+| `chat.llm_call_end` | Clear the thinking indicator once the model call completes |
 | `chat.tool_call` | Show tool call card with spinner |
 | `chat.tool_result` | Update tool card with result |
 | `chat.final` | Mark turn complete; replace accumulated text with canonical content |
