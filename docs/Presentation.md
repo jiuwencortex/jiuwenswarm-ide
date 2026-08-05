@@ -1,10 +1,10 @@
 # JiuwenSwarm IDE Plugins — Presentation Notes
 
-Source material for two slides. Keep the language simple and direct.
+Source material for up to four slides. Keep the language simple and direct.
 
 ---
 
-## Slide 1 — What is the IDE plugin and what does it do today
+## Slide 1 — Plugin today (general capabilities)
 
 ### What it is
 
@@ -52,21 +52,37 @@ Developers who already use JiuwenSwarm and want the agent to work inside their I
 - Skill library with per-skill on/off toggle
 - **Conversation export**: one-click "↓ Export session" from the ☰ menu — converts the session to Markdown and opens it in the editor
 
-**Live Swarm Map — unique to JiuwenSwarm**
-Opens automatically when a `code.team` session starts. Shows the entire swarm at work in real time:
-- **Map view**: interactive canvas with agent nodes, animated pipeline flow between them, pan/zoom, click any agent to inspect
-- **List view**: per-agent lane cards with status chip, live elapsed timer, activity feed (what tool the agent just called), task title
-- **Board view**: three-column kanban — Backlog / In Progress / Done — one card per task; cards show the assigned agent (colour-coded dot), Blocked badge when stalled, strikethrough when cancelled
-- **Task pills** (List view): pill per task, colour shifts as tasks move from pending → active → done
-- **Progress**: header chip shows `tasks done / total · agents working`, with a completion bar
-- **Jump to file**: click any agent lane → IDE opens the file that agent last touched
-- **Message log**: collapsible log of inter-agent messages, colour-coded by sender
-- **Session summary**: when all agents finish, shows total agents, tasks completed, messages sent, and time per agent
-- **Debug console**: toggleable raw event log for diagnosing sessions
+---
+
+## Slide 2 — Swarm today (multi-agent capabilities)
+
+When a `code.team` session starts, the **Live Swarm Map** panel opens automatically. It shows the entire swarm at work in real time across three views:
+
+**Map view**
+- Interactive canvas with all active agent nodes
+- Animated pipeline flow arrows between agents
+- Pan / zoom; click any agent node to inspect its current state
+
+**List view**
+- Per-agent lane card: status chip (idle / working / done), live elapsed timer, activity feed showing what tool the agent just called, current task title
+- Task pill strip: one pill per task, colour shifts as tasks move pending → active → done
+- Collapsible inter-agent message log, colour-coded by sender
+- When all agents finish: session summary — agents, tasks completed, messages sent, time per agent
+
+**Board view (kanban)**
+- Three columns: Backlog / In Progress / Done
+- One card per task; each card shows task title, assigned agent name with colour dot
+- Status badges: Blocked (stalled) / strikethrough (cancelled)
+- Updates live on every snapshot
+
+**Cross-view features**
+- Header chip: `tasks done / total · N agents working` + completion percentage bar
+- Click any agent lane → IDE opens the file that agent last touched
+- ☰ debug console: toggleable raw event log for diagnosing sessions
 
 ---
 
-## Slide 2 — Next steps
+## Slide 3 — Plugin roadmap (general next steps)
 
 Ordered roughly by how close each item is to being done.
 
@@ -78,16 +94,16 @@ Ordered roughly by how close each item is to being done.
 - **Terminal output → chat** — one-click button copies whatever is in the terminal (stack traces, test output) into the chat. No more manual highlight-and-paste.
 - **OS desktop notification** — notify the developer when a long agent run finishes while the IDE is in the background.
 - **Smart commit message** — instead of using the last chat message as the commit message, the agent reads the actual diff and writes an accurate one.
-- **Swarm Map: steer agents** — pause or redirect an individual agent from the Swarm Map panel (requires a small server API addition, in progress).
 
 ### Month 2 — Productivity features
 
 - **Background / async agents** — send a task and keep coding. The agent works in the background; the IDE shows a notification when it finishes. The UI does not block.
 - **Test loop** — after the agent edits files, automatically run the project's tests and feed failures back to the agent so it can fix them without the developer doing anything.
 - **Custom slash commands** — define reusable prompt templates in `.jiuwenswarm/commands/` (e.g. `/code-review`, `/write-changelog`). They appear as autocomplete options in the chat input.
+- **Custom system prompt** — a free-text field in plugin settings that prepends personal instructions to every request (preferred style, language, persona). Applies across all projects, independent of the project rules file.
 - **Pinned context files** — mark files (schema, main config, README) that the agent should always see, regardless of what file is currently open.
 - **PR / diff review** — load a branch diff or paste a pull request URL; the agent reviews it for bugs, security issues, and improvements.
-- **Full multi-turn rewind** — undo not just the last agent turn but any previous turn from a scrollable history, not just the most recent one.
+- **Full multi-turn rewind** — undo not just the last agent turn but any previous turn from a scrollable history.
 - **Conversation fork** — "branch from this message": start a new session from any point in the conversation history without losing the current thread.
 
 ### Month 3 — Intelligence and reach
@@ -99,7 +115,33 @@ Ordered roughly by how close each item is to being done.
 - **Blast radius preview** — before saving, a side pane shows everything in the codebase that calls or imports what just changed. Zero-impact edits show green; large-impact edits show a warning. Pure static analysis, no build step.
 - **AI git archaeology** — right-click any line → "Why does this exist?". The agent traces git blame, commit message, PR, and linked tickets and produces a plain-English explanation of why that line is written the way it is.
 
-### Further out — genuinely new capabilities
+### Further out
 
-- **Sketch → implement**: describe a feature, get an editable architecture diagram first, then click "Implement this" and the swarm uses the diagram as its spec.
 - **Proactive watchdog**: agent silently monitors edits and flags semantic issues (SQL injection, race conditions, duplicate code) as soft badges, without blocking the developer.
+
+---
+
+## Slide 4 — Swarm roadmap (multi-agent next steps)
+
+### Month 1 — Steering the swarm
+
+- **Steer individual agents** — pause or redirect any running agent from the Swarm Map panel without stopping the rest of the swarm. Requires a small server API addition (`team.agent.pause`, `team.agent.redirect`); infrastructure is partially in place.
+
+### Month 2 — Swarm control
+
+- **Spawn agent mid-session** — click "+ Agent" in the Swarm Map to add a new worker to a running session and assign it a task. Useful when a specialist is needed after work has started (e.g. add a security reviewer once coding is done).
+- **Conflict detection** — when two agents edit the same file simultaneously, the Swarm Map shows a collision badge on both lanes. The orchestrator is notified and can serialise writes or reassign one agent.
+- **Quality gate hooks** — define shell commands in `.jiuwenswarm/hooks.json` that run automatically after every agent turn (`pytest`, `eslint`, `mypy`). Non-zero exit feeds the output back to the agent for a fix attempt.
+- **Per-agent cost breakdown** — extend the existing stats bar with a per-agent token / cost breakdown in the session summary: which worker spent the most and why.
+
+### Month 3 — Visibility and collaboration
+
+- **Swarm replay** — after a session ends, a timeline scrubber lets you step through the session event-by-event: watch agents spawn, tasks progress, and files change in the order they happened. Useful for debugging or showing teammates what the swarm did.
+- **Team session templates** — save a named swarm configuration (roles, system prompts, task split strategy) as a template in `.jiuwenswarm/teams/`. Pick a template from the chat input to start a pre-configured multi-agent session in one click.
+- **Read-only session stream** — generate a shareable URL so anyone can watch a live session (chat, Swarm Map, file diffs) in a browser without IDE access. Observer-only; no message sending.
+- **Auto-session context** — when the agent references a file, that file is automatically pinned for the rest of the session so follow-up messages don't lose track of it.
+- **`@swarm` context mention** — type `@swarm` in chat to attach a snapshot of the current Swarm Map state (lanes, tasks, progress) as structured context to the next message.
+
+### Further out
+
+- **Sketch → implement**: describe a feature in plain English, get an editable architecture diagram (Mermaid / Excalidraw) showing which components it touches and what is new, annotate or adjust it, then click "Implement this" — the swarm uses the diagram as its spec.

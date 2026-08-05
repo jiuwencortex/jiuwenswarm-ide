@@ -23,9 +23,10 @@ Architecture reference for the JetBrains plugin and VS Code extension. Both plug
 │  └────────────────────────────────┘  │
 │  ┌────────────────────────────────┐  │
 │  │  Swarm Map (swarm_map.html)    │  │
-│  │  - Map / List views toggle     │  │
+│  │  - Map / List / Board views    │  │
 │  │  - Status chips + elapsed timer│  │
 │  │  - Per-agent activity feed     │  │
+│  │  - Kanban board (task cards)   │  │
 │  │  - Debug console (☰ menu)      │  │
 │  └────────────────────────────────┘  │
 │  ┌────────────────────────────────┐  │
@@ -267,7 +268,7 @@ packages/vscode-extension/src/
 ├── swarm/
 │   ├── SwarmState.ts                  # AgentLane / TeamTask / SwarmSnapshot types
 │   ├── SwarmStateManager.ts           # Builds swarm state from team.event deltas
-│   └── SwarmMapPanel.ts               # Swarm Map webview (Map/List), debug console
+│   └── SwarmMapPanel.ts               # Swarm Map webview (Map/List/Board), debug console
 └── ui/
     ├── ChatPanel.ts                   # WebviewPanel wrapper + message bridge
     └── StatusBar.ts                   # Connection status indicator
@@ -328,7 +329,7 @@ packages/jetbrains-plugin/src/main/kotlin/com/jiuwenswarm/plugin/
 │   └── SwarmStateManager.kt           # Builds swarm state from team.event deltas
 ├── ui/
 │   ├── ChatToolWindow.kt              # ToolWindowFactory + JCEF panel + message bridge
-│   ├── SwarmMapPanel.kt               # Swarm Map JCEF panel (Map/List webview), debug console
+│   ├── SwarmMapPanel.kt               # Swarm Map JCEF panel (Map/List/Board webview), debug console
 │   ├── SwarmMapToolWindowFactory.kt   # ToolWindow factory + openOrReveal helper
 │   ├── Actions.kt                     # NewSessionAction, SendSelectionAction
 │   ├── FixWithAiIntention.kt          # IntentionAction — Alt+Enter quick-fix
@@ -384,18 +385,55 @@ The host (`ChatPanel.extractTeamEventDelta` / `ChatToolWindow.extractTeamEventDe
 
 | Event | Effect |
 |-------|--------|
-| `team.member.spawned` | Create a lane (status from `status`, task from `prompt`) |
-| `team.member.status_changed` | Update status; `new_status: completed → DONE`, `paused → PAUSED` |
-| `team.member.activity_changed` | Live mid-run activity (e.g. swarmflow worker tool calls) → lane activity + feed |
-| `team.member.execution_changed` | Update execution status only |
-| `team.member.shutdown` | Mark lane DONE |
-| `team.task.created/claimed/completed/…` | Task board pills |
-| `team.task.status_snapshot` | Authoritative task status/assignee convergence |
-| `team.message.*` | Inter-agent message log |
+| `team.member.spawned` | Create or update a lane; initial status from `status` field, initial task title from `prompt` |
+| `team.member.status_changed` | Update lane status; `paused → PAUSED`, `completed → SHUTDOWN` |
+| `team.member.activity_changed` | Set lane `status=BUSY`, update `currentActivity` text and append to activity feed (consecutive duplicates within 1 s are collapsed) |
+| `team.member.execution_changed` | Update `executionStatus` only (`IDLE / RUNNING / COMPLETING`) |
+| `team.member.shutdown` | Set lane `status=SHUTDOWN`, clear `currentActivity`, set `executionStatus=IDLE` |
+| `team.task.created` | Add task with `status='pending'`; card appears in Board **Backlog** column |
+| `team.task.claimed` | Set `task.assignee`; status stays `'pending'` (agent has claimed but not yet started) |
+| `team.task.started` | Set `status='in_progress'`, link task to `lane.currentTaskId`; card moves to Board **In Progress** column |
+| `team.task.completed` | Set `status='completed'`, increment `lane.tasksDone`; card moves to Board **Done** column |
+| `team.task.cancelled` | Set `status='cancelled'`, clear task from lane; card shown with strikethrough in Board **Done** column |
+| `team.task.status_snapshot` | Authoritative convergence: bulk-updates both task and lane state to match server truth |
+| `team.message.*` | Append to inter-agent message ring buffer (max 50), increment `lane.messageCount`, colour-coded by sender lane |
+
+### Lane and task status values
+
+**Lane status** (stored in `AgentLane.status`):
+
+| Value | Meaning |
+|-------|---------|
+| `READY` | Agent idle, waiting for a task; normalised from gateway `IDLE` |
+| `BUSY` | Agent actively executing (tool call, model call, or activity event) |
+| `PAUSED` | Agent paused; Board shows a **Blocked** badge on the task card |
+| `SHUTDOWN` | Agent finished or stopped; final state |
+
+**Lane execution status** (stored in `AgentLane.executionStatus`, separate from the above):
+
+| Value | Meaning |
+|-------|---------|
+| `IDLE` | No model or tool execution in progress |
+| `RUNNING` | Model call or tool execution active |
+| `COMPLETING` | Execution wrapping up |
+
+**Task status** (stored in `TeamTask.status`, drives Board columns):
+
+| Value | Board column |
+|-------|-------------|
+| `pending` | Backlog (after `created`; stays pending through `claimed`) |
+| `in_progress` | In Progress (after `started`) |
+| `completed` | Done (normal finish) |
+| `cancelled` | Done (strikethrough on card) |
 
 Tool attribution comes from `chat.tool_call` / `chat.tool_update` events carrying `member_name`; the parsed tool arguments (file `path`/`file_path`, glob `pattern`, shell `command`, `task_id`, `to`) produce friendly activity text ("writing · plan.md", "running · npm run build"). Each lane keeps a capped activity feed (consecutive duplicates within 1 s are collapsed) plus a live elapsed timer.
 
-The webview has **Map** (interactive canvas) and **List** (lane cards) views, a ☰ menu with an opt-in **Debug console** fed by `{ type: 'swarm_debug', line }` messages, and a completion summary with per-agent durations. The orchestrator (`team-leader`) is filtered out — only workers are shown.
+The webview has three view modes toggled by the header button strip:
+- **Map** — interactive canvas with agent nodes, animated pipeline flow, pan/zoom, click-to-inspect.
+- **List** — per-agent lane cards with status chip, live elapsed timer, activity feed, task pill strip, inter-agent message log, and a completion summary with per-agent durations.
+- **Board** — three-column kanban (Backlog / In Progress / Done). One card per task showing title, assigned agent name with colour dot, and status badges (Blocked when the assigned lane is PAUSED; strikethrough when cancelled). Updates live on every snapshot.
+
+The ☰ menu provides an opt-in **Debug console** fed by `{ type: 'swarm_debug', line }` messages, and a **"↓ Export session"** item (shown only when `sessionHistoryPath` is set) that triggers a `export_session` message to the host. The orchestrator (`team-leader`) is filtered out — only workers are shown.
 
 ### Bridge detection
 
@@ -442,6 +480,7 @@ window.addEventListener('message', function(e) { // VS Code
 | `memory` | `rssMb`, `totalMb`, `availableMb` | Update server memory chip |
 | `metrics` | `metrics` | Update host metrics display |
 | `debug_log` | `line` | Append line to debug panel |
+| `export_done` | `path` | Show confirmation after a successful session export; `path` is the written Markdown file |
 | `error` | `message`, `requestId` | Show error inline in the active turn |
 
 ### Webview → Host messages
@@ -467,6 +506,7 @@ window.addEventListener('message', function(e) { // VS Code
 | `git_push_request` | User clicks the Push button |
 | `input_changed` | Textarea content changes (used by host for typing indicators) |
 | `toggle_debug` | User toggles the debug log |
+| `export_session` | User clicks "↓ Export session" in the ☰ menu (`historyPath`, `sessionTitle`) — host reads the JSONL, converts to Markdown, writes file, opens it in the editor |
 
 ### State object (key fields)
 
@@ -475,6 +515,7 @@ let state = {
   connected: false,
   sessionId: null,
   sessionTitle: 'JiuwenSwarm',
+  sessionHistoryPath: null,       // set when sessions list includes history_path; enables export
   mode: 'code.plan',
   modeCustomized: false,      // true once user manually picks a mode
   models: [],
