@@ -1272,7 +1272,7 @@
   .traj-gap.thinking { color: var(--accent); }
   .traj-gap.generating { color: #ec4899; }
   .traj-gap.tool { color: #f59e0b; }
-  .traj-gap.setup { color: #8b5cf6; }
+  .traj-gap.prompt-build { color: #8b5cf6; }
   .traj-gap::before, .traj-gap::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 
   /* ── Custom hover tooltip (native title= is unreliable in JCEF) ── */
@@ -2790,11 +2790,17 @@ function appendThinking(rid, text) {
     pt.thinkingHeader = header;
   }
   pt.thinkingEl.textContent += text;
-  // Accumulate reasoning chunks into a single timeline entry
+  // Accumulate reasoning chunks into a single timeline entry. Keep ``t`` as the
+  // first chunk (row anchor + thinking duration) and ``lastAt`` as the last chunk
+  // (so the following "generating" gap isn't collapsed by Date.now() rounding).
   pt.events = pt.events || [];
   var lastE = pt.events[pt.events.length - 1];
-  if (lastE && lastE.type === 'reasoning') lastE.detail += text;
-  else pt.events.push({ type: 'reasoning', t: Date.now(), detail: text });
+  if (lastE && lastE.type === 'reasoning') {
+    lastE.detail += text;
+    lastE.lastAt = Date.now();
+  } else {
+    pt.events.push({ type: 'reasoning', t: Date.now(), lastAt: Date.now(), detail: text });
+  }
   scrollToBottom();
 }
 
@@ -3259,6 +3265,11 @@ function updateUsage(rid, payload) {
   // TTFT / TPOT live at the outer usage_metadata level (perf_metrics), not inside usage_metadata
   if (typeof payload.ttft_ms === 'number' && payload.ttft_ms > 0) { pt.ttftMsSum += payload.ttft_ms; pt.ttftCount++; }
   if (typeof payload.tpot_ms === 'number' && payload.tpot_ms > 0) { pt.tpotMsSum += payload.tpot_ms; pt.tpotCount++; }
+  // Per-call server-measured phases. These are authoritative for the trajectory
+  // labels: thinking = prefill (ttft), generating = decode (tpot x output tokens).
+  var ttftMs = (typeof payload.ttft_ms === 'number' && payload.ttft_ms > 0) ? payload.ttft_ms : null;
+  var tpotMs = (typeof payload.tpot_ms === 'number' && payload.tpot_ms > 0) ? payload.tpot_ms : null;
+  var genMs = (tpotMs != null && outTok > 0) ? Math.round(tpotMs * outTok) : null;
 
   if (inTok || outTok) {
     const total = pt.inputTokens + pt.outputTokens;
@@ -3278,6 +3289,9 @@ function updateUsage(rid, payload) {
     pt.activeUsageRow.label = meta.model_name || pt.activeUsageRow.label || state.modelName || 'LLM';
     if (evtPrompt) pt.activeUsageRow.prompt = evtPrompt;
     pt.activeUsageRow.detail = detailStr;
+    pt.activeUsageRow.ttftMs = ttftMs;
+    pt.activeUsageRow.genMs = genMs;
+    var usageEvt = pt.activeUsageRow;
     pt.activeUsageRow = null;
   } else {
     var lastE = pt.events[pt.events.length - 1];
@@ -3287,15 +3301,31 @@ function updateUsage(rid, payload) {
       lastE.label = meta.model_name || lastE.label || state.modelName || 'LLM';
       if (evtPrompt) lastE.prompt = evtPrompt;
       lastE.detail = detailStr;
+      lastE.ttftMs = ttftMs;
+      lastE.genMs = genMs;
+      var usageEvt = lastE;
     } else {
       // No llm_call_start was seen (e.g. older server) — fall back to appending.
-      pt.events.push({
+      var usageEvt = {
         type: 'usage',
         t: Date.now(),
         label: meta.model_name || state.modelName || 'LLM',
         prompt: evtPrompt,
         detail: detailStr,
-      });
+        ttftMs: ttftMs,
+        genMs: genMs,
+      };
+      pt.events.push(usageEvt);
+    }
+  }
+  // Propagate the server decode estimate to the reasoning row(s) that follow this
+  // call, so the "reasoning -> tool_call/final" gap uses server-measured time.
+  if (genMs != null && usageEvt && typeof pt.events === 'object' && pt.events.length) {
+    var uIdx = pt.events.indexOf(usageEvt);
+    if (uIdx < 0) uIdx = pt.events.length - 1;
+    for (var j = uIdx + 1; j < pt.events.length; j++) {
+      if (pt.events[j].type === 'usage') break;
+      if (pt.events[j].type === 'reasoning') pt.events[j].genMs = genMs;
     }
   }
   pt.callInFlight = false;
@@ -4094,7 +4124,11 @@ function trajGapLines(prevE, e, startT) {
   if (prevE.type === 'usage') {
     if (e.type !== 'reasoning') {
       var thinkMs, genMs;
-      if (typeof prevE.firstTokenAt === 'number'
+      if (typeof prevE.ttftMs === 'number' && prevE.ttftMs > 0) {
+        // Server-measured phases (authoritative): thinking = prefill, generating = decode.
+        thinkMs = prevE.ttftMs;
+        genMs = (typeof prevE.genMs === 'number' && prevE.genMs > 0) ? prevE.genMs : 0;
+      } else if (typeof prevE.firstTokenAt === 'number'
         && prevE.firstTokenAt >= startT && prevE.firstTokenAt <= e.t) {
         thinkMs = prevE.firstTokenAt - startT;
         genMs = e.t - prevE.firstTokenAt;
@@ -4105,20 +4139,39 @@ function trajGapLines(prevE, e, startT) {
       lines.push(fmtPhaseMs(thinkMs) + ' thinking');
       lines.push(fmtPhaseMs(genMs) + ' generating');
     } else {
-      lines.push(fmtPhaseMs(gap) + ' thinking');
+      // Gap to the first reasoning chunk is the prefill/thinking time. Prefer the
+      // server's ttft when available (reasoning may stream over many milliseconds,
+      // so a client Date.now() delta would overstate "thinking").
+      var thinkMs2 = (typeof prevE.ttftMs === 'number' && prevE.ttftMs > 0)
+        ? prevE.ttftMs
+        : gap;
+      lines.push(fmtPhaseMs(thinkMs2) + ' thinking');
     }
   } else if (prevE.type === 'reasoning' || prevE.type === 'generating') {
-    lines.push(fmtPhaseMs(gap) + ' generating');
-  } else if (gap > 2000) {
+    // Generating = time from the last reasoning chunk (or last token) to this row.
+    // Use the server decode estimate when present; otherwise fall back to the
+    // client delta measured from the reasoning event's last chunk (``lastAt``).
+    var fromT = (prevE.type === 'reasoning' && typeof prevE.lastAt === 'number') ? prevE.lastAt : startT;
+    var genMs2 = (typeof prevE.genMs === 'number' && prevE.genMs > 0)
+      ? prevE.genMs
+      : Math.max(0, e.t - fromT);
+    lines.push(fmtPhaseMs(genMs2) + ' generating');
+  } else {
+    // Every inter-row gap gets a label so no time is left unexplained. Before
+    // every model call the server assembles the LLM request (context collection,
+    // agent init, tool results, prompt building), so these gaps are collectively
+    // "llm prompt build" time — the model isn't running yet.
     var gapWord = 'idle';
     if (prevE.type === 'tool_call' || prevE.type === 'tool_update') {
-      gapWord = 'tool';
-    } else if (prevE.type === 'user') {
-      // Time before the first model call is server-side setup (context
-      // collection, agent init) — not the model "thinking".
-      gapWord = 'setup';
-    } else if (prevE.type === 'tool_result' || prevE.type === 'thinking') {
-      gapWord = 'thinking';
+      // Tool sub-step transitions (call → update → result) are normally
+      // sub-millisecond stream bookkeeping; only surface ones that are really
+      // slow so the timeline isn't cluttered with noise.
+      if (gap >= 2000) {
+        lines.push(fmtMs(gap) + ' tool');
+      }
+      return lines;
+    } else if (prevE.type === 'user' || prevE.type === 'tool_result') {
+      gapWord = 'llm prompt-build';
     }
     lines.push(fmtMs(gap) + ' ' + gapWord);
   }
