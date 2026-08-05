@@ -1,6 +1,6 @@
 # JiuwenSwarm IDE Plugins — Architecture
 
-Architecture reference for the JetBrains plugin and VS Code extension. Both plugins share the same WebSocket protocol and the same shared webview UI (`chat.html`). Only the host-side language, IDE APIs, and bridge mechanism differ.
+Architecture reference for the JetBrains plugin and VS Code extension. Both plugins share the same WebSocket protocol and the same shared webview UI (`chat.html`, `swarm_map.html`). Only the host-side language, IDE APIs, and bridge mechanism differ.
 
 ---
 
@@ -62,9 +62,9 @@ The plugin connects to `ws://host:port/ws` as a standard WebSocket client — th
 
 ---
 
-## 2. Protocol
+## 2. WebSocket Protocol
 
-### Sending a chat message
+### 2.1 Chat — sending a message
 
 ```json
 {
@@ -83,7 +83,7 @@ The plugin connects to `ws://host:port/ws` as a standard WebSocket client — th
 
 IDE context (active file, selection, diagnostics, git, project rules, @-mentioned files) is prepended to `content` as a plain-text block. The backend is unaware of this and requires no schema changes.
 
-### Streaming response events
+### 2.2 Chat — streaming response events
 
 | Event | Action |
 |-------|--------|
@@ -101,7 +101,7 @@ IDE context (active file, selection, diagnostics, git, project rules, @-mentione
 | `chat.interrupt_result` | Mark streaming stopped on user interrupt |
 | `chat.human_turn_pending` | Show clarifying question UI |
 
-### Session methods
+### 2.3 Session methods
 
 ```
 req: session.list    → list sessions
@@ -117,25 +117,221 @@ req: chat.interrupt  → interrupt an in-progress agent turn
 req: chat.answer     → respond to a human-turn clarifying question
 ```
 
-### Request/response matching
+### 2.4 Request / response matching
 
 Every `req` gets a UUID `id`. The plugin keeps a map of in-flight `id → CompletableFuture` (JetBrains, 5 s timeout) or `id → Promise` (VS Code, 15 s timeout). Responses carry the matching `id` (legacy format) or `request_id` (E2A format). Unmatched responses are logged and discarded.
 
-### E2A streaming format
+### 2.5 E2A envelope format
 
 The gateway supports an envelope format for streaming responses:
 
 ```
-e2a.chunk   → { body: { event_type, delta } }
+e2a.chunk    → { body: { event_type, delta } }
 e2a.complete → { body: { result: { event_type, ... } } }
-e2a.error   → { body: { message, details } }
+e2a.error    → { body: { message, details } }
 ```
 
 Both plugins convert E2A messages to the legacy `{ event_type, request_id, payload }` shape before dispatching to the webview.
 
+Team events also arrive via E2A: a `chat.delta` whose text starts with `team.event:` — the remainder is JSON. The host (`ChatPanel.extractTeamEventDelta` / `ChatToolWindow.extractTeamEventDelta`) detects this prefix and routes the payload to `SwarmStateManager` instead of the chat renderer.
+
 ---
 
-## 3. Context Injection
+## 3. Team / Swarm Protocol
+
+### 3.1 Event wire formats
+
+Team events arrive in two shapes:
+
+- **E2A (current):** `chat.delta` whose text starts with `team.event:` — the remainder is the JSON event.
+- **Legacy:** `{ type:"event", event:"team.member", payload:{ event, … } }` — the real event is nested at `payload.event` (e.g. `payload.event.type === "team.member.spawned"`).
+
+The host unwraps and normalises field names before forwarding to `SwarmStateManager`:
+
+| Wire field | Normalised to |
+|-----------|---------------|
+| `member_id` | `member_name` |
+| `name` | `display_name` |
+| `mode` | `role` |
+| `team_id` | `team_name` |
+| `new_status` | `status` |
+
+### 3.2 Team events handled by SwarmStateManager
+
+| Event | Effect |
+|-------|--------|
+| `team.member.spawned` | Create or update a lane; initial status from `status` field, initial task title from `prompt` |
+| `team.member.status_changed` | Update lane status; `paused → PAUSED`, `completed → SHUTDOWN` |
+| `team.member.activity_changed` | Set lane `status=BUSY`, update `currentActivity` text and append to activity feed (consecutive duplicates within 1 s are collapsed) |
+| `team.member.execution_changed` | Update `executionStatus` only (`IDLE / RUNNING / COMPLETING`) |
+| `team.member.shutdown` | Set lane `status=SHUTDOWN`, clear `currentActivity`, set `executionStatus=IDLE` |
+| `team.task.created` | Add task with `status='pending'`; card appears in Board **Backlog** column |
+| `team.task.claimed` | Set `task.assignee`; status stays `'pending'` (agent has claimed but not yet started) |
+| `team.task.started` | Set `status='in_progress'`, link task to `lane.currentTaskId`; card moves to Board **In Progress** column |
+| `team.task.completed` | Set `status='completed'`, increment `lane.tasksDone`; card moves to Board **Done** column |
+| `team.task.cancelled` | Set `status='cancelled'`, clear task from lane; card shown with strikethrough in Board **Done** column |
+| `team.task.status_snapshot` | Authoritative convergence: bulk-updates both task and lane state to match server truth |
+| `team.message.*` | Append to inter-agent message ring buffer (max 50), increment `lane.messageCount`, colour-coded by sender lane |
+
+The orchestrator (`team-leader`) is filtered out of all views — only workers are shown.
+
+### 3.3 Lane and task status values
+
+**Lane status** (`AgentLane.status`):
+
+| Value | Meaning |
+|-------|---------|
+| `READY` | Agent idle, waiting for a task; normalised from gateway `IDLE` |
+| `BUSY` | Agent actively executing (tool call, model call, or activity event) |
+| `PAUSED` | Agent paused; Board shows a **Blocked** badge on the task card |
+| `SHUTDOWN` | Agent finished or stopped; final state |
+
+**Lane execution status** (`AgentLane.executionStatus`, separate from the above):
+
+| Value | Meaning |
+|-------|---------|
+| `IDLE` | No model or tool execution in progress |
+| `RUNNING` | Model call or tool execution active |
+| `COMPLETING` | Execution wrapping up |
+
+**Task status** (`TeamTask.status`, drives Board columns):
+
+| Value | Board column |
+|-------|-------------|
+| `pending` | Backlog (after `created`; stays pending through `claimed`) |
+| `in_progress` | In Progress (after `started`) |
+| `completed` | Done (normal finish) |
+| `cancelled` | Done (strikethrough on card) |
+
+---
+
+## 4. Shared Webview
+
+Both plugins load the same self-contained webviews — vanilla HTML + JavaScript, no build step. They live at `packages/shared-webview/` and are copied to each plugin's resource directory at build time. Both share one theme mechanism: `:root[data-theme="light"]` driven by the VS Code `.vscode-dark`/`.vscode-light` body classes, or `prefers-color-scheme` in JetBrains JCEF.
+
+### 4.1 Bridge detection (both webviews)
+
+```javascript
+function send(msg) {
+  if (typeof acquireVsCodeApi !== 'undefined') {
+    vscodeApi.postMessage(msg);            // VS Code
+  } else if (window.__jb_send) {
+    window.__jb_send(JSON.stringify(msg)); // JetBrains
+  }
+}
+
+window.__jb_dispatch = function(jsonStr) {
+  handleHostMessage(JSON.parse(jsonStr));
+};
+window.addEventListener('message', function(e) { // VS Code
+  handleHostMessage(e.data);
+});
+```
+
+### 4.2 chat.html
+
+The main chat interface. Handles streaming markdown rendering, tool call cards, session/skill overlays, the stats bar, checkpoint rewind bar, and all user input (mode selector, model picker, `@` / `#` / `!` pickers, image attachments).
+
+**Host → Webview messages**
+
+| Type | Key fields | Effect |
+|------|-----------|--------|
+| `connected` | `sessionId`, `sessionTitle`, `models`, `activeModel`, `defaultMode` | Update header, enable input, apply default mode if user hasn't customised it |
+| `disconnected` | — | Show disconnected state, disable input |
+| `reconnecting` | — | Show reconnecting indicator |
+| `jiuwen_event` | `event` (object) | Route to streaming / tool card handlers |
+| `prefill` | `content` | Pre-fill the chat textarea |
+| `sessions` | `sessions[]` | Render session list overlay |
+| `sessions_error` | `message` | Show error in sessions overlay |
+| `session_deleted` | `sessionId` | Remove session from the overlay list |
+| `skills` | `skills[]` | Populate skills overlay and `#` picker cache |
+| `skills_error` | `message` | Show error in skills overlay |
+| `skill_toggled` | `skillId`, `enabled` | Update skill toggle button state |
+| `files` | `files[]` | Populate `@` file mention picker |
+| `git_status` | `branch`, `changedCount` | Update git branch chip and changed files count |
+| `git_committed` | `hash` | Show commit confirmation in git bar |
+| `git_pushed` | — | Show push confirmation in git bar |
+| `git_error` | `message` | Show git error message |
+| `rewindable` | `enabled` | Show or hide the checkpoint rewind bar |
+| `rewind_done` | `message`, `restored`, `failed` | Display rewind result |
+| `history_loading` | `loading` | Show or hide the "Loading history…" indicator |
+| `memory` | `rssMb`, `totalMb`, `availableMb` | Update server memory chip |
+| `metrics` | `metrics` | Update host metrics display |
+| `debug_log` | `line` | Append line to debug panel |
+| `export_done` | `path` | Confirmation after a successful session export; `path` is the written Markdown file |
+| `error` | `message`, `requestId` | Show error inline in the active turn |
+
+**Webview → Host messages**
+
+| Type | Sent when |
+|------|-----------|
+| `ready` | Page load complete — host sends current status in response |
+| `send` | User submits a message (`content`, `mode`, `requestId`, `media_items`, `mentionedPaths`) |
+| `answer` | User answers a `chat.human_turn_pending` prompt |
+| `stop` | User clicks the Stop button during streaming |
+| `new_session` | User clicks New or confirms mode switch |
+| `list_sessions` | Sessions overlay opens |
+| `switch_session` | User clicks a session row |
+| `delete_session` | User confirms session deletion |
+| `list_skills` | Skills overlay opens |
+| `toggle_skill` | User clicks ON/OFF on a skill |
+| `files_request` | User types `@` for the first time (triggers workspace file scan) |
+| `open_file` | User clicks a file link in the chat |
+| `navigate_symbol` | User clicks a symbol link |
+| `rewind` | User clicks the Undo Changes button |
+| `git_status_request` | Git status chip is refreshed |
+| `git_commit_request` | User clicks the Commit button |
+| `git_push_request` | User clicks the Push button |
+| `input_changed` | Textarea content changes (used by host for typing indicators) |
+| `toggle_debug` | User toggles the debug log |
+| `export_session` | User clicks "↓ Export session" in the ☰ menu (`historyPath`, `sessionTitle`) — host reads the JSONL, converts to Markdown, writes file, opens it in the editor |
+
+**State object (key fields)**
+
+```javascript
+let state = {
+  connected: false,
+  sessionId: null,
+  sessionTitle: 'JiuwenSwarm',
+  sessionHistoryPath: null,       // set when sessions list includes history_path; enables export
+  mode: 'code.plan',
+  modeCustomized: false,          // true once user manually picks a mode
+  models: [],
+  activeModel: null,
+  streaming: false,
+  turns: [],
+  pendingTurns: {},
+  skills: [],
+  mentionFiles: [],
+  pendingMentions: [],            // @-mentioned paths in the current input
+  mentionQuery: '',               // current @ token being typed
+  skillQuery: '',                 // current # token being typed
+  promptQuery: '',                // current ! token being typed
+  gitBranch: null,
+  gitChangedCount: 0,
+  rewindable: false,
+  contextUsagePercent: null,
+  sessionStats: { ... },
+};
+```
+
+### 4.3 swarm_map.html
+
+The Swarm Map panel. Receives a `SwarmSnapshot` produced by the host-side `SwarmStateManager` and renders it across three view modes.
+
+**View modes**
+
+- **Map** — interactive canvas with agent nodes, animated pipeline flow arrows, pan/zoom, click any node to inspect.
+- **List** — per-agent lane cards: status chip, live elapsed timer, activity feed (what tool the agent just called), task pill strip, inter-agent message log, and a completion summary with per-agent durations when all agents finish.
+- **Board** — three-column kanban (Backlog / In Progress / Done). One card per task showing title, assigned agent name with colour dot, status badges (Blocked when assigned lane is PAUSED; strikethrough when cancelled). Updates live on every snapshot.
+
+The ☰ menu provides an opt-in **Debug console** fed by `{ type: 'swarm_debug', line }` messages, and a **"↓ Export session"** item (visible only when `sessionHistoryPath` is set) that sends an `export_session` message to the host.
+
+**Tool attribution** — friendly activity text comes from `chat.tool_call` / `chat.tool_update` events carrying `member_name`. Parsed tool arguments (`path`/`file_path`, glob `pattern`, shell `command`, `task_id`, `to`) produce text like "writing · plan.md" or "running · npm run build". Consecutive duplicates within 1 s are collapsed.
+
+---
+
+## 5. Context Injection
 
 On every chat send, the plugin prepends a structured block to the message content. Assembly order:
 
@@ -208,7 +404,7 @@ class Request:
 
 ---
 
-## 4. File Edit Handling
+## 6. File Edit Handling
 
 When the agent invokes a file-editing tool (`str_replace_editor`, `write_file`, `create_file`), the plugin intercepts the `chat.tool_call` event and handles it natively.
 
@@ -231,11 +427,22 @@ When the agent invokes a file-editing tool (`str_replace_editor`, `write_file`, 
 ### VS Code
 
 - **Default**: edit applied via Node.js `fs.writeFileSync`.
-- **Approve**: `vscode.window.showInformationMessage()` with Approve/Reject buttons.
+- **Diff viewer** (opt-in via `useDiffViewer` setting): `vscode.diff` command opens a side-by-side view with Accept/Reject buttons.
+- **Approve**: `vscode.window.showInformationMessage()` with Approve/Reject buttons when `approveEdits` is enabled.
 
 ---
 
-## 5. VS Code Extension
+## 7. Connection Management
+
+- Reconnect with exponential backoff: 1 s → 2 s → 4 s → 8 s → … → 30 s cap
+- On reconnect: restore last active session via `session.switch`
+- Keep-alive: configurable ping interval (default 30 s, range 5–300 s) to prevent server-side timeout
+- Status states: `DISCONNECTED` → `CONNECTING` → `CONNECTED` / `RECONNECTING`
+- VS Code runs an independent 15-second reconnect retry loop separate from the WS backoff
+
+---
+
+## 8. VS Code Extension
 
 ### Tech stack
 
@@ -244,7 +451,7 @@ When the agent invokes a file-editing tool (`str_replace_editor`, `write_file`, 
 | Language | TypeScript |
 | Bundler | esbuild |
 | WebSocket | `ws` npm package |
-| UI | Webview (`vscode.WebviewPanel`) + shared `chat.html` |
+| UI | Webview (`vscode.WebviewPanel`) + shared `chat.html` / `swarm_map.html` |
 | JSON | Built-in |
 
 ### Source layout
@@ -291,13 +498,13 @@ packages/vscode-extension/src/
 ### Webview bridge
 
 ```
-Extension host ──postMessage──► Webview (chat.html)
-Extension host ◄──postMessage── Webview (chat.html)
+Extension host ──postMessage──► Webview (chat.html / swarm_map.html)
+Extension host ◄──postMessage── Webview (chat.html / swarm_map.html)
 ```
 
 ---
 
-## 6. JetBrains Plugin
+## 9. JetBrains Plugin
 
 ### Tech stack
 
@@ -306,7 +513,7 @@ Extension host ◄──postMessage── Webview (chat.html)
 | Language | Kotlin |
 | Build | Gradle 8.7 + `org.jetbrains.intellij.platform` |
 | WebSocket | OkHttp |
-| UI | JCEF (`JBCefBrowser`) — embedded Chromium running `chat.html` |
+| UI | JCEF (`JBCefBrowser`) — embedded Chromium running `chat.html` / `swarm_map.html` |
 | JSON | Gson |
 
 ### Source layout
@@ -368,188 +575,7 @@ browser.cefBrowser.executeJavaScript(
 window.__jb_send = function(jsonStr) { /* routes to handleWebviewMessage() */ }
 ```
 
----
-
-## 7. Shared Webview (chat.html + swarm_map.html)
-
-Both plugins load the same self-contained webviews — vanilla HTML + JavaScript, no build step. They live at `packages/shared-webview/chat.html` and `packages/shared-webview/swarm_map.html`, and are copied to each plugin's resource directory at build time. Both share one theme mechanism: `:root[data-theme="light"]` driven by the VS Code `.vscode-dark`/`.vscode-light` body classes, or `prefers-color-scheme` in JetBrains JCEF.
-
-### Swarm Map data flow
-
-The Swarm Map (`swarm_map.html`) renders a `SwarmSnapshot` produced by the host-side `SwarmStateManager`. Incoming team events arrive in two wire shapes:
-
-- **E2A:** `chat.delta` whose text starts with `team.event:` — the remainder is JSON.
-- **Old format:** `{ type:"event", event:"team.member", payload:{ event, … } }` — the real event is **nested** at `payload.event` (e.g. `payload.event.type === "team.member.spawned"`).
-
-The host (`ChatPanel.extractTeamEventDelta` / `ChatToolWindow.extractTeamEventDelta`) unwraps the nested envelope and normalises field names (`member_id → member_name`, `name → display_name`, `mode → role`, `team_id → team_name`, `new_status → status`). `SwarmStateManager` then applies:
-
-| Event | Effect |
-|-------|--------|
-| `team.member.spawned` | Create or update a lane; initial status from `status` field, initial task title from `prompt` |
-| `team.member.status_changed` | Update lane status; `paused → PAUSED`, `completed → SHUTDOWN` |
-| `team.member.activity_changed` | Set lane `status=BUSY`, update `currentActivity` text and append to activity feed (consecutive duplicates within 1 s are collapsed) |
-| `team.member.execution_changed` | Update `executionStatus` only (`IDLE / RUNNING / COMPLETING`) |
-| `team.member.shutdown` | Set lane `status=SHUTDOWN`, clear `currentActivity`, set `executionStatus=IDLE` |
-| `team.task.created` | Add task with `status='pending'`; card appears in Board **Backlog** column |
-| `team.task.claimed` | Set `task.assignee`; status stays `'pending'` (agent has claimed but not yet started) |
-| `team.task.started` | Set `status='in_progress'`, link task to `lane.currentTaskId`; card moves to Board **In Progress** column |
-| `team.task.completed` | Set `status='completed'`, increment `lane.tasksDone`; card moves to Board **Done** column |
-| `team.task.cancelled` | Set `status='cancelled'`, clear task from lane; card shown with strikethrough in Board **Done** column |
-| `team.task.status_snapshot` | Authoritative convergence: bulk-updates both task and lane state to match server truth |
-| `team.message.*` | Append to inter-agent message ring buffer (max 50), increment `lane.messageCount`, colour-coded by sender lane |
-
-### Lane and task status values
-
-**Lane status** (stored in `AgentLane.status`):
-
-| Value | Meaning |
-|-------|---------|
-| `READY` | Agent idle, waiting for a task; normalised from gateway `IDLE` |
-| `BUSY` | Agent actively executing (tool call, model call, or activity event) |
-| `PAUSED` | Agent paused; Board shows a **Blocked** badge on the task card |
-| `SHUTDOWN` | Agent finished or stopped; final state |
-
-**Lane execution status** (stored in `AgentLane.executionStatus`, separate from the above):
-
-| Value | Meaning |
-|-------|---------|
-| `IDLE` | No model or tool execution in progress |
-| `RUNNING` | Model call or tool execution active |
-| `COMPLETING` | Execution wrapping up |
-
-**Task status** (stored in `TeamTask.status`, drives Board columns):
-
-| Value | Board column |
-|-------|-------------|
-| `pending` | Backlog (after `created`; stays pending through `claimed`) |
-| `in_progress` | In Progress (after `started`) |
-| `completed` | Done (normal finish) |
-| `cancelled` | Done (strikethrough on card) |
-
-Tool attribution comes from `chat.tool_call` / `chat.tool_update` events carrying `member_name`; the parsed tool arguments (file `path`/`file_path`, glob `pattern`, shell `command`, `task_id`, `to`) produce friendly activity text ("writing · plan.md", "running · npm run build"). Each lane keeps a capped activity feed (consecutive duplicates within 1 s are collapsed) plus a live elapsed timer.
-
-The webview has three view modes toggled by the header button strip:
-- **Map** — interactive canvas with agent nodes, animated pipeline flow, pan/zoom, click-to-inspect.
-- **List** — per-agent lane cards with status chip, live elapsed timer, activity feed, task pill strip, inter-agent message log, and a completion summary with per-agent durations.
-- **Board** — three-column kanban (Backlog / In Progress / Done). One card per task showing title, assigned agent name with colour dot, and status badges (Blocked when the assigned lane is PAUSED; strikethrough when cancelled). Updates live on every snapshot.
-
-The ☰ menu provides an opt-in **Debug console** fed by `{ type: 'swarm_debug', line }` messages, and a **"↓ Export session"** item (shown only when `sessionHistoryPath` is set) that triggers a `export_session` message to the host. The orchestrator (`team-leader`) is filtered out — only workers are shown.
-
-### Bridge detection
-
-```javascript
-function send(msg) {
-  if (typeof acquireVsCodeApi !== 'undefined') {
-    vscodeApi.postMessage(msg);          // VS Code
-  } else if (window.__jb_send) {
-    window.__jb_send(JSON.stringify(msg)); // JetBrains
-  }
-}
-
-window.__jb_dispatch = function(jsonStr) {
-  handleHostMessage(JSON.parse(jsonStr));
-};
-window.addEventListener('message', function(e) { // VS Code
-  handleHostMessage(e.data);
-});
-```
-
-### Host → Webview messages
-
-| Type | Key fields | Effect |
-|------|-----------|--------|
-| `connected` | `sessionId`, `sessionTitle`, `models`, `activeModel`, `defaultMode` | Update header, enable input, apply default mode if user hasn't customized it |
-| `disconnected` | — | Show disconnected state, disable input |
-| `reconnecting` | — | Show reconnecting indicator |
-| `jiuwen_event` | `event` (object) | Route to streaming / tool card handlers |
-| `prefill` | `content` | Pre-fill the chat textarea |
-| `sessions` | `sessions[]` | Render session list overlay |
-| `sessions_error` | `message` | Show error in sessions overlay |
-| `session_deleted` | `sessionId` | Remove session from the overlay list |
-| `skills` | `skills[]` | Populate skills overlay and `#` picker cache |
-| `skills_error` | `message` | Show error in skills overlay |
-| `skill_toggled` | `skillId`, `enabled` | Update skill toggle button state |
-| `files` | `files[]` | Populate `@` file mention picker |
-| `git_status` | `branch`, `changedCount` | Update git branch chip and changed files count |
-| `git_committed` | `hash` | Show commit confirmation in git bar |
-| `git_pushed` | — | Show push confirmation in git bar |
-| `git_error` | `message` | Show git error message |
-| `rewindable` | `enabled` | Show or hide the checkpoint rewind bar |
-| `rewind_done` | `message`, `restored`, `failed` | Display rewind result |
-| `history_loading` | `loading` | Show or hide the "Loading history…" indicator |
-| `memory` | `rssMb`, `totalMb`, `availableMb` | Update server memory chip |
-| `metrics` | `metrics` | Update host metrics display |
-| `debug_log` | `line` | Append line to debug panel |
-| `export_done` | `path` | Show confirmation after a successful session export; `path` is the written Markdown file |
-| `error` | `message`, `requestId` | Show error inline in the active turn |
-
-### Webview → Host messages
-
-| Type | Sent when |
-|------|-----------|
-| `ready` | Page load complete — host sends current status in response |
-| `send` | User submits a message (`content`, `mode`, `requestId`, `media_items`, `mentionedPaths`) |
-| `answer` | User answers a `chat.human_turn_pending` prompt |
-| `stop` | User clicks the Stop button during streaming |
-| `new_session` | User clicks New or confirms mode switch |
-| `list_sessions` | Sessions overlay opens |
-| `switch_session` | User clicks a session row |
-| `delete_session` | User confirms session deletion |
-| `list_skills` | Skills overlay opens |
-| `toggle_skill` | User clicks ON/OFF on a skill |
-| `files_request` | User types `@` for the first time (triggers workspace file scan) |
-| `open_file` | User clicks a file link in the chat |
-| `navigate_symbol` | User clicks a symbol link |
-| `rewind` | User clicks the Undo Changes button |
-| `git_status_request` | Git status chip is refreshed |
-| `git_commit_request` | User clicks the Commit button |
-| `git_push_request` | User clicks the Push button |
-| `input_changed` | Textarea content changes (used by host for typing indicators) |
-| `toggle_debug` | User toggles the debug log |
-| `export_session` | User clicks "↓ Export session" in the ☰ menu (`historyPath`, `sessionTitle`) — host reads the JSONL, converts to Markdown, writes file, opens it in the editor |
-
-### State object (key fields)
-
-```javascript
-let state = {
-  connected: false,
-  sessionId: null,
-  sessionTitle: 'JiuwenSwarm',
-  sessionHistoryPath: null,       // set when sessions list includes history_path; enables export
-  mode: 'code.plan',
-  modeCustomized: false,      // true once user manually picks a mode
-  models: [],
-  activeModel: null,
-  streaming: false,
-  turns: [],
-  pendingTurns: {},
-  skills: [],
-  mentionFiles: [],
-  pendingMentions: [],        // @-mentioned paths in the current input
-  mentionQuery: '',           // current @ token being typed
-  skillQuery: '',             // current # token being typed
-  promptQuery: '',            // current ! token being typed
-  gitBranch: null,
-  gitChangedCount: 0,
-  rewindable: false,
-  contextUsagePercent: null,
-  sessionStats: { ... },
-};
-```
-
----
-
-## 8. Connection Management
-
-- Reconnect with exponential backoff: 1 s → 2 s → 4 s → 8 s → … → 30 s cap
-- On reconnect: restore last active session via `session.switch`
-- Keep-alive: configurable ping interval (default 30 s, range 5–300 s) to prevent server-side timeout
-- Status states: `DISCONNECTED` → `CONNECTING` → `CONNECTED` / `RECONNECTING`
-- The 15-second reconnect retry in VS Code runs at constant interval independent of the WS backoff
-
----
-
-## 9. Memory Polling (JetBrains)
+### Memory polling
 
 After connecting, `ChatPanel` starts a `Timer` that fires every 10 seconds. It calls `session.getMemoryUsage()` (a synchronous `memory.compute` request to the server) and dispatches the result to the webview as a `memory` message, which updates the server RAM chip in the stats bar. The timer is cancelled on panel dispose.
 
