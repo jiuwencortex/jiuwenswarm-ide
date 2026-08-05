@@ -67,6 +67,39 @@ tasks {
     }
 }
 
+// ── Shared webview assets ──────────────────────────────────────────
+// shared-webview/ is the single source of truth for the webview html
+// and the panel icon. Copy them into the plugin resource tree before
+// processResources so the packaged plugin always ships copies in sync
+// with the source — no committed duplicates, no drift. The icon is
+// renamed to match the JetBrains reference in plugin.xml.
+val copySharedWebview by tasks.registering(Copy::class) {
+    val src = layout.projectDirectory.dir("../shared-webview")
+    onlyIf { src.asFile.exists() }
+    from(src) {
+        include("chat.html", "swarm_map.html")
+    }
+    into(layout.projectDirectory.dir("src/main/resources/webview"))
+}
+
+val copySharedIcon by tasks.registering(Copy::class) {
+    val src = layout.projectDirectory.dir("../shared-webview")
+    onlyIf { src.asFile.exists() }
+    from(src) {
+        include("icon.svg")
+    }
+    rename { "jiuwenswarm.svg" }
+    into(layout.projectDirectory.dir("src/main/resources/icons"))
+}
+
+tasks.named("processResources") {
+    dependsOn(copySharedWebview, copySharedIcon)
+}
+
+tasks.named("processResources") {
+    dependsOn(copySharedWebview)
+}
+
 tasks.named("instrumentCode") {
     enabled = false
 }

@@ -12,10 +12,18 @@ yarn-error.log*
 # ── VS Code extension ────────────────────────────────────────
 packages/vscode-extension/out/
 packages/vscode-extension/*.vsix
+# Shared webview assets are copied from packages/shared-webview at build time
+packages/vscode-extension/resources/chat.html
+packages/vscode-extension/resources/swarm_map.html
+packages/vscode-extension/resources/icon.svg
 
 # ── JetBrains plugin — Gradle build output ───────────────────
 packages/jetbrains-plugin/build/
 packages/jetbrains-plugin/.gradle/
+# Shared webview assets are copied from packages/shared-webview at build time
+packages/jetbrains-plugin/src/main/resources/webview/chat.html
+packages/jetbrains-plugin/src/main/resources/webview/swarm_map.html
+packages/jetbrains-plugin/src/main/resources/icons/jiuwenswarm.svg
 
 # IntelliJ Platform Gradle Plugin local cache
 # (downloaded IDE artefact descriptors — regenerated on build)
