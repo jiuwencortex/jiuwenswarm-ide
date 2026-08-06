@@ -169,6 +169,8 @@
   }
   .dropdown-item:hover { background: var(--bg); color: var(--text); }
   .dropdown-item.active { color: var(--text); font-weight: 600; }
+  .dropdown-item.disabled { opacity: 0.45; cursor: default; pointer-events: none; }
+  .dropdown-item > .emoji-fix, .dropdown-item > span:first-child { width: 1.3em; text-align: center; flex-shrink: 0; }
   .dropdown-divider {
     height: 1px;
     background: var(--border);
@@ -1268,12 +1270,19 @@
     border-top: 1px solid var(--border);
   }
   .traj-header.open + .traj-body { display: block; }
-  .traj-gap { display: flex; align-items: center; gap: 8px; color: var(--text-dim); font-size: 10px; margin: 3px 0; }
+  .traj-gap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-dim);
+    font-size: 10px;
+    margin: 3px 0;
+  }
+  .traj-gap::before, .traj-gap::after { content: ''; flex: 1; height: 1px; background: var(--border); }
   .traj-gap.thinking { color: var(--accent); }
   .traj-gap.generating { color: #ec4899; }
   .traj-gap.tool { color: #f59e0b; }
   .traj-gap.prompt-build { color: #8b5cf6; }
-  .traj-gap::before, .traj-gap::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 
   /* ── Custom hover tooltip (native title= is unreliable in JCEF) ── */
   .custom-tooltip {
@@ -1496,12 +1505,13 @@
   <div class="header-dropdown">
     <button id="btn-menu" class="header-btn" onclick="toggleMenu()" title="Menu">☰</button>
     <div id="menu-dropdown" class="dropdown-menu">
-      <div class="dropdown-item" onclick="renameSessionFromMenu()">✎ Rename session</div>
-      <div class="dropdown-item" id="menu-copy-path" onclick="copySessionPath()" title="Copy history.jsonl path" style="display:none;">⧉ Copy session path</div>
-      <div class="dropdown-item" id="menu-export" onclick="exportSession()" title="Export conversation as Markdown" style="display:none;">↓ Export session</div>
+      <div class="dropdown-section-label">Session</div>
+      <div class="dropdown-item" onclick="renameSessionFromMenu()"><span class="emoji-fix">✎</span> <span>Rename</span></div>
+      <div class="dropdown-item" id="menu-export" onclick="exportSession()" title="Export conversation as Markdown"><span class="emoji-fix">↓</span> <span id="menu-export-text">Export</span></div>
+      <div class="dropdown-item" id="menu-copy-path" onclick="copySessionPath()" title="Copy history.jsonl log path"><span class="emoji-fix">⧉</span> <span id="menu-copy-text">Copy Logs Path</span></div>
       <div class="dropdown-divider"></div>
-      <div class="dropdown-item" onclick="showSessionsFromMenu()">📁 Sessions</div>
-      <div class="dropdown-item" onclick="showSkillsFromMenu()">🔧 Skills</div>
+      <div class="dropdown-item" onclick="showSessionsFromMenu()"><span class="emoji-fix">📁</span> <span>Sessions</span></div>
+      <div class="dropdown-item" onclick="showSkillsFromMenu()"><span class="emoji-fix">🔧</span> <span>Skills</span></div>
       <div class="dropdown-divider"></div>
       <div class="dropdown-section-label">Theme</div>
       <div class="dropdown-item" id="theme-item-auto" onclick="setThemeMode('auto')"><span class="emoji-fix">◐</span> Auto</div>
@@ -2055,15 +2065,16 @@ function updateSessions(sessions) {
   renderSessionList();
 }
 
-/** Show/hide the ☰ menu "Copy session path" item based on whether the current
- *  session's history.jsonl path is known. */
+/** Enable/disable the ☰ menu "Copy Logs Path" / "Export" items based on whether
+ *  the current session's history.jsonl path is known. They stay visible (but
+ *  greyed out) so the menu layout is stable. */
 function setSessionHistoryPath(path) {
   state.sessionHistoryPath = path || '';
-  const show = state.sessionHistoryPath ? '' : 'none';
+  const disabled = state.sessionHistoryPath ? '' : 'disabled';
   const copyItem = document.getElementById('menu-copy-path');
-  if (copyItem) copyItem.style.display = show;
+  if (copyItem) copyItem.classList.toggle('disabled', !!disabled);
   const exportItem = document.getElementById('menu-export');
-  if (exportItem) exportItem.style.display = show;
+  if (exportItem) exportItem.classList.toggle('disabled', !!disabled);
 }
 
 function updateSessionPathMenu() {
@@ -2083,7 +2094,7 @@ function copySessionPath() {
     document.execCommand('copy');
     document.body.removeChild(ta);
   });
-  const item = document.getElementById('menu-copy-path');
+  const item = document.getElementById('menu-copy-text');
   if (item) {
     const original = item.textContent;
     item.textContent = '\u2713 Copied';
@@ -2094,7 +2105,7 @@ function copySessionPath() {
 function exportSession() {
   if (!state.sessionHistoryPath) return;
   document.getElementById('menu-dropdown').classList.remove('visible');
-  const exportItem = document.getElementById('menu-export');
+  const exportItem = document.getElementById('menu-export-text');
   if (exportItem) {
     const original = exportItem.textContent;
     exportItem.textContent = '… Exporting';
