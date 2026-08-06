@@ -274,10 +274,20 @@ class SwarmStateManager {
 
     private fun onTaskClaimed(e: JsonObject) {
         val id = e.get("task_id")?.asString ?: return
-        val task = tasks.getOrPut(id) { TeamTask(id, id, "pending") }
+        val task = tasks.getOrPut(id) { TeamTask(id, e.get("title")?.asString ?: id, "pending") }
         // Gateway names the claimer member_id; normalizeEvent maps it to member_name.
         task.assignee = e.get("assignee")?.asString ?: e.get("member_name")?.asString
-        // stays "pending" until started
+        // Server carries the authoritative status (e.g. "in_progress") — prefer it;
+        // fall back to started semantics for older gateways that only mark claimed.
+        task.status = e.get("status")?.asString ?: "in_progress"
+        // Link task into the lane so the board reflects the current work.
+        task.assignee?.let { memberName ->
+            lanes[memberName]?.let { lane ->
+                lane.currentTaskId = id
+                lane.currentTaskTitle = task.title
+                lane.lastActiveAt = lastEventAt
+            }
+        }
     }
 
     /** Convergence event: apply a task's authoritative status/assignee snapshot. */

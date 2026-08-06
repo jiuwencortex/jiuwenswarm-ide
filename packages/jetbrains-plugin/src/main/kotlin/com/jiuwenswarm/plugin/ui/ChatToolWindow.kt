@@ -729,10 +729,30 @@ class ChatPanel(
         // E2A chunk path
         if (responseKind == "e2a.chunk") {
             val body = msg.getAsJsonObject("body") ?: return null
-            if (body.get("event_type")?.asString != "chat.delta") return null
-            val delta = body.get("delta")?.asString ?: return null
-            if (!delta.startsWith("team.event:")) return null
-            return delta.removePrefix("team.event:")
+            val eventType = body.get("event_type")?.asString ?: ""
+            val delta = body.get("delta")
+            // Legacy shape: chat.delta whose text is a "team.event:"-prefixed JSON string.
+            if (eventType == "chat.delta" && delta?.isJsonPrimitive == true) {
+                val text = delta.asString
+                if (text.startsWith("team.event:")) {
+                    return text.removePrefix("team.event:")
+                }
+                return null
+            }
+            // Object shape: event_type is a team.* category (e.g. "team.task",
+            // "team.member") and delta is the full payload { event: { type, ... } }.
+            // Normalize it into the { "event": { "type": ..., ... } } shape the
+            // SwarmStateManager dispatches on.
+            if ((eventType.startsWith("team.") || eventType == "workflow.updated") && delta?.isJsonObject == true) {
+                val pl = delta.asJsonObject
+                val inner = pl.getAsJsonObject("event")
+                if (inner != null && inner.get("type")?.isJsonPrimitive == true) {
+                    return gson.toJson(JsonObject().apply { add("event", inner.deepCopy()) })
+                }
+                // Flat fallback: delta itself carries the team payload fields.
+                return gson.toJson(pl)
+            }
+            return null
         }
         // Old-format path
         if (msg.get("type")?.asString == "event") {

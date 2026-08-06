@@ -494,10 +494,28 @@ export class ChatPanel implements vscode.Disposable {
     if (responseKind === 'e2a.chunk') {
       const body = msg.body;
       if (!body) return null;
-      if (body['event_type'] !== 'chat.delta') return null;
-      const delta = body['delta'] as string | undefined;
-      if (!delta?.startsWith('team.event:')) return null;
-      return delta.slice('team.event:'.length);
+      const eventType = body['event_type'] as string | undefined;
+      const delta = body['delta'] as unknown;
+
+      // Legacy shape: chat.delta whose text is a "team.event:"-prefixed JSON string.
+      if (eventType === 'chat.delta' && typeof delta === 'string') {
+        if (!delta.startsWith('team.event:')) return null;
+        return delta.slice('team.event:'.length);
+      }
+
+      // Object shape: event_type is a team.* category (e.g. "team.task",
+      // "team.member") and delta is the full payload { event: { type, ... } }.
+      // Normalize it into the { "event": { "type": ..., ... } } shape the
+      // SwarmStateManager dispatches on.
+      if ((eventType?.startsWith('team.') || eventType === 'workflow.updated') && typeof delta === 'object' && delta) {
+        const pl = delta as Record<string, unknown>;
+        const inner = pl['event'] as Record<string, unknown> | undefined;
+        if (inner && typeof inner['type'] === 'string') {
+          return JSON.stringify({ event: inner });
+        }
+        return JSON.stringify(pl);
+      }
+      return null;
     }
 
     // Old-format path

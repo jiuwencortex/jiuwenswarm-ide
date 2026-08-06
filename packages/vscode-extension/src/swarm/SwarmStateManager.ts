@@ -263,10 +263,23 @@ export class SwarmStateManager {
   private onTaskClaimed(e: Record<string, unknown>): void {
     const id = e['task_id'] as string | undefined;
     if (!id) return;
-    const task = this.tasks.get(id) ?? { taskId: id, title: id, status: 'pending', assignee: null, createdAt: this.lastEventAt };
+    const task = this.tasks.get(id)
+      ?? { taskId: id, title: (e['title'] as string) ?? id, status: 'pending', assignee: null, createdAt: this.lastEventAt };
     this.tasks.set(id, task);
     // Gateway names the claimer member_id; normalizeEvent maps it to member_name.
     task.assignee = (e['assignee'] as string | null) ?? (e['member_name'] as string | null) ?? null;
+    // Server carries the authoritative status (e.g. "in_progress") — prefer it;
+    // fall back to started semantics for older gateways that only mark claimed.
+    task.status = (e['status'] as string) ?? 'in_progress';
+    // Link task into the lane so the board reflects the current work.
+    if (task.assignee) {
+      const lane = this.lanes.get(task.assignee);
+      if (lane) {
+        lane.currentTaskId = id;
+        lane.currentTaskTitle = task.title;
+        lane.lastActiveAt = this.lastEventAt;
+      }
+    }
   }
 
   /** Convergence event: apply a task's authoritative status/assignee snapshot. */
