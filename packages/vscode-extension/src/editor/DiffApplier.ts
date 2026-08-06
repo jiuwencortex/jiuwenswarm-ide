@@ -13,7 +13,7 @@ import * as fs from 'fs';
  *   - create_file
  */
 
-const EDIT_TOOLS = new Set(['str_replace_editor', 'write_file', 'create_file']);
+const EDIT_TOOLS = new Set(['str_replace_editor', 'write_file', 'create_file', 'edit_file']);
 
 /** Snapshot of a file before it was edited. `null` means the file did not exist. */
 export type FileSnapshot = string | null;
@@ -99,6 +99,15 @@ export async function handleToolCall(event: Record<string, unknown>): Promise<bo
         return writeEntireFile(filePath, content, true, requireApproval);
       }
       return false;
+    }
+    case 'edit_file': {
+      // ACP-style edit: file_path + old_string/new_string
+      const filePath = (args.file_path as string) || (args.path as string);
+      if (!filePath) return false;
+      const oldStr = (args.old_string as string) || (args.old_str as string);
+      const newStr = (args.new_string as string) || (args.new_str as string) || '';
+      if (oldStr === undefined) return false;
+      return applyStrReplace(filePath, oldStr, newStr, requireApproval);
     }
     case 'write_file':
     case 'create_file': {

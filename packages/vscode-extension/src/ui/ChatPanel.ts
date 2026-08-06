@@ -356,14 +356,14 @@ export class ChatPanel implements vscode.Disposable {
       const toolName = payload.tool_name as string | undefined
         || ((payload.tool_call as Record<string, unknown>)?.name as string | undefined)
         || '';
-      const isFileEdit = toolName === 'str_replace_editor' || toolName === 'write_file' || toolName === 'create_file';
+      const isFileEdit = toolName === 'str_replace_editor' || toolName === 'write_file' || toolName === 'create_file' || toolName === 'edit_file';
 
       if (isFileEdit) {
         const args = (payload.tool_call as Record<string, unknown>)?.arguments as Record<string, unknown>
           || (payload.tool_input as Record<string, unknown>)
           || (payload.input as Record<string, unknown>)
           || {};
-        const filePath = args.path as string | undefined;
+        const filePath = (args.file_path as string) || (args.path as string) || undefined;
 
         if (filePath) {
           const cfg = vscode.workspace.getConfiguration('jiuwenswarm');
@@ -376,8 +376,11 @@ export class ChatPanel implements vscode.Disposable {
             // Show native diff before applying
             const proposed = computeProposedContent({
               path: filePath,
-              old_str: args.old_str as string | undefined,
-              new_str: args.new_str as string | undefined,
+              file_path: filePath,
+              old_str: (args.old_str as string) || (args.old_string as string) || undefined,
+              old_string: (args.old_string as string) || (args.old_str as string) || undefined,
+              new_str: (args.new_str as string) || (args.new_string as string) || undefined,
+              new_string: (args.new_string as string) || (args.new_str as string) || undefined,
               content: args.content as string | undefined,
               command: args.command as string | undefined,
             });

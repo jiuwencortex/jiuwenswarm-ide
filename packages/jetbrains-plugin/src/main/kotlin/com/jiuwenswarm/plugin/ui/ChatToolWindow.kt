@@ -602,17 +602,18 @@ class ChatPanel(
             return
         }
 
-        // Route file-edit tool calls to DiffApplier (show diff or auto-apply).
-        // Gateway sends tool_name inside payload on raw events.
-        if (msg.get("type")?.asString == "event" &&
-            msg.get("event")?.asString == "chat.tool_call") {
-            ApplicationManager.getApplication().executeOnPooledThread {
-                DiffApplier.handle(project, msg)
-            }
-        }
         val converted = convertServerMessageToLegacyEvent(msg, lastRequestId)
         if (converted != null) {
             val et = converted.get("event_type")?.asString
+            // ── Route file-edit tool calls to DiffApplier (show diff or auto-apply) ──
+            // Server sends E2A-format messages (response_kind/body), so the old-format
+            // {type:"event", event:"chat.tool_call"} gate never matches. Dispatch from
+            // the converted legacy event instead, which covers both wire formats.
+            if (et == "chat.tool_call") {
+                ApplicationManager.getApplication().executeOnPooledThread {
+                    DiffApplier.handle(project, converted)
+                }
+            }
             // ── Snapshot files before they are edited so rewind can restore them ──
             // Swarm tool attribution runs for both tool_call and tool_update so real
             // sub-agent activity stubs lanes even when team.member.spawned is not sent.
@@ -623,11 +624,16 @@ class ChatPanel(
                     ?: ""
                 // File-edit snapshots (only when rewind is enabled in settings)
                 if (JiuwenSwarmSettings.instance().rewindEnabled &&
-                    toolName in setOf("str_replace_editor", "write_file", "create_file")) {
-                    val args = payload.getAsJsonObject("tool_call")?.getAsJsonObject("arguments")
-                        ?: payload.getAsJsonObject("tool_input")
-                        ?: payload.getAsJsonObject("input")
-                    val path = args?.get("path")?.asString
+                    toolName in setOf("str_replace_editor", "write_file", "create_file", "edit_file")) {
+                    val tcArgs = payload.getAsJsonObject("tool_call")?.get("arguments")
+                    val args: JsonObject? = when {
+                        tcArgs != null && tcArgs.isJsonObject -> tcArgs.asJsonObject
+                        tcArgs != null && tcArgs.isJsonPrimitive -> runCatching {
+                            JsonParser.parseString(tcArgs.asString).asJsonObject
+                        }.getOrNull()
+                        else -> null
+                    } ?: payload.getAsJsonObject("tool_input") ?: payload.getAsJsonObject("input")
+                    val path = args?.get("file_path")?.asString ?: args?.get("path")?.asString
                     if (path != null && !currentTurnSnapshots.containsKey(path)) {
                         val vf = LocalFileSystem.getInstance().findFileByPath(path)
                         currentTurnSnapshots[path] = vf?.let {

@@ -84,33 +84,36 @@ export function readOriginalContent(filePath: string): string {
 }
 
 /**
- * Compute the proposed file content from a str_replace_editor tool call
- * WITHOUT writing to disk. Returns `undefined` if old_str can't be found.
+ * Compute the proposed file content from a str_replace_editor / edit_file tool
+ * call WITHOUT writing to disk. Returns `undefined` if old_str can't be found.
  */
 export function computeProposedContent(args: {
-  path: string;
+  path?: string;
+  file_path?: string;
   old_str?: string;
+  old_string?: string;
   new_str?: string;
+  new_string?: string;
   content?: string;
   command?: string;
 }): string | undefined {
   const command = args.command ?? 'str_replace';
-  const original = readOriginalContent(args.path);
+  const original = readOriginalContent(args.file_path || args.path || '');
 
   if (command === 'create' || !original) {
-    return args.content ?? args.new_str ?? '';
+    return args.content ?? args.new_string ?? args.new_str ?? '';
   }
 
   if (command === 'str_replace') {
-    const oldStr = args.old_str;
+    const oldStr = args.old_str ?? args.old_string;
     if (!oldStr || !original.includes(oldStr)) {
       return undefined;
     }
-    return original.replace(oldStr, args.new_str ?? '');
+    return original.replace(oldStr, args.new_string ?? args.new_str ?? '');
   }
 
   if (command === 'write_file') {
-    return args.content ?? args.new_str ?? '';
+    return args.content ?? args.new_string ?? args.new_str ?? '';
   }
 
   return undefined;

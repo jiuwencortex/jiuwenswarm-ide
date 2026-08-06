@@ -30,6 +30,7 @@ private val LOG = logger<DiffApplier>()
  *
  * Supported tools:
  *  - `str_replace_editor` (command = str_replace | create)
+ *  - `edit_file` (file_path + old_string/new_string)
  *  - `write_file`
  *  - `create_file`
  */
@@ -42,6 +43,7 @@ object DiffApplier {
     fun handle(project: Project, event: JsonObject): Boolean {
         val toolName = event.get("tool_name")?.asString
             ?: event.getAsJsonObject("payload")?.get("tool_name")?.asString
+            ?: event.getAsJsonObject("payload")?.getAsJsonObject("tool_call")?.get("name")?.asString
             ?: return false
         if (toolName !in EDIT_TOOLS) return false
 
@@ -56,9 +58,36 @@ object DiffApplier {
 
         return when (toolName) {
             "str_replace_editor" -> handleStrReplaceEditor(project, args, autoApply, requireApproval)
+            "edit_file" -> handleEditFile(project, args, autoApply, requireApproval)
             "write_file", "create_file" -> handleWriteFile(project, args, autoApply, requireApproval)
             else -> false
         }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // edit_file (ACP-style: file_path + old_string/new_string)
+    // ──────────────────────────────────────────────────────────────────────────
+
+    private fun handleEditFile(
+        project: Project,
+        args: JsonObject,
+        autoApply: Boolean,
+        requireApproval: Boolean,
+    ): Boolean {
+        val path = args.get("file_path")?.asString
+            ?: args.get("path")?.asString
+            ?: return false
+        val oldStr = args.get("old_string")?.asString
+            ?: args.get("old_str")?.asString
+            ?: return false
+        val newStr = args.get("new_string")?.asString
+            ?: args.get("new_str")?.asString
+            ?: ""
+        if (requireApproval && !askApproval(project, "Apply edit to ${File(path).name}?")) {
+            notify(project, "Edit rejected: ${File(path).name}")
+            return false
+        }
+        return applyStrReplace(project, path, oldStr, newStr, autoApply)
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -258,5 +287,5 @@ object DiffApplier {
         }
     }
 
-    private val EDIT_TOOLS = setOf("str_replace_editor", "write_file", "create_file")
+    private val EDIT_TOOLS = setOf("str_replace_editor", "write_file", "create_file", "edit_file")
 }
