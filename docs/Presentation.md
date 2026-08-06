@@ -45,7 +45,7 @@ Developers who already use JiuwenSwarm and want the agent to work inside their I
 - Agent shell commands run in a dedicated terminal tab inside the IDE
 
 **Git**
-- Commit and Push buttons with auto-suggested message (optional, off by default)
+- Commit and Push buttons; commit message pre-filled from your last message (optional, off by default)
 
 **Sessions and skills**
 - Multiple named sessions, switch between them with history reload
@@ -88,7 +88,7 @@ Ordered roughly by how close each item is to being done.
 
 ### Month 1 — Polish and quick wins
 
-- **Inline accept/reject per code block** — agent edits show up as highlighted diff lines directly in the editor; accept or reject each hunk without opening a separate dialog (like Cursor). Infrastructure is in place; this is a UI change.
+- **Inline accept/reject per code block** — agent edits show up as highlighted diff lines directly in the editor; accept or reject each hunk without opening a separate dialog (like Cursor). Most of the diff plumbing is in place; this is a UI change.
 - **"Fix all errors" action** — one button collects every error and warning in the current file and sends them to the agent at once, instead of using Alt+Enter one at a time.
 - **Right-click quick actions** — select any function, right-click → Explain / Write tests / Add docs. Sends the selection with the right prompt pre-filled.
 - **Terminal output → chat** — one-click button copies whatever is in the terminal (stack traces, test output) into the chat. No more manual highlight-and-paste.
@@ -125,7 +125,7 @@ Ordered roughly by how close each item is to being done.
 
 ### Month 1 — Steering the swarm
 
-- **Steer individual agents** — pause or redirect any running agent from the Swarm Map panel without stopping the rest of the swarm. Requires a small server API addition (`team.agent.pause`, `team.agent.redirect`); infrastructure is partially in place.
+- **Steer individual agents** — pause or redirect any running agent from the Swarm Map panel without stopping the rest of the swarm. Requires a small server + plugin API addition (`team.agent.pause`, `team.agent.redirect`); the Swarm Map panel currently only supports opening an agent's file.
 
 ### Month 2 — Swarm control
 

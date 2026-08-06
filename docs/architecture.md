@@ -93,7 +93,7 @@ IDE context (active file, selection, diagnostics, git, project rules, @-mentione
 | `chat.llm_call_end` | Clear the thinking indicator once the model call completes |
 | `chat.tool_call` | Show tool call card with spinner |
 | `chat.tool_result` | Update tool card with result |
-| `chat.final` | Mark turn complete; replace accumulated text with canonical content |
+| `chat.final` | Mark turn complete; keep the streamed text as-is |
 | `chat.usage_metadata` | Update per-turn token counter |
 | `chat.usage_summary` | Update session-level token and cost totals |
 | `context.usage` | Update context bar occupancy percentage |
@@ -133,7 +133,10 @@ e2a.error    → { body: { message, details } }
 
 Both plugins convert E2A messages to the legacy `{ event_type, request_id, payload }` shape before dispatching to the webview.
 
-Team events also arrive via E2A: a `chat.delta` whose text starts with `team.event:` — the remainder is JSON. The host (`ChatPanel.extractTeamEventDelta` / `ChatToolWindow.extractTeamEventDelta`) detects this prefix and routes the payload to `SwarmStateManager` instead of the chat renderer.
+Team events arrive over E2A in two shapes, both detected by `extractTeamEventDelta` (`ChatPanel.extractTeamEventDelta` / `ChatToolWindow.extractTeamEventDelta`) and routed to `SwarmStateManager` instead of the chat renderer:
+
+- **Legacy text shape:** a `chat.delta` whose text starts with `team.event:` — the remainder is JSON.
+- **Object shape:** an `e2a.chunk` whose `body.event_type` is a `team.*` category (e.g. `team.task`, `team.member`) or `workflow.updated`, with `body.delta` carrying the full `{ event: { type, … } }` payload.
 
 ---
 
@@ -143,7 +146,8 @@ Team events also arrive via E2A: a `chat.delta` whose text starts with `team.eve
 
 Team events arrive in two shapes:
 
-- **E2A (current):** `chat.delta` whose text starts with `team.event:` — the remainder is the JSON event.
+- **E2A text shape:** `chat.delta` whose text starts with `team.event:` — the remainder is the JSON event.
+- **E2A object shape:** an `e2a.chunk` whose `body.event_type` is a `team.*` category or `workflow.updated`; `body.delta` carries `{ event: { type, … } }` (or a flat team payload).
 - **Legacy:** `{ type:"event", event:"team.member", payload:{ event, … } }` — the real event is nested at `payload.event` (e.g. `payload.event.type === "team.member.spawned"`).
 
 The host unwraps and normalises field names before forwarding to `SwarmStateManager`:
@@ -166,8 +170,8 @@ The host unwraps and normalises field names before forwarding to `SwarmStateMana
 | `team.member.execution_changed` | Update `executionStatus` only (`IDLE / RUNNING / COMPLETING`) |
 | `team.member.shutdown` | Set lane `status=SHUTDOWN`, clear `currentActivity`, set `executionStatus=IDLE` |
 | `team.task.created` | Add task with `status='pending'`; card appears in Board **Backlog** column |
-| `team.task.claimed` | Set `task.assignee`; status stays `'pending'` (agent has claimed but not yet started) |
-| `team.task.started` | Set `status='in_progress'`, link task to `lane.currentTaskId`; card moves to Board **In Progress** column |
+| `team.task.claimed` | Set `task.assignee` and the server's authoritative `status` (usually `'in_progress'`), then link the task to the lane's `currentTaskId`; card moves to Board **In Progress** column |
+| `team.task.started` | Legacy handler only — the server never emits this type; it sends `claimed` carrying `status: in_progress` instead |
 | `team.task.completed` | Set `status='completed'`, increment `lane.tasksDone`; card moves to Board **Done** column |
 | `team.task.cancelled` | Set `status='cancelled'`, clear task from lane; card shown with strikethrough in Board **Done** column |
 | `team.task.status_snapshot` | Authoritative convergence: bulk-updates both task and lane state to match server truth |
@@ -198,8 +202,8 @@ The orchestrator (`team-leader`) is filtered out of all views — only workers a
 
 | Value | Board column |
 |-------|-------------|
-| `pending` | Backlog (after `created`; stays pending through `claimed`) |
-| `in_progress` | In Progress (after `started`) |
+| `pending` | Backlog (after `created`) |
+| `in_progress` | In Progress (after `claimed` carries this status, or `started`) |
 | `completed` | Done (normal finish) |
 | `cancelled` | Done (strikethrough on card) |
 
@@ -325,7 +329,7 @@ The Swarm Map panel. Receives a `SwarmSnapshot` produced by the host-side `Swarm
 - **List** — per-agent lane cards: status chip, live elapsed timer, activity feed (what tool the agent just called), task pill strip, inter-agent message log, and a completion summary with per-agent durations when all agents finish.
 - **Board** — three-column kanban (Backlog / In Progress / Done). One card per task showing title, assigned agent name with colour dot, status badges (Blocked when assigned lane is PAUSED; strikethrough when cancelled). Updates live on every snapshot.
 
-The ☰ menu provides an opt-in **Debug console** fed by `{ type: 'swarm_debug', line }` messages, and a **"↓ Export session"** item (visible only when `sessionHistoryPath` is set) that sends an `export_session` message to the host.
+The ☰ menu provides an opt-in **Debug console** fed by `{ type: 'swarm_debug', line }` messages. (Session export lives in the chat panel's ☰ menu, not here.)
 
 **Tool attribution** — friendly activity text comes from `chat.tool_call` / `chat.tool_update` events carrying `member_name`. Parsed tool arguments (`path`/`file_path`, glob `pattern`, shell `command`, `task_id`, `to`) produce text like "writing · plan.md" or "running · npm run build". Consecutive duplicates within 1 s are collapsed.
 
@@ -406,7 +410,7 @@ class Request:
 
 ## 6. File Edit Handling
 
-When the agent invokes a file-editing tool (`str_replace_editor`, `write_file`, `create_file`), the plugin intercepts the `chat.tool_call` event and handles it natively.
+When the agent invokes a file-editing tool (`str_replace_editor`, `write_file`, `create_file`, `edit_file`), the plugin intercepts the `chat.tool_call` event and handles it natively.
 
 ### Supported tools
 
@@ -414,12 +418,13 @@ When the agent invokes a file-editing tool (`str_replace_editor`, `write_file`, 
 |------|-----------|
 | `str_replace_editor` command=`str_replace` | Replace a specific block of text in an existing file |
 | `str_replace_editor` command=`create` | Create a new file |
+| `edit_file` | Replace `old_string` with `new_string` (ACP-style: `file_path` + `old_string`/`new_string`) |
 | `write_file` | Overwrite or create a file |
 | `create_file` | Create a new file; parent directories created automatically |
 
 ### JetBrains
 
-- **Default**: `DiffManager.getInstance().showDiff()` opens a side-by-side diff window. Closing the window applies the change via `WriteCommandAction`.
+- **Default**: `DiffManager.getInstance().showDiff()` opens a side-by-side diff window. This is a **preview only** — closing it does not apply the change (the server applies the edit independently). With auto-apply on, the change is written directly.
 - **Auto-apply**: `WriteCommandAction.runWriteCommandAction()` + `Document.replaceString()`, undoable with `Ctrl+Z`.
 - **Approve**: a confirmation dialog appears before the diff or auto-apply runs.
 - **Snapshot**: before the first edit to a file in a turn, the current content is captured in `currentTurnSnapshots`. Promoted to `lastTurnSnapshots` on `chat.final`.
@@ -427,7 +432,7 @@ When the agent invokes a file-editing tool (`str_replace_editor`, `write_file`, 
 ### VS Code
 
 - **Default**: edit applied via Node.js `fs.writeFileSync`.
-- **Diff viewer** (opt-in via `useDiffViewer` setting): `vscode.diff` command opens a side-by-side view with Accept/Reject buttons.
+- **Diff viewer** (on by default via `useDiffViewer` setting; can be disabled): `vscode.diff` command opens a side-by-side view with Accept/Reject buttons.
 - **Approve**: `vscode.window.showInformationMessage()` with Approve/Reject buttons when `approveEdits` is enabled.
 
 ---
