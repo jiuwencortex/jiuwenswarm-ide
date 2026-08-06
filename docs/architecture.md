@@ -7,58 +7,87 @@ Architecture reference for the JetBrains plugin and VS Code extension. Both plug
 ## 1. System Overview
 
 ```
-┌──────────────────────────────────────┐     WebSocket      ┌─────────────────────────────────┐
-│         IDE Plugin                   │ ◄─────────────────► │   JiuwenSwarm Gateway           │
-│   (JetBrains / VS Code)              │  ws://host:19000/ws │   ws://host:19000/ws            │
-│                                      │                     │                                 │
-│  ┌────────────────────────────────┐  │                     │  ┌───────────────────────────┐  │
-│  │  Shared Webview (chat.html)    │  │                     │  │  Web Channel Handler      │  │
-│  │  - Streaming markdown          │  │                     │  └───────────┬───────────────┘  │
-│  │  - Tool call cards             │  │                     │             │                   │
-│  │  - Mode / model selectors      │  │                     │  ┌──────────▼───────────────┐  │
-│  │  - @ / # / ! input pickers     │  │                     │  │  AgentServer             │  │
-│  │  - Session / skills overlays   │  │                     │  └──────────────────────────┘  │
-│  │  - Stats bar + mini charts     │  │                     └─────────────────────────────────┘
-│  │  - Checkpoint rewind bar       │  │
-│  └────────────────────────────────┘  │
-│  ┌────────────────────────────────┐  │
-│  │  Swarm Map (swarm_map.html)    │  │
-│  │  - Map / List / Board views    │  │
-│  │  - Status chips + elapsed timer│  │
-│  │  - Per-agent activity feed     │  │
-│  │  - Kanban board (task cards)   │  │
-│  │  - Debug console (☰ menu)      │  │
-│  └────────────────────────────────┘  │
-│  ┌────────────────────────────────┐  │
-│  │  Context Collector             │  │
-│  │  - Active file + cursor + sel  │  │
-│  │  - Diagnostics + open tabs     │  │
-│  │  - Project tree (2-level)      │  │
-│  │  - Git status (subprocess)     │  │
-│  │  - Project rules file          │  │
-│  │  - @-mentioned file contents   │  │
-│  └────────────────────────────────┘  │
-│  ┌────────────────────────────────┐  │
-│  │  Edit Applier                  │  │
-│  │  - Intercept tool_call events  │  │
-│  │  - Diff window or auto-apply   │  │
-│  │  - File snapshot (rewind)      │  │
-│  └────────────────────────────────┘  │
-│  ┌────────────────────────────────┐  │
-│  │  Terminal Manager              │  │
-│  │  - Route bash to IDE terminal  │  │
-│  └────────────────────────────────┘  │
-│  ┌────────────────────────────────┐  │
-│  │  WS Client + Session Manager   │  │
-│  │  - OkHttp / ws npm package     │  │
-│  │  - Exponential backoff reconnect│ │
-│  │  - Session CRUD                │  │
-│  │  - Request/response matching   │  │
-│  └────────────────────────────────┘  │
-└──────────────────────────────────────┘
+                    WebSocket (ws://host:19000/ws)
+  ┌──────────────────────────────┐          ┌──────────────────────────────┐
+  │         IDE Plugin           │ ◄──────► │        JiuwenSwarm          │
+  │   (JetBrains / VS Code)      │          │        Server               │
+  │                              │          │  (same endpoint the web     │
+  │  ┌────────────────────────┐  │          │   frontend connects to)     │
+  │  │ Shared Webview         │  │          └──────────────────────────────┘
+  │  │ (chat.html)            │  │
+  │  │ - streaming chat       │  │
+  │  │ - tool call cards      │  │
+  │  │ - mode / model pickers │  │
+  │  │ - @ / # / ! inputs     │  │
+  │  │ - session & skills     │  │
+  │  │ - stats + mini charts  │  │
+  │  │ - rewind bar           │  │
+  │  └────────────────────────┘  │
+  │  ┌────────────────────────┐  │
+  │  │ Swarm Map              │  │
+  │  │ (swarm_map.html)       │  │
+  │  │ - Map / List / Board   │  │
+  │  │ - lane cards + feed    │  │
+  │  │ - kanban task board    │  │
+  │  │ - debug console        │  │
+  │  └────────────────────────┘  │
+  │  ┌────────────────────────┐  │
+  │  │ Context Collector      │  │
+  │  │ - file / cursor / sel  │  │
+  │  │ - diagnostics / tabs   │  │
+  │  │ - project tree         │  │
+  │  │ - git status           │  │
+  │  │ - project rules        │  │
+  │  │ - @-mentions           │  │
+  │  └────────────────────────┘  │
+  │  ┌────────────────────────┐  │
+  │  │ Edit Applier           │  │
+  │  │ - intercept tool calls │  │
+  │  │ - diff / auto-apply    │  │
+  │  │ - snapshots (rewind)   │  │
+  │  └────────────────────────┘  │
+  │  ┌────────────────────────┐  │
+  │  │ Terminal Manager       │  │
+  │  │ - bash → IDE terminal  │  │
+  │  └────────────────────────┘  │
+  │  ┌────────────────────────┐  │
+  │  │ WS Client + Sessions   │  │
+  │  │ - OkHttp / ws          │  │
+  │  │ - reconnect + backoff  │  │
+  │  │ - session CRUD         │  │
+  │  │ - req/resp matching    │  │
+  │  └────────────────────────┘  │
+  └──────────────────────────────┘
 ```
 
 The plugin connects to `ws://host:port/ws` as a standard WebSocket client — the same endpoint used by the web frontend. The `channel_id` field is set to `"ide"` so IDE connections are identifiable in server logs.
+
+### 1.1 Why the WebSocket channel, not ACP
+
+JiuwenSwarm exposes two client-facing protocols:
+
+| | **Web channel (WebSocket + E2A)** | **ACP channel (stdio JSON-RPC)** |
+|---|---|---|
+| Transport | persistent WebSocket to `ws://host:port/ws` | local subprocess: JSON-RPC over `stdin`/`stdout` |
+| Client type | anything that can hold a socket — browser, IDE, CLI | a spawned child process (`jiuwenswarm ... acp`) |
+| Connection model | one long-lived connection, reconnect + backoff | one process per session; gateway bridge |
+| Streaming | `chat.delta` / `chat.reasoning` events, tool cards, live swarm events | `session/update` notifications with chunk kinds |
+| Rich chat UI | shared `chat.html` webview (streaming markdown, pickers, charts, rewind) | text-oriented session updates |
+| IDE integration | plugin is the client — hosts context, editor, terminal, diff, rewind | plugin would be the ACP *client* speaking JSON-RPC |
+
+The IDE plugin uses the WebSocket channel because it is the only channel that gives the plugin what it needs **in one connection**:
+
+1. **Full chat UX.** The web channel is the same one the web frontend uses — streaming text, reasoning blocks, tool-call cards, mode/model/skill pickers, session overlays, stats and charts all render in the shared webview. ACP's `session/update` notifications are a leaner event set and would require rebuilding that UI in JSON-RPC terms.
+
+2. **Team / swarm events.** `team.member.*`, `team.task.*`, and `workflow.updated` flow through the web channel and feed the Swarm Map. ACP is not a carrier for the swarm visualization surface.
+
+3. **IDE context is injected by the host, not the agent.** The plugin prepends active-file, selection, diagnostics, git state, and project rules to each message (§5). That is a host-side concern; ACP has no equivalent for "here is what the IDE currently knows."
+
+4. **Bidirectional, low-latency streaming.** One WebSocket carries both directions (requests and server pushes) with no subprocess spawn per turn. ACP is designed for a CLI-style one-process-per-conversation flow, which does not match an always-open IDE panel.
+
+5. **Consistency with the web frontend.** Both the browser and the IDE speak the same protocol, so the server behaviour, E2A encoding, and tool handling are identical across clients. ACP is a separate code path maintained for the terminal/CLI experience.
+
+ACP remains the right choice for headless use — scripts, terminals, or embedding JiuwenSwarm as a subprocess where there is no persistent UI and no IDE to attach to. The IDE is the opposite: a persistent, interactive, UI-rich host, which is exactly what the WebSocket channel is built for.
 
 ---
 
