@@ -126,17 +126,17 @@ Ordered roughly by how close each item is to being done.
 ### Month 1 — Steering the swarm
 
 - **Steer individual agents** — pause or redirect any running agent from the Swarm Map panel without stopping the rest of the swarm. Requires a small server + plugin API addition (`team.agent.pause`, `team.agent.redirect`); the Swarm Map panel currently only supports opening an agent's file.
+- **Spawn agent mid-session** — click "+ Agent" in the Swarm Map to add a new worker to a running session and assign it a task. Useful when a specialist is needed after work has started (e.g. add a security reviewer once coding is done).
+- **Per-agent cost breakdown** — extend the existing stats bar with a per-agent token / cost breakdown in the session summary: which worker spent the most and why.
 
 ### Month 2 — Swarm control
 
-- **Spawn agent mid-session** — click "+ Agent" in the Swarm Map to add a new worker to a running session and assign it a task. Useful when a specialist is needed after work has started (e.g. add a security reviewer once coding is done).
 - **Conflict detection** — when two agents edit the same file simultaneously, the Swarm Map shows a collision badge on both lanes. The orchestrator is notified and can serialise writes or reassign one agent.
 - **Quality gate hooks** — define shell commands in `.jiuwenswarm/hooks.json` that run automatically after every agent turn (`pytest`, `eslint`, `mypy`). Non-zero exit feeds the output back to the agent for a fix attempt.
-- **Per-agent cost breakdown** — extend the existing stats bar with a per-agent token / cost breakdown in the session summary: which worker spent the most and why.
+- **Swarm replay** — after a session ends, a timeline scrubber lets you step through the session event-by-event: watch agents spawn, tasks progress, and files change in the order they happened. Useful for debugging or showing teammates what the swarm did.
 
 ### Month 3 — Visibility and collaboration
 
-- **Swarm replay** — after a session ends, a timeline scrubber lets you step through the session event-by-event: watch agents spawn, tasks progress, and files change in the order they happened. Useful for debugging or showing teammates what the swarm did.
 - **Team session templates** — save a named swarm configuration (roles, system prompts, task split strategy) as a template in `.jiuwenswarm/teams/`. Pick a template from the chat input to start a pre-configured multi-agent session in one click.
 - **Read-only session stream** — generate a shareable URL so anyone can watch a live session (chat, Swarm Map, file diffs) in a browser without IDE access. Observer-only; no message sending.
 - **Auto-session context** — when the agent references a file, that file is automatically pinned for the rest of the session so follow-up messages don't lose track of it.

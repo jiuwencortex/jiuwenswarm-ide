@@ -119,11 +119,11 @@ req: chat.answer     → respond to a human-turn clarifying question
 
 ### 2.4 Request / response matching
 
-Every `req` gets a UUID `id`. The plugin keeps a map of in-flight `id → CompletableFuture` (JetBrains, 5 s timeout) or `id → Promise` (VS Code, 15 s timeout). Responses carry the matching `id` (legacy format) or `request_id` (E2A format). Unmatched responses are logged and discarded.
+Every `req` gets a UUID `id`. The plugin keeps a map of in-flight `id → CompletableFuture` (JetBrains, 5 s timeout) or `id → Promise` (VS Code, 15 s timeout). Responses carry the matching `request_id`. Unmatched responses are logged and discarded.
 
 ### 2.5 E2A envelope format
 
-The gateway supports an envelope format for streaming responses:
+The gateway wraps streaming responses in an E2A envelope:
 
 ```
 e2a.chunk    → { body: { event_type, delta } }
@@ -131,12 +131,7 @@ e2a.complete → { body: { result: { event_type, ... } } }
 e2a.error    → { body: { message, details } }
 ```
 
-Both plugins convert E2A messages to the legacy `{ event_type, request_id, payload }` shape before dispatching to the webview.
-
-Team events arrive over E2A in two shapes, both detected by `extractTeamEventDelta` (`ChatPanel.extractTeamEventDelta` / `ChatToolWindow.extractTeamEventDelta`) and routed to `SwarmStateManager` instead of the chat renderer:
-
-- **Legacy text shape:** a `chat.delta` whose text starts with `team.event:` — the remainder is JSON.
-- **Object shape:** an `e2a.chunk` whose `body.event_type` is a `team.*` category (e.g. `team.task`, `team.member`) or `workflow.updated`, with `body.delta` carrying the full `{ event: { type, … } }` payload.
+Both plugins convert E2A messages to the `{ event_type, request_id, payload }` shape before dispatching to the webview.
 
 ---
 
@@ -144,11 +139,10 @@ Team events arrive over E2A in two shapes, both detected by `extractTeamEventDel
 
 ### 3.1 Event wire formats
 
-Team events arrive in two shapes:
+Team events arrive over E2A in two shapes, both detected by `extractTeamEventDelta` (`ChatPanel.extractTeamEventDelta` / `ChatToolWindow.extractTeamEventDelta`) and routed to `SwarmStateManager` instead of the chat renderer:
 
-- **E2A text shape:** `chat.delta` whose text starts with `team.event:` — the remainder is the JSON event.
-- **E2A object shape:** an `e2a.chunk` whose `body.event_type` is a `team.*` category or `workflow.updated`; `body.delta` carries `{ event: { type, … } }` (or a flat team payload).
-- **Legacy:** `{ type:"event", event:"team.member", payload:{ event, … } }` — the real event is nested at `payload.event` (e.g. `payload.event.type === "team.member.spawned"`).
+- **Text shape:** a `chat.delta` whose text starts with `team.event:` — the remainder is the JSON event.
+- **Object shape:** an `e2a.chunk` whose `body.event_type` is a `team.*` category or `workflow.updated`; `body.delta` carries `{ event: { type, … } }` (or a flat team payload).
 
 The host unwraps and normalises field names before forwarding to `SwarmStateManager`:
 
@@ -171,7 +165,7 @@ The host unwraps and normalises field names before forwarding to `SwarmStateMana
 | `team.member.shutdown` | Set lane `status=SHUTDOWN`, clear `currentActivity`, set `executionStatus=IDLE` |
 | `team.task.created` | Add task with `status='pending'`; card appears in Board **Backlog** column |
 | `team.task.claimed` | Set `task.assignee` and the server's authoritative `status` (usually `'in_progress'`), then link the task to the lane's `currentTaskId`; card moves to Board **In Progress** column |
-| `team.task.started` | Legacy handler only — the server never emits this type; it sends `claimed` carrying `status: in_progress` instead |
+| `team.task.started` | Set `status='in_progress'` and link the task to the lane's `currentTaskId` |
 | `team.task.completed` | Set `status='completed'`, increment `lane.tasksDone`; card moves to Board **Done** column |
 | `team.task.cancelled` | Set `status='cancelled'`, clear task from lane; card shown with strikethrough in Board **Done** column |
 | `team.task.status_snapshot` | Authoritative convergence: bulk-updates both task and lane state to match server truth |
@@ -565,7 +559,7 @@ packages/jetbrains-plugin/src/main/kotlin/com/jiuwenswarm/plugin/
 | Settings | `PersistentStateComponent<State>` → `jiuwenswarm.xml` |
 | Status bar | `StatusBarWidgetFactory` |
 | Diff view | `DiffManager.getInstance().showDiff()` |
-| Terminal | `TerminalView` (reflection-based; graceful fallback if Terminal plugin absent) |
+| Terminal | `TerminalView` (integrated via reflection against the JetBrains Terminal plugin) |
 | Symbol nav | `PsiSearchHelper.findFilesWithPlainTextWords()` |
 
 ### JCEF bridge
