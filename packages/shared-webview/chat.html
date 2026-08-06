@@ -663,7 +663,21 @@
     user-select: none;
   }
   .tool-name { font-weight: 600; font-family: var(--font-mono); }
+  .tool-open {
+    margin-left: auto;
+    font-size: 10px;
+    color: var(--accent);
+    background: none;
+    border: 1px solid rgba(128,128,128,0.35);
+    border-radius: 4px;
+    padding: 1px 8px;
+    cursor: pointer;
+    font-family: var(--font-mono);
+    flex-shrink: 0;
+  }
+  .tool-open:hover { background: rgba(128,128,128,0.15); }
   .tool-status { margin-left: auto; font-size: 10px; color: var(--text-muted); }
+  .tool-header .tool-open + .tool-status { margin-left: 8px; }
   .tool-spinner { animation: spin 1s linear infinite; display: inline-block; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .tool-body {
@@ -1706,7 +1720,7 @@ let state = {
   compacting: false,      // true while a context compaction is running (context.compression_state)
   compactionPhase: null,  // phase string while compacting (e.g. 'l0_to_l1')
   todoStats: { completed: 0, inProgress: 0, pending: 0 }, // live TODO checkbox counts
-  chartsCollapsed: false, // true when the tokens/duration mini-charts are collapsed
+  chartsCollapsed: true, // true when the tokens/duration mini-charts are collapsed (collapsed by default)
   sessionStats: {
     totalTurns: 0,
     totalErrors: 0,
@@ -2910,11 +2924,17 @@ function appendToolCall(rid, payload) {
 
   const header = document.createElement('div');
   header.className = 'tool-header';
+  var filePath = toolFilePath(toolName, toolInput);
+  var openBtnHtml = filePath
+    ? '<button class="tool-open" title="Open in IDE: ' + escapeHtml(filePath) + '" onclick="openToolFile(event)">\u2197 Open</button>'
+    : '';
   header.innerHTML =
     '<span style="opacity:0.6">⚙</span>' +
     '<span class="tool-name" title="' + escapeHtml(toolName) + '">' + escapeHtml(friendlyToolName(toolName)) + '</span>' +
+    openBtnHtml +
     '<span class="tool-status"><span class="tool-spinner">◌</span> running</span>';
   header.onclick = function() { header.classList.toggle('open'); };
+  if (filePath) header.dataset.filePath = filePath;
 
   const body = document.createElement('div');
   body.className = 'tool-body';
@@ -3243,10 +3263,16 @@ function _renderHistoryMessageImmediate(payload) {
       card.className = 'tool-card';
       var hdr = document.createElement('div');
       hdr.className = 'tool-header';
+      var hPath = toolFilePath(String(toolName), toolInput);
+      var hOpen = hPath
+        ? '<button class="tool-open" title="Open in IDE: ' + escapeHtml(hPath) + '" onclick="openToolFile(event)">\u2197 Open</button>'
+        : '';
       hdr.innerHTML =
         '<span style="opacity:0.6">\u2699</span>' +
         '<span class="tool-name">' + escapeHtml(String(toolName)) + '</span>' +
+        hOpen +
         '<span class="tool-status"><span style="color:#4ec9b0">\u2713 done</span></span>';
+      if (hPath) hdr.dataset.filePath = hPath;
       hdr.onclick = function() { hdr.classList.toggle('open'); };
       var bdy = document.createElement('div');
       bdy.className = 'tool-body';
@@ -4599,7 +4625,7 @@ function clearMessages() {
   renderHostMetrics();
   var mc = document.getElementById('mini-charts');
   if (mc) { mc.innerHTML = ''; mc.classList.remove('visible'); }
-  state.chartsCollapsed = false;
+  state.chartsCollapsed = true;
 }
 
 function showError(msg) {
@@ -4698,10 +4724,36 @@ function formatToolInput(name, input) {
            (input.old_str ? 'old:\n' + truncate(input.old_str, 200) + '\n' : '') +
            (input.new_str ? 'new:\n' + truncate(input.new_str, 200) : '');
   }
+  if (name === 'edit_file') {
+    return 'file_path: ' + (input.file_path || '') + '\n' +
+           (input.old_string ? 'old:\n' + truncate(input.old_string, 200) + '\n' : '') +
+           (input.new_string ? 'new:\n' + truncate(input.new_string, 200) : '');
+  }
+  if (name === 'read_file') {
+    return 'file_path: ' + (input.file_path || '') +
+           (input.limit ? '\nlimit: ' + input.limit : '');
+  }
   if (name === 'bash' || name === 'run_command') {
     return input.command || input.cmd || JSON.stringify(input);
   }
   return JSON.stringify(input, null, 2);
+}
+
+/** Extract a file path from a tool call's arguments, if it targets a file. */
+var _FILE_TOOLS = {
+  read_file: 1, read_text_file: 1, read: 1, view: 1, list_files: 1,
+  edit_file: 1, edit: 1, str_replace_editor: 1, write_file: 1, write_text_file: 1,
+  create_file: 1, search_replace: 1, apply_patch: 1,
+};
+function toolFilePath(name, input) {
+  if (!input || typeof input !== 'object') return '';
+  if (!_FILE_TOOLS[name]) return '';
+  var p = input.file_path || input.path || input.target_file || input.filename || '';
+  if (!p) return '';
+  p = String(p).trim();
+  // A bare token (e.g. memory keys like "default") is not a file path.
+  if (p.indexOf('/') === -1 && p.indexOf('\\') === -1 && !/\.\w{1,10}$/.test(p)) return '';
+  return p;
 }
 
 // ─────────────────────────────────────────────
@@ -4746,6 +4798,15 @@ function openFileLink(el) {
   var path = el.getAttribute('data-path');
   var line = parseInt(el.getAttribute('data-line'), 10) || 0;
   send({ type: 'open_file', path: path, line: line });
+}
+
+/** Open the file targeted by a tool card's arguments in the IDE. */
+function openToolFile(ev) {
+  if (ev && ev.stopPropagation) ev.stopPropagation();
+  var btn = ev && ev.currentTarget ? ev.currentTarget : null;
+  var header = btn && btn.closest ? btn.closest('.tool-header') : null;
+  var path = header && header.dataset.filePath ? header.dataset.filePath : '';
+  if (path) send({ type: 'open_file', path: path, line: 0 });
 }
 
 function renderInline(line) {
