@@ -804,11 +804,20 @@ export class ChatPanel implements vscode.Disposable {
     try {
       const uri = vscode.Uri.file(filePath);
       const doc = await vscode.workspace.openTextDocument(uri);
-      const editor = await vscode.window.showTextDocument(doc);
+      // Open in a real editor group (not over the chat webview). If the file is
+      // already visible in some group, showTextDocument reuses that editor.
+      const editor = await vscode.window.showTextDocument(doc, {
+        viewColumn: vscode.ViewColumn.One,
+        preview: true,
+      });
       if (line > 0) {
         const pos = new vscode.Position(Math.max(0, line - 1), 0);
         editor.selection = new vscode.Selection(pos, pos);
         editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+      }
+      // Keep the chat panel visible so the user isn't left looking at an empty editor.
+      if (this.panel) {
+        this.panel.reveal(vscode.ViewColumn.Two, true);
       }
     } catch (e) {
       this.debug(`open_file failed: ${e}`);

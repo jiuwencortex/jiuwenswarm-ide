@@ -15,6 +15,7 @@ import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
+import com.intellij.openapi.util.Ref
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.openapi.vfs.VirtualFile
@@ -41,6 +42,20 @@ object DiffApplier {
      *  a flattened event (tool_name at root).
      */
     fun handle(project: Project, event: JsonObject): Boolean {
+        // All UI work (approval dialogs, VFS/document access, diff dialog, write
+        // commands) must run on the EDT. If a caller dispatched us from a pooled
+        // thread (or the wire path changed), hop to the EDT instead of crashing.
+        if (!ApplicationManager.getApplication().isDispatchThread) {
+            val result = Ref<Boolean>(false)
+            ApplicationManager.getApplication().invokeAndWait {
+                result.set(handleOnEdt(project, event))
+            }
+            return result.get()
+        }
+        return handleOnEdt(project, event)
+    }
+
+    private fun handleOnEdt(project: Project, event: JsonObject): Boolean {
         val toolName = event.get("tool_name")?.asString
             ?: event.getAsJsonObject("payload")?.get("tool_name")?.asString
             ?: event.getAsJsonObject("payload")?.getAsJsonObject("tool_call")?.get("name")?.asString
@@ -55,6 +70,7 @@ object DiffApplier {
         val settings = JiuwenSwarmSettings.instance()
         val autoApply = settings.autoApplyEdits
         val requireApproval = settings.approveEdits
+        LOG.info("DiffApplier: handling $toolName autoApply=$autoApply args=$args")
 
         return when (toolName) {
             "str_replace_editor" -> handleStrReplaceEditor(project, args, autoApply, requireApproval)

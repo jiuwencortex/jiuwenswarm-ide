@@ -609,8 +609,10 @@ class ChatPanel(
             // Server sends E2A-format messages (response_kind/body), so the old-format
             // {type:"event", event:"chat.tool_call"} gate never matches. Dispatch from
             // the converted legacy event instead, which covers both wire formats.
+            // Run on the EDT: DiffApplier touches VFS / documents and opens the diff
+            // dialog, none of which are safe from a pooled thread.
             if (et == "chat.tool_call") {
-                ApplicationManager.getApplication().executeOnPooledThread {
+                ApplicationManager.getApplication().invokeLater {
                     DiffApplier.handle(project, converted)
                 }
             }
